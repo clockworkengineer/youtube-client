@@ -185,4 +185,112 @@ impl YoutubeClient {
         open::that(file_path)?;
         Ok(())
     }
+
+    /// Test the connection to YouTube by trying to list a single subscription.
+    pub async fn test_connection(&self) -> anyhow::Result<()> {
+        let _ = self.list_subscriptions(1).await?;
+        Ok(())
+    }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_new_oauth_invalid_credentials() {
+        // If we provide a path to a non-existent or dummy token cache, and invalid credentials,
+        // it should fail to authenticate.
+        // We write a dummy token cache containing expired token structure to ensure it attempts
+        // a refresh and fails immediately rather than starting an interactive browser flow.
+        let temp_dir = std::env::temp_dir();
+        let cache_path = temp_dir.join("dummy_youtube_token_cache.json");
+        
+        let dummy_cache_content = r#"[
+            {
+                "scopes": ["https://www.googleapis.com/auth/youtube.readonly"],
+                "token": {
+                    "access_token": "dummy_access_token",
+                    "refresh_token": "dummy_refresh_token",
+                    "token_type": "Bearer",
+                    "expires_at": "2020-01-01T00:00:00Z"
+                }
+            }
+        ]"#;
+        
+        std::fs::write(&cache_path, dummy_cache_content).unwrap();
+
+        let client = YoutubeClient::new_oauth(
+            "invalid_client_id",
+            "invalid_client_secret",
+            &cache_path,
+        ).await;
+
+        // Clean up the dummy cache file
+        let _ = std::fs::remove_file(&cache_path);
+
+        // It must return an error since the refresh token is invalid and client ID/secret are invalid.
+        assert!(client.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_real_connection_from_config() {
+        use std::path::PathBuf;
+
+        // Since the current directory of tests in cargo is the crate root (youtube-client-lib),
+        // we check for `private_config.json` and `config.json` relative to it, in the parent directory (../).
+        let private_config_path = PathBuf::from("../private_config.json");
+        let fallback_config_path = PathBuf::from("../config.json");
+        let token_cache_path = PathBuf::from("../tokencache.json");
+
+        let config_path = if private_config_path.exists() {
+            private_config_path
+        } else {
+            fallback_config_path
+        };
+
+        if !config_path.exists() {
+            println!("Skipping real connection test because no config file exists at {:?}", config_path);
+            return;
+        }
+
+        if !token_cache_path.exists() {
+            println!("Skipping real connection test because tokencache.json does not exist at {:?}. Please run CLI login flow first.", token_cache_path);
+            return;
+        }
+
+        #[derive(serde::Deserialize)]
+        struct Config {
+            client_id: String,
+            client_secret: String,
+        }
+
+        let config_content = std::fs::read_to_string(&config_path).unwrap();
+        let config: Config = serde_json::from_str(&config_content).unwrap();
+
+        // If the client ID / secret are still placeholders, skip the test
+        if config.client_id == "ENTER_YOUR_CLIENT_ID_HERE" || config.client_id.is_empty() {
+            println!("Skipping real connection test because config contains placeholder values.");
+            return;
+        }
+
+        println!("Running real YouTube connection test using {:?}", config_path);
+        let client = YoutubeClient::new_oauth(
+            &config.client_id,
+            &config.client_secret,
+            &token_cache_path,
+        ).await;
+
+        match client {
+            Ok(client) => {
+                let conn_result = client.test_connection().await;
+                assert!(conn_result.is_ok(), "Failed to test connection to YouTube: {:?}", conn_result.err());
+                println!("Successfully verified connection to YouTube!");
+            }
+            Err(e) => {
+                panic!("Failed to initialize YoutubeClient with credentials from config.json: {:?}", e);
+            }
+        }
+    }
+}
+

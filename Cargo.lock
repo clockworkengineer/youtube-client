@@ -4263,10 +4263,26 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "open",
+ "rodio",
+ "rusty_ytdl",
+ "serde",
+ "serde_json",
+ "tokio",
+ "youtube-client-lib",
+]
+
+[[package]]
+name = "youtube-client-lib"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "google-youtube3",
  "open",
  "rodio",
  "rusty_ytdl",
+ "serde",
+ "serde_json",
  "tokio",
  "yup-oauth2",
 ]

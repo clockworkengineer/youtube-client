@@ -1,11 +1,15 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use youtube_client::YoutubeClient;
+use youtube_client_lib::YoutubeClient;
 
 #[derive(Parser)]
 #[command(name = "youtube-client")]
 #[command(about = "A Rust CLI YouTube client demo", long_about = None)]
 struct Cli {
+    /// Path to config file containing client credentials
+    #[arg(short, long, default_value = "config.json")]
+    config: std::path::PathBuf,
+
     /// Path to store the cached token
     #[arg(short, long, default_value = "tokencache.json")]
     token_cache: PathBuf,
@@ -65,16 +69,51 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    #[derive(serde::Deserialize, Default)]
+    struct Config {
+        client_id: Option<String>,
+        client_secret: Option<String>,
+    }
+
     let get_credentials = || -> anyhow::Result<(String, String)> {
-        let cid = cli.client_id.clone().or_else(|| std::env::var("GOOGLE_CLIENT_ID").ok());
-        let csec = cli.client_secret.clone().or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").ok());
+        let mut cid = cli.client_id.clone().or_else(|| std::env::var("GOOGLE_CLIENT_ID").ok());
+        let mut csec = cli.client_secret.clone().or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").ok());
+
+        // If credentials are still missing, try loading from the config file
+        if cid.is_none() || csec.is_none() {
+            let private_config = std::path::PathBuf::from("private_config.json");
+            let config_to_use = if private_config.exists() && cli.config == std::path::PathBuf::from("config.json") {
+                &private_config
+            } else {
+                &cli.config
+            };
+
+            if config_to_use.exists() {
+                if let Ok(file_content) = std::fs::read_to_string(config_to_use) {
+                    if let Ok(config) = serde_json::from_str::<Config>(&file_content) {
+                        if cid.is_none() {
+                            cid = config.client_id;
+                        }
+                        if csec.is_none() {
+                            csec = config.client_secret;
+                        }
+                    }
+                }
+            }
+        }
 
         match (cid, csec) {
             (Some(id), Some(secret)) => Ok((id, secret)),
             _ => Err(anyhow::anyhow!(
                 "Error: Google Client ID and Client Secret must be provided!\n\n\
-                Please set the GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables,\n\
-                or pass them using the --client-id and --client-secret command line arguments.\n\n\
+                Please configure them in one of the following ways:\n\
+                1. Pass them as arguments: --client-id <ID> --client-secret <SECRET>\n\
+                2. Set the GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables\n\
+                3. Create a config file (config.json) with client credentials, e.g.:\n\
+                   {{\n\
+                     \"client_id\": \"your_id_here\",\n\
+                     \"client_secret\": \"your_secret_here\"\n\
+                   }}\n\n\
                 To get Google API Client credentials:\n\
                 1. Go to the Google Cloud Console: https://console.cloud.google.com/\n\
                 2. Create a project and search for the \"YouTube Data API v3\" and enable it.\n\
@@ -129,29 +168,10 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Commands::Download { video_id, output } => {
-            // Downloading public videos doesn't require Google Client credentials in rusty_ytdl
             println!("Starting download for video {}...", video_id);
-            // Create dummy client just for downloading (doesn't need auth credentials)
-            // But we can download it directly via the YoutubeClient library method.
-            // Since `download_video` is a method on YoutubeClient, let's run it.
-            // Note: because `download_video` doesn't use the YouTube API hub, we can build a simple dummy struct or call it.
-            // Let's create an unauthenticated method or just instantiate a client or call it.
-            // Since download_video is on YoutubeClient, we can make a dummy instance or make it a static/associated function if we want, or just log in.
-            // Wait, we can authenticate or use credentials if they are provided, or we can add a method or make a dummy client.
-            // Let's construct a dummy or get credentials. Since download uses standard HTTP/rusty_ytdl, we don't need real google keys.
-            // But to make it easy, we'll try to get credentials if available, otherwise use a placeholder client ID/secret to construct client.
             let client = if let Ok((id, secret)) = get_credentials() {
                 YoutubeClient::new_oauth(&id, &secret, &cli.token_cache).await?
             } else {
-                // If credentials are not present, we can just instantiate a client with dummy keys since we only want to download.
-                // But wait! YoutubeClient constructor calls yup-oauth2 which triggers authentication!
-                // To avoid requiring authentication for just downloading or playing, let's expose these as static/associated functions
-                // or have an unauthenticated way.
-                // In our lib, download_video does not use `self.hub`, so we can make it an associated function!
-                // Or we can just call it on a dummy client. Let's make it associated. Let's check `lib.rs`.
-                // Actually, `download_video` takes `&self` but doesn't use it. Let's make it `pub async fn download_video(video_id: &str, output_path: &Path) -> anyhow::Result<()>`!
-                // And same for `play_audio_rodio` and `play_video_system`.
-                // This is a great design! Let's modify the library to make them associated functions so they can be run without OAuth login.
                 println!("No OAuth credentials provided (optional for download). Using direct downloader...");
                 let url = format!("https://www.youtube.com/watch?v={}", video_id);
                 let video = rusty_ytdl::Video::new(url)?;
@@ -173,7 +193,6 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 println!("Decoding and playing audio from {:?} via Rodio...", file);
                 println!("Press Ctrl+C to stop playback.");
-                // Use a direct rodio player since we don't need OAuth
                 use rodio::{Decoder, DeviceSinkBuilder, Player};
                 use std::fs::File;
                 use std::io::BufReader;

@@ -4,6 +4,14 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use youtube_client_lib::{YoutubeClient, Subscription};
 
+#[derive(Clone, Debug, PartialEq)]
+enum DownloadStatus {
+    NotStarted,
+    Downloading,
+    Finished(PathBuf),
+    Failed(String),
+}
+
 #[derive(Clone)]
 struct Thumbnail {
     texture: Option<egui::TextureHandle>,
@@ -12,6 +20,7 @@ struct Thumbnail {
 
 #[derive(Clone)]
 enum View {
+    Login,
     Subscriptions,
     ChannelVideos {
         channel_id: String,
@@ -25,11 +34,16 @@ struct AppState {
     subscriptions: Option<Result<Vec<Subscription>, String>>,
     thumbnails: HashMap<String, Thumbnail>,
     current_view: View,
+    logging_in: bool,
+    login_error: Option<String>,
+    downloads: HashMap<String, DownloadStatus>,
 }
 
 struct YoutubeGuiApp {
     state: Arc<Mutex<AppState>>,
     http_client: reqwest::Client,
+    client_id_input: String,
+    client_secret_input: String,
 }
 
 impl YoutubeGuiApp {
@@ -41,10 +55,17 @@ impl YoutubeGuiApp {
         visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(41, 46, 54);
         cc.egui_ctx.set_visuals(visuals);
 
+        let config = youtube_client_lib::load_config();
+        let client_id_input = config.client_id.unwrap_or_default();
+        let client_secret_input = config.client_secret.unwrap_or_default();
+
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
             thumbnails: HashMap::new(),
             current_view: View::Subscriptions,
+            logging_in: false,
+            login_error: None,
+            downloads: HashMap::new(),
         }));
 
         let http_client = reqwest::Client::new();
@@ -52,7 +73,12 @@ impl YoutubeGuiApp {
         // Initialize YoutubeClient and fetch subscriptions asynchronously
         Self::spawn_fetch_subscriptions(state.clone(), cc.egui_ctx.clone());
 
-        Self { state, http_client }
+        Self {
+            state,
+            http_client,
+            client_id_input,
+            client_secret_input,
+        }
     }
 
     async fn get_client_async() -> Result<YoutubeClient, String> {
@@ -130,9 +156,90 @@ impl YoutubeGuiApp {
                 }
                 Err(e) => {
                     s.subscriptions = Some(Err(e));
+                    s.current_view = View::Login;
                 }
             }
             ctx.request_repaint();
+        });
+    }
+
+    fn spawn_login_and_auth(state: Arc<Mutex<AppState>>, ctx: egui::Context, id: String, secret: String) {
+        {
+            let mut s = state.lock().unwrap();
+            s.logging_in = true;
+            s.login_error = None;
+        }
+        let state_clone = state.clone();
+        let ctx_clone = ctx.clone();
+        tokio::spawn(async move {
+            let res = async {
+                #[derive(serde::Serialize)]
+                struct ConfigSave {
+                    client_id: String,
+                    client_secret: String,
+                }
+                let config_data = ConfigSave {
+                    client_id: id.clone(),
+                    client_secret: secret.clone(),
+                };
+                let content = serde_json::to_string_pretty(&config_data).map_err(|e| e.to_string())?;
+                std::fs::write("private_config.json", content).map_err(|e| e.to_string())?;
+
+                let token_cache_path = PathBuf::from("tokencache.json");
+                let client = YoutubeClient::new_oauth(&id, &secret, &token_cache_path).await
+                    .map_err(|e| format!("OAuth initialization failed: {}", e))?;
+                client.test_connection().await
+                    .map_err(|e| format!("YouTube connection failed: {}", e))?;
+                Ok(())
+            }.await;
+
+            let mut s = state_clone.lock().unwrap();
+            s.logging_in = false;
+            match res {
+                Ok(_) => {
+                    s.current_view = View::Subscriptions;
+                    s.subscriptions = None;
+                    drop(s);
+                    Self::spawn_fetch_subscriptions(state_clone, ctx_clone);
+                }
+                Err(e) => {
+                    s.login_error = Some(e);
+                    ctx_clone.request_repaint();
+                }
+            }
+        });
+    }
+
+    fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_id: String) {
+        {
+            let mut s = state.lock().unwrap();
+            s.downloads.insert(video_id.clone(), DownloadStatus::Downloading);
+        }
+        let state_clone = state.clone();
+        let ctx_clone = ctx.clone();
+        tokio::spawn(async move {
+            let res = async {
+                let downloads_dir = PathBuf::from("downloads");
+                if !downloads_dir.exists() {
+                    std::fs::create_dir_all(&downloads_dir).map_err(|e| e.to_string())?;
+                }
+                let output_path = downloads_dir.join(format!("{}.mp4", video_id));
+
+                let client = Self::get_client_async().await.map_err(|e| e.to_string())?;
+                client.download_video(&video_id, &output_path).await.map_err(|e| e.to_string())?;
+                Ok(output_path)
+            }.await;
+
+            let mut s = state_clone.lock().unwrap();
+            match res {
+                Ok(path) => {
+                    s.downloads.insert(video_id, DownloadStatus::Finished(path));
+                }
+                Err(e) => {
+                    s.downloads.insert(video_id, DownloadStatus::Failed(e));
+                }
+            }
+            ctx_clone.request_repaint();
         });
     }
 
@@ -210,15 +317,74 @@ impl YoutubeGuiApp {
     }
 }
 
+enum PendingAction {
+    None,
+    SpawnLogin { id: String, secret: String },
+    RetrySubscriptions,
+    LoadChannel { id: String, title: String, description: String },
+    GoBack,
+    RetryVideos { id: String, title: String, description: String },
+    SpawnDownload { video_id: String },
+    PlayLocal { path: PathBuf },
+    StreamVideo { video_id: String },
+}
+
 impl eframe::App for YoutubeGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let (current_view, subscriptions) = {
+        let (current_view, subscriptions, logging_in, login_error) = {
             let s = self.state.lock().unwrap();
-            (s.current_view.clone(), s.subscriptions.clone())
+            (s.current_view.clone(), s.subscriptions.clone(), s.logging_in, s.login_error.clone())
         };
+        let mut action = PendingAction::None;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             match current_view {
+                View::Login => {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(20.0);
+                        ui.heading(
+                            egui::RichText::new("🔐 YouTube OAuth Authentication")
+                                .size(24.0)
+                                .strong()
+                                .color(egui::Color32::from_rgb(255, 60, 60)),
+                        );
+                        ui.add_space(10.0);
+                        ui.label("Please configure your Google OAuth2 credentials to authenticate the client.");
+                        ui.add_space(20.0);
+                    });
+
+                    ui.group(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label("Google Client ID:");
+                            ui.text_edit_singleline(&mut self.client_id_input);
+                            ui.add_space(10.0);
+
+                            ui.label("Google Client Secret:");
+                            ui.text_edit_singleline(&mut self.client_secret_input);
+                            ui.add_space(15.0);
+
+                            if logging_in {
+                                ui.horizontal(|ui| {
+                                    ui.spinner();
+                                    ui.label("Attempting authentication & launching browser flow...");
+                                });
+                            } else {
+                                if ui.button("Save & Login").clicked() {
+                                    let id = self.client_id_input.trim().to_string();
+                                    let secret = self.client_secret_input.trim().to_string();
+                                    if !id.is_empty() && !secret.is_empty() {
+                                        action = PendingAction::SpawnLogin { id, secret };
+                                    }
+                                }
+                            }
+
+                            if let Some(err) = &login_error {
+                                ui.add_space(10.0);
+                                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠️ Error: {}", err));
+                            }
+                        });
+                    });
+                }
                 View::Subscriptions => {
                     // Title Header
                     ui.vertical_centered(|ui| {
@@ -259,11 +425,7 @@ impl eframe::App for YoutubeGuiApp {
                                 ui.label(err_msg);
                                 ui.add_space(20.0);
                                 if ui.button("Retry").clicked() {
-                                    {
-                                        let mut s = self.state.lock().unwrap();
-                                        s.subscriptions = None;
-                                    }
-                                    Self::spawn_fetch_subscriptions(self.state.clone(), ctx.clone());
+                                    action = PendingAction::RetrySubscriptions;
                                 }
                             });
                         }
@@ -330,21 +492,11 @@ impl eframe::App for YoutubeGuiApp {
                                             // Clicking logic to load channel videos
                                             let response = ui.interact(response.response.rect, response.response.id, egui::Sense::click());
                                             if response.clicked() {
-                                                {
-                                                    let mut s = self.state.lock().unwrap();
-                                                    s.current_view = View::ChannelVideos {
-                                                        channel_id: sub.channel_id.clone(),
-                                                        channel_title: sub.title.clone(),
-                                                        channel_description: sub.description.clone(),
-                                                        videos: None,
-                                                    };
-                                                }
-                                                Self::fetch_videos(
-                                                    ctx.clone(),
-                                                    self.state.clone(),
-                                                    sub.channel_id.clone(),
-                                                    sub.title.clone(),
-                                                );
+                                                action = PendingAction::LoadChannel {
+                                                    id: sub.channel_id.clone(),
+                                                    title: sub.title.clone(),
+                                                    description: sub.description.clone(),
+                                                };
                                             }
 
                                             if response.hovered() {
@@ -363,8 +515,7 @@ impl eframe::App for YoutubeGuiApp {
                     ui.vertical(|ui| {
                         ui.horizontal(|ui| {
                             if ui.button("⬅ Go Back").clicked() {
-                                let mut s = self.state.lock().unwrap();
-                                s.current_view = View::Subscriptions;
+                                action = PendingAction::GoBack;
                             }
                             ui.add_space(15.0);
                             ui.heading(
@@ -405,21 +556,11 @@ impl eframe::App for YoutubeGuiApp {
                                 ui.label(err_msg);
                                 ui.add_space(20.0);
                                 if ui.button("Retry").clicked() {
-                                    {
-                                        let mut s = self.state.lock().unwrap();
-                                        s.current_view = View::ChannelVideos {
-                                            channel_id: channel_id.clone(),
-                                            channel_title: channel_title.clone(),
-                                            channel_description: channel_description.clone(),
-                                            videos: None,
-                                        };
-                                    }
-                                    Self::fetch_videos(
-                                        ctx.clone(),
-                                        self.state.clone(),
-                                        channel_id.clone(),
-                                        channel_title.clone(),
-                                    );
+                                    action = PendingAction::RetryVideos {
+                                        id: channel_id.clone(),
+                                        title: channel_title.clone(),
+                                        description: channel_description.clone(),
+                                    };
                                 }
                             });
                         }
@@ -435,6 +576,10 @@ impl eframe::App for YoutubeGuiApp {
                                     .show(ui, |ui| {
                                         for video in vids {
                                             let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
+                                            let download_status = {
+                                                let s_lock = self.state.lock().unwrap();
+                                                s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted)
+                                            };
 
                                             let response = ui.group(|ui| {
                                                 ui.horizontal(|ui| {
@@ -491,50 +636,40 @@ impl eframe::App for YoutubeGuiApp {
                                                             );
                                                         });
                                                     });
+
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        match &download_status {
+                                                            DownloadStatus::NotStarted => {
+                                                                if ui.button("📥 Download").clicked() {
+                                                                    action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                                                }
+                                                            }
+                                                            DownloadStatus::Downloading => {
+                                                                ui.spinner();
+                                                                ui.label("Downloading...");
+                                                            }
+                                                            DownloadStatus::Finished(_) => {
+                                                                if ui.button("▶ Play Local").clicked() {
+                                                                    if let DownloadStatus::Finished(path) = &download_status {
+                                                                        action = PendingAction::PlayLocal { path: path.clone() };
+                                                                    }
+                                                                }
+                                                            }
+                                                            DownloadStatus::Failed(err) => {
+                                                                if ui.button("❌ Retry").clicked() {
+                                                                    action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                                                }
+                                                                ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
+                                                            }
+                                                        }
+                                                    });
                                                 });
                                             });
 
                                             let response = ui.interact(response.response.rect, response.response.id, egui::Sense::click());
-                                            if response.clicked() {
-                                                let url = format!("https://www.youtube.com/watch?v={}", video.id);
-                                                println!("Video clicked: {}", url);
-                                                
-                                                // Try to open the stream in MPV or VLC first
-                                                let mut players = Vec::new();
-                                                let resolved_path = Self::get_player_path();
-                                                println!("Resolved player path from config: {:?}", resolved_path);
-                                                if let Some(user_player) = resolved_path {
-                                                    players.push(user_player);
-                                                }
-                                                players.extend(vec![
-                                                    "mpv".to_string(),
-                                                    "vlc".to_string(),
-                                                    "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
-                                                    "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
-                                                ]);
-                                                
-                                                let mut opened = false;
-                                                for player in players {
-                                                    print!("Trying player: {} ... ", player);
-                                                    match std::process::Command::new(&player)
-                                                        .arg(&url)
-                                                        .spawn()
-                                                    {
-                                                        Ok(_) => {
-                                                            println!("SUCCESS!");
-                                                            opened = true;
-                                                            break;
-                                                        }
-                                                        Err(e) => {
-                                                            println!("FAILED ({})", e);
-                                                        }
-                                                    }
-                                                }
-
-                                                if !opened {
-                                                    println!("No media players succeeded. Falling back to default browser.");
-                                                    let _ = open::that(url);
-                                                }
+                                            
+                                            if response.clicked() && matches!(action, PendingAction::None) {
+                                                action = PendingAction::StreamVideo { video_id: video.id.clone() };
                                             }
 
                                             if response.hovered() {
@@ -550,6 +685,96 @@ impl eframe::App for YoutubeGuiApp {
                 }
             }
         });
+
+        match action {
+            PendingAction::None => {}
+            PendingAction::SpawnLogin { id, secret } => {
+                Self::spawn_login_and_auth(self.state.clone(), ctx.clone(), id, secret);
+            }
+            PendingAction::RetrySubscriptions => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.subscriptions = None;
+                }
+                Self::spawn_fetch_subscriptions(self.state.clone(), ctx.clone());
+            }
+            PendingAction::LoadChannel { id, title, description } => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.current_view = View::ChannelVideos {
+                        channel_id: id.clone(),
+                        channel_title: title.clone(),
+                        channel_description: description.clone(),
+                        videos: None,
+                    };
+                }
+                Self::fetch_videos(ctx.clone(), self.state.clone(), id, title);
+            }
+            PendingAction::GoBack => {
+                let mut s_lock = self.state.lock().unwrap();
+                s_lock.current_view = View::Subscriptions;
+            }
+            PendingAction::RetryVideos { id, title, description } => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.current_view = View::ChannelVideos {
+                        channel_id: id.clone(),
+                        channel_title: title.clone(),
+                        channel_description: description.clone(),
+                        videos: None,
+                    };
+                }
+                Self::fetch_videos(ctx.clone(), self.state.clone(), id, title);
+            }
+            PendingAction::SpawnDownload { video_id } => {
+                Self::spawn_download(self.state.clone(), ctx.clone(), video_id);
+            }
+            PendingAction::PlayLocal { path } => {
+                println!("Playing local video: {:?}", path);
+                let _ = open::that(path);
+            }
+            PendingAction::StreamVideo { video_id } => {
+                let url = format!("https://www.youtube.com/watch?v={}", video_id);
+                println!("Video clicked: {}", url);
+                
+                // Try to open the stream in MPV or VLC first
+                let mut players = Vec::new();
+                let resolved_path = Self::get_player_path();
+                println!("Resolved player path from config: {:?}", resolved_path);
+                if let Some(user_player) = resolved_path {
+                    players.push(user_player);
+                }
+                players.extend(vec![
+                    "mpv".to_string(),
+                    "vlc".to_string(),
+                    "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
+                    "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
+                ]);
+                
+                let mut opened = false;
+                for player in players {
+                    print!("Trying player: {} ... ", player);
+                    match std::process::Command::new(&player)
+                        .arg(&url)
+                        .spawn()
+                    {
+                        Ok(_) => {
+                            println!("SUCCESS!");
+                            opened = true;
+                            break;
+                        }
+                        Err(e) => {
+                            println!("FAILED ({})", e);
+                        }
+                    }
+                }
+
+                if !opened {
+                    println!("No media players succeeded. Falling back to default browser.");
+                    let _ = open::that(url);
+                }
+            }
+        }
     }
 }
 

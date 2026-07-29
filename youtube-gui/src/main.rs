@@ -441,69 +441,71 @@ impl eframe::App for YoutubeGuiApp {
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
                                         for sub in subs {
-                                            let texture = self.get_or_fetch_thumbnail(ctx, &sub.channel_id, &sub.thumbnail_url);
+                                            ui.push_id(&sub.channel_id, |ui| {
+                                                let texture = self.get_or_fetch_thumbnail(ctx, &sub.channel_id, &sub.thumbnail_url);
 
-                                            // Display Card with nice layout
-                                            let response = ui.group(|ui| {
-                                                ui.horizontal(|ui| {
-                                                    // Thumbnail Render
-                                                    if let Some(tex) = &texture {
-                                                        ui.add(egui::Image::from_texture(tex).max_width(50.0).max_height(50.0));
-                                                    } else {
-                                                        // Placeholder thumbnail
-                                                        let (rect, _response) = ui.allocate_exact_size(
-                                                            egui::vec2(50.0, 50.0),
-                                                            egui::Sense::hover(),
-                                                        );
-                                                        ui.painter().rect_filled(
-                                                            rect,
-                                                            4.0,
-                                                            egui::Color32::from_rgb(50, 53, 60),
-                                                        );
-                                                        ui.painter().text(
-                                                            rect.center(),
-                                                            egui::Align2::CENTER_CENTER,
-                                                            "📷",
-                                                            egui::FontId::proportional(20.0),
-                                                            egui::Color32::LIGHT_GRAY,
-                                                        );
-                                                    }
+                                                // Display Card with nice layout
+                                                let response = ui.group(|ui| {
+                                                    ui.horizontal(|ui| {
+                                                        // Thumbnail Render
+                                                        if let Some(tex) = &texture {
+                                                            ui.add(egui::Image::from_texture(tex).max_width(50.0).max_height(50.0));
+                                                        } else {
+                                                            // Placeholder thumbnail
+                                                            let (rect, _response) = ui.allocate_exact_size(
+                                                                egui::vec2(50.0, 50.0),
+                                                                egui::Sense::hover(),
+                                                            );
+                                                            ui.painter().rect_filled(
+                                                                rect,
+                                                                4.0,
+                                                                egui::Color32::from_rgb(50, 53, 60),
+                                                            );
+                                                            ui.painter().text(
+                                                                rect.center(),
+                                                                egui::Align2::CENTER_CENTER,
+                                                                "📷",
+                                                                egui::FontId::proportional(20.0),
+                                                                egui::Color32::LIGHT_GRAY,
+                                                            );
+                                                        }
 
-                                                    ui.add_space(10.0);
+                                                        ui.add_space(10.0);
 
-                                                    // Text Info
-                                                    ui.vertical(|ui| {
-                                                        ui.label(
-                                                            egui::RichText::new(&sub.title)
-                                                                .size(16.0)
-                                                                .strong()
-                                                                .color(egui::Color32::WHITE),
-                                                        );
-                                                        ui.add_space(2.0);
-                                                        ui.label(
-                                                            egui::RichText::new(format!("Channel ID: {}", sub.channel_id))
-                                                                .size(12.0)
-                                                                .color(egui::Color32::from_rgb(160, 160, 170)),
-                                                        );
+                                                        // Text Info
+                                                        ui.vertical(|ui| {
+                                                            ui.label(
+                                                                egui::RichText::new(&sub.title)
+                                                                    .size(16.0)
+                                                                    .strong()
+                                                                    .color(egui::Color32::WHITE),
+                                                            );
+                                                            ui.add_space(2.0);
+                                                            ui.label(
+                                                                egui::RichText::new(format!("Channel ID: {}", sub.channel_id))
+                                                                    .size(12.0)
+                                                                    .color(egui::Color32::from_rgb(160, 160, 170)),
+                                                            );
+                                                        });
                                                     });
                                                 });
+
+                                                // Clicking logic to load channel videos
+                                                let response = ui.interact(response.response.rect, response.response.id, egui::Sense::click());
+                                                if response.clicked() {
+                                                    action = PendingAction::LoadChannel {
+                                                        id: sub.channel_id.clone(),
+                                                        title: sub.title.clone(),
+                                                        description: sub.description.clone(),
+                                                    };
+                                                }
+
+                                                if response.hovered() {
+                                                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                                }
+
+                                                ui.add_space(8.0);
                                             });
-
-                                            // Clicking logic to load channel videos
-                                            let response = ui.interact(response.response.rect, response.response.id, egui::Sense::click());
-                                            if response.clicked() {
-                                                action = PendingAction::LoadChannel {
-                                                    id: sub.channel_id.clone(),
-                                                    title: sub.title.clone(),
-                                                    description: sub.description.clone(),
-                                                };
-                                            }
-
-                                            if response.hovered() {
-                                                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-                                            }
-
-                                            ui.add_space(8.0);
                                         }
                                     });
                             }
@@ -575,108 +577,116 @@ impl eframe::App for YoutubeGuiApp {
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
                                         for video in vids {
-                                            let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
-                                            let download_status = {
-                                                let s_lock = self.state.lock().unwrap();
-                                                s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted)
-                                            };
-
-                                            let response = ui.group(|ui| {
-                                                ui.horizontal(|ui| {
-                                                    // Thumbnail Render
-                                                    if let Some(tex) = &texture {
-                                                        ui.add(egui::Image::from_texture(tex).max_width(100.0).max_height(100.0));
-                                                    } else {
-                                                        // Placeholder thumbnail
-                                                        let (rect, _response) = ui.allocate_exact_size(
-                                                            egui::vec2(100.0, 100.0),
-                                                            egui::Sense::hover(),
-                                                        );
-                                                        ui.painter().rect_filled(
-                                                            rect,
-                                                            4.0,
-                                                            egui::Color32::from_rgb(50, 53, 60),
-                                                        );
-                                                        ui.painter().text(
-                                                            rect.center(),
-                                                            egui::Align2::CENTER_CENTER,
-                                                            "🎬",
-                                                            egui::FontId::proportional(40.0),
-                                                            egui::Color32::LIGHT_GRAY,
-                                                        );
-                                                    }
-
-                                                    ui.add_space(15.0);
-
-                                                    // Text Info
-                                                    ui.vertical(|ui| {
-                                                        ui.label(
-                                                            egui::RichText::new(&video.title)
-                                                                .size(15.0)
-                                                                .strong()
-                                                                .color(egui::Color32::WHITE),
-                                                        );
-                                                        ui.add_space(4.0);
-                                                        ui.horizontal(|ui| {
-                                                            let date = if video.published_at.len() >= 10 {
-                                                                &video.published_at[..10]
+                                            ui.push_id(&video.id, |ui| {
+                                                let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
+                                                let download_status = {
+                                                    let s_lock = self.state.lock().unwrap();
+                                                    s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted)
+                                                };
+                                                let mut card_clicked = false;
+                                                let _response = ui.group(|ui| {
+                                                    ui.horizontal(|ui| {
+                                                        let left_response = ui.horizontal(|ui| {
+                                                            // Thumbnail Render
+                                                            if let Some(tex) = &texture {
+                                                                ui.add(egui::Image::from_texture(tex).max_width(100.0).max_height(100.0));
                                                             } else {
-                                                                &video.published_at
-                                                            };
-                                                            ui.label(
-                                                                egui::RichText::new(format!("Published: {}", date))
-                                                                    .size(11.0)
-                                                                    .color(egui::Color32::from_rgb(140, 140, 150)),
-                                                            );
-                                                            ui.add_space(20.0);
-                                                            ui.label(
-                                                                egui::RichText::new(format!("ID: {}", video.id))
-                                                                    .size(11.0)
-                                                                    .color(egui::Color32::from_rgb(140, 140, 150)),
-                                                            );
-                                                        });
-                                                    });
+                                                                // Placeholder thumbnail
+                                                                let (rect, _response) = ui.allocate_exact_size(
+                                                                    egui::vec2(100.0, 100.0),
+                                                                    egui::Sense::hover(),
+                                                                );
+                                                                ui.painter().rect_filled(
+                                                                    rect,
+                                                                    4.0,
+                                                                    egui::Color32::from_rgb(50, 53, 60),
+                                                                );
+                                                                ui.painter().text(
+                                                                    rect.center(),
+                                                                    egui::Align2::CENTER_CENTER,
+                                                                    "🎬",
+                                                                    egui::FontId::proportional(40.0),
+                                                                    egui::Color32::LIGHT_GRAY,
+                                                                );
+                                                            }
 
-                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        match &download_status {
-                                                            DownloadStatus::NotStarted => {
-                                                                if ui.button("📥 Download").clicked() {
-                                                                    action = PendingAction::SpawnDownload { video_id: video.id.clone() };
-                                                                }
-                                                            }
-                                                            DownloadStatus::Downloading => {
-                                                                ui.spinner();
-                                                                ui.label("Downloading...");
-                                                            }
-                                                            DownloadStatus::Finished(_) => {
-                                                                if ui.button("▶ Play Local").clicked() {
-                                                                    if let DownloadStatus::Finished(path) = &download_status {
-                                                                        action = PendingAction::PlayLocal { path: path.clone() };
+                                                            ui.add_space(15.0);
+
+                                                            // Text Info
+                                                            ui.vertical(|ui| {
+                                                                ui.label(
+                                                                    egui::RichText::new(&video.title)
+                                                                        .size(15.0)
+                                                                        .strong()
+                                                                        .color(egui::Color32::WHITE),
+                                                                );
+                                                                ui.add_space(4.0);
+                                                                ui.horizontal(|ui| {
+                                                                    let date = if video.published_at.len() >= 10 {
+                                                                        &video.published_at[..10]
+                                                                    } else {
+                                                                        &video.published_at
+                                                                    };
+                                                                    ui.label(
+                                                                        egui::RichText::new(format!("Published: {}", date))
+                                                                            .size(11.0)
+                                                                            .color(egui::Color32::from_rgb(140, 140, 150)),
+                                                                    );
+                                                                    ui.add_space(20.0);
+                                                                    ui.label(
+                                                                        egui::RichText::new(format!("ID: {}", video.id))
+                                                                            .size(11.0)
+                                                                            .color(egui::Color32::from_rgb(140, 140, 150)),
+                                                                    );
+                                                                });
+                                                            });
+                                                        });
+
+                                                        let left_interact = ui.interact(
+                                                            left_response.response.rect,
+                                                            left_response.response.id.with("click"),
+                                                            egui::Sense::click(),
+                                                        );
+                                                        if left_interact.clicked() {
+                                                            card_clicked = true;
+                                                        }
+                                                        if left_interact.hovered() {
+                                                            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                                        }
+
+                                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                            match &download_status {
+                                                                DownloadStatus::NotStarted => {
+                                                                    if ui.button("📥 Download").clicked() {
+                                                                        action = PendingAction::SpawnDownload { video_id: video.id.clone() };
                                                                     }
                                                                 }
-                                                            }
-                                                            DownloadStatus::Failed(err) => {
-                                                                if ui.button("❌ Retry").clicked() {
-                                                                    action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                                                DownloadStatus::Downloading => {
+                                                                    ui.spinner();
+                                                                    ui.label("Downloading...");
                                                                 }
-                                                                ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
+                                                                DownloadStatus::Finished(_) => {
+                                                                    if ui.button("▶ Play Local").clicked() {
+                                                                        if let DownloadStatus::Finished(path) = &download_status {
+                                                                            action = PendingAction::PlayLocal { path: path.clone() };
+                                                                        }
+                                                                    }
+                                                                }
+                                                                DownloadStatus::Failed(err) => {
+                                                                    if ui.button("❌ Retry").clicked() {
+                                                                        action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                                                    }
+                                                                    ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
+                                                                }
                                                             }
-                                                        }
+                                                        });
                                                     });
                                                 });
+
+                                                if card_clicked && matches!(action, PendingAction::None) {
+                                                    action = PendingAction::StreamVideo { video_id: video.id.clone() };
+                                                }
                                             });
-
-                                            let response = ui.interact(response.response.rect, response.response.id, egui::Sense::click());
-                                            
-                                            if response.clicked() && matches!(action, PendingAction::None) {
-                                                action = PendingAction::StreamVideo { video_id: video.id.clone() };
-                                            }
-
-                                            if response.hovered() {
-                                                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-                                            }
-
-                                            ui.add_space(8.0);
                                         }
                                     });
                             }

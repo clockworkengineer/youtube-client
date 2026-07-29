@@ -494,11 +494,11 @@ impl eframe::App for YoutubeGuiApp {
                                                 ui.horizontal(|ui| {
                                                     // Thumbnail Render
                                                     if let Some(tex) = &texture {
-                                                        ui.add(egui::Image::from_texture(tex).max_width(50.0).max_height(50.0));
+                                                        ui.add(egui::Image::from_texture(tex).max_width(100.0).max_height(100.0));
                                                     } else {
                                                         // Placeholder thumbnail
                                                         let (rect, _response) = ui.allocate_exact_size(
-                                                            egui::vec2(50.0, 50.0),
+                                                            egui::vec2(100.0, 100.0),
                                                             egui::Sense::hover(),
                                                         );
                                                         ui.painter().rect_filled(
@@ -510,12 +510,12 @@ impl eframe::App for YoutubeGuiApp {
                                                             rect.center(),
                                                             egui::Align2::CENTER_CENTER,
                                                             "🎬",
-                                                            egui::FontId::proportional(20.0),
+                                                            egui::FontId::proportional(40.0),
                                                             egui::Color32::LIGHT_GRAY,
                                                         );
                                                     }
 
-                                                    ui.add_space(10.0);
+                                                    ui.add_space(15.0);
 
                                                     // Text Info
                                                     ui.vertical(|ui| {

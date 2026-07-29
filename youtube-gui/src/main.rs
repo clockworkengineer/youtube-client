@@ -28,6 +28,7 @@ struct AppState {
 
 struct YoutubeGuiApp {
     state: Arc<Mutex<AppState>>,
+    http_client: reqwest::Client,
 }
 
 impl YoutubeGuiApp {
@@ -45,15 +46,13 @@ impl YoutubeGuiApp {
             current_view: View::Subscriptions,
         }));
 
-        let app = Self {
-            state: state.clone(),
-        };
+        let http_client = reqwest::Client::new();
 
         // Initialize YoutubeClient and fetch subscriptions asynchronously
         let state_clone = state.clone();
         let ctx_clone = cc.egui_ctx.clone();
-        std::thread::spawn(move || {
-            let res = Self::initialize_and_fetch();
+        tokio::spawn(async move {
+            let res = Self::initialize_and_fetch_async().await;
             let mut s = state_clone.lock().unwrap();
             match res {
                 Ok(subs) => {
@@ -66,10 +65,10 @@ impl YoutubeGuiApp {
             ctx_clone.request_repaint();
         });
 
-        app
+        Self { state, http_client }
     }
 
-    fn get_client() -> Result<YoutubeClient, String> {
+    async fn get_client_async() -> Result<YoutubeClient, String> {
         #[derive(serde::Deserialize, Default)]
         struct Config {
             client_id: Option<String>,
@@ -105,11 +104,9 @@ impl YoutubeGuiApp {
             return Err("Token cache (tokencache.json) is missing. Please run the CLI login flow first: `cargo run --bin youtube-client -- login`".to_string());
         }
 
-        // 2. Initialize runtime and OAuth client
-        let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-        let client = rt.block_on(async {
-            YoutubeClient::new_oauth(&client_id, &client_secret, &token_cache_path).await
-        }).map_err(|e| format!("Authentication failed: {}", e))?;
+        // 2. Initialize OAuth client
+        let client = YoutubeClient::new_oauth(&client_id, &client_secret, &token_cache_path).await
+            .map_err(|e| format!("Authentication failed: {}", e))?;
 
         Ok(client)
     }
@@ -137,14 +134,10 @@ impl YoutubeGuiApp {
         None
     }
 
-    fn initialize_and_fetch() -> Result<Vec<Subscription>, String> {
-        let client = Self::get_client()?;
-        let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-        // Fetch subscriptions
-        let subs = rt.block_on(async {
-            client.list_subscriptions(50).await
-        }).map_err(|e| format!("Failed to fetch subscriptions: {}", e))?;
-
+    async fn initialize_and_fetch_async() -> Result<Vec<Subscription>, String> {
+        let client = Self::get_client_async().await?;
+        let subs = client.list_subscriptions(50).await
+            .map_err(|e| format!("Failed to fetch subscriptions: {}", e))?;
         Ok(subs)
     }
 
@@ -155,15 +148,13 @@ impl YoutubeGuiApp {
         _channel_title: String,
     ) {
         let state_clone = state.clone();
-        std::thread::spawn(move || {
-            let res = (|| -> Result<Vec<youtube_client_lib::Video>, String> {
-                let client = Self::get_client()?;
-                let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-                let videos = rt.block_on(async {
-                    client.list_videos(&channel_id, 20).await
-                }).map_err(|e| format!("Failed to fetch videos: {}", e))?;
+        tokio::spawn(async move {
+            let res = async {
+                let client = Self::get_client_async().await?;
+                let videos = client.list_videos(&channel_id, 20).await
+                    .map_err(|e| format!("Failed to fetch videos: {}", e))?;
                 Ok(videos)
-            })();
+            }.await;
 
             let mut s = state_clone.lock().unwrap();
             if let View::ChannelVideos { channel_id: current_id, channel_title: current_title, videos: _ } = &s.current_view {
@@ -182,42 +173,42 @@ impl YoutubeGuiApp {
     fn fetch_thumbnail(
         ctx: egui::Context,
         state: Arc<Mutex<AppState>>,
+        http_client: reqwest::Client,
         channel_id: String,
         url: String,
     ) {
-        std::thread::spawn(move || {
-            match reqwest::blocking::get(&url) {
-                Ok(response) => {
-                    if let Ok(bytes) = response.bytes() {
-                        if let Ok(img) = image::load_from_memory(&bytes) {
-                            let size = [img.width() as _, img.height() as _];
-                            let rgba = img.to_rgba8();
-                            let pixels = rgba.into_raw();
-                            let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+        tokio::spawn(async move {
+            let success = async {
+                let response = http_client.get(&url).send().await.ok()?;
+                let bytes = response.bytes().await.ok()?;
+                let img = image::load_from_memory(&bytes).ok()?;
+                let size = [img.width() as _, img.height() as _];
+                let rgba = img.to_rgba8();
+                let pixels = rgba.into_raw();
+                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
 
-                            // Load texture back on the GUI main context
-                            let texture = ctx.load_texture(
-                                format!("thumb_{}", channel_id),
-                                color_image,
-                                Default::default(),
-                            );
+                // Load texture back on the GUI main context
+                let texture = ctx.load_texture(
+                    format!("thumb_{}", channel_id),
+                    color_image,
+                    Default::default(),
+                );
 
-                            let mut s = state.lock().unwrap();
-                            if let Some(t) = s.thumbnails.get_mut(&channel_id) {
-                                t.texture = Some(texture);
-                                t.loading = false;
-                            }
-                            ctx.request_repaint();
-                            return;
-                        }
-                    }
+                let mut s = state.lock().unwrap();
+                if let Some(t) = s.thumbnails.get_mut(&channel_id) {
+                    t.texture = Some(texture);
+                    t.loading = false;
                 }
-                Err(_) => {}
-            }
-            // Mark loading as failed/finished so we don't try again
-            let mut s = state.lock().unwrap();
-            if let Some(t) = s.thumbnails.get_mut(&channel_id) {
-                t.loading = false;
+                ctx.request_repaint();
+                Some(())
+            }.await;
+
+            if success.is_none() {
+                // Mark loading as failed/finished so we don't try again
+                let mut s = state.lock().unwrap();
+                if let Some(t) = s.thumbnails.get_mut(&channel_id) {
+                    t.loading = false;
+                }
             }
         });
     }
@@ -278,8 +269,8 @@ impl eframe::App for YoutubeGuiApp {
                                     }
                                     let state_clone = self.state.clone();
                                     let ctx_clone = ctx.clone();
-                                    std::thread::spawn(move || {
-                                        let res = Self::initialize_and_fetch();
+                                    tokio::spawn(async move {
+                                        let res = Self::initialize_and_fetch_async().await;
                                         let mut s = state_clone.lock().unwrap();
                                         match res {
                                             Ok(subs) => {
@@ -313,7 +304,7 @@ impl eframe::App for YoutubeGuiApp {
                                                 let thumbnail_entry = s.thumbnails.entry(sub.channel_id.clone()).or_insert_with(|| Thumbnail {
                                                     texture: None,
                                                     loading: false,
-                                                });
+                                                 });
 
                                                 if thumbnail_entry.texture.is_none() && !thumbnail_entry.loading && !sub.thumbnail_url.is_empty() {
                                                     thumbnail_entry.loading = true;
@@ -326,6 +317,7 @@ impl eframe::App for YoutubeGuiApp {
                                                 Self::fetch_thumbnail(
                                                     ctx.clone(),
                                                     self.state.clone(),
+                                                    self.http_client.clone(),
                                                     sub.channel_id.clone(),
                                                     sub.thumbnail_url.clone(),
                                                 );
@@ -492,6 +484,7 @@ impl eframe::App for YoutubeGuiApp {
                                                 Self::fetch_thumbnail(
                                                     ctx.clone(),
                                                     self.state.clone(),
+                                                    self.http_client.clone(),
                                                     video.id.clone(),
                                                     video.thumbnail_url.clone(),
                                                 );
@@ -614,7 +607,8 @@ impl eframe::App for YoutubeGuiApp {
     }
 }
 
-fn main() -> eframe::Result<()> {
+#[tokio::main]
+async fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([700.0, 700.0])

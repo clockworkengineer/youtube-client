@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eframe = "0.26.2"
-egui = "0.26.2"
-tokio = { version = "1.53.1", features = ["full"] }
-youtube-client-lib = { path = "../youtube-client-lib" }
-anyhow = "1.0.104"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.137"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
-image = { version = "0.25", features = ["png", "jpeg"] }
-open = "5.4.0"
+eframe.workspace = true
+egui.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+youtube-client-lib = { workspace = true }
+anyhow.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+reqwest = { workspace = true }
+image = { workspace = true, features = ["png", "jpeg"] }
+open.workspace = true
 

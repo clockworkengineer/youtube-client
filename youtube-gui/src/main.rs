@@ -50,21 +50,7 @@ impl YoutubeGuiApp {
         let http_client = reqwest::Client::new();
 
         // Initialize YoutubeClient and fetch subscriptions asynchronously
-        let state_clone = state.clone();
-        let ctx_clone = cc.egui_ctx.clone();
-        tokio::spawn(async move {
-            let res = Self::initialize_and_fetch_async().await;
-            let mut s = state_clone.lock().unwrap();
-            match res {
-                Ok(subs) => {
-                    s.subscriptions = Some(Ok(subs));
-                }
-                Err(e) => {
-                    s.subscriptions = Some(Err(e));
-                }
-            }
-            ctx_clone.request_repaint();
-        });
+        Self::spawn_fetch_subscriptions(state.clone(), cc.egui_ctx.clone());
 
         Self { state, http_client }
     }
@@ -127,6 +113,22 @@ impl YoutubeGuiApp {
         let subs = client.list_subscriptions(50).await
             .map_err(|e| format!("Failed to fetch subscriptions: {}", e))?;
         Ok(subs)
+    }
+
+    fn spawn_fetch_subscriptions(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
+        tokio::spawn(async move {
+            let res = Self::initialize_and_fetch_async().await;
+            let mut s = state.lock().unwrap();
+            match res {
+                Ok(subs) => {
+                    s.subscriptions = Some(Ok(subs));
+                }
+                Err(e) => {
+                    s.subscriptions = Some(Err(e));
+                }
+            }
+            ctx.request_repaint();
+        });
     }
 
     fn fetch_videos(
@@ -256,21 +258,7 @@ impl eframe::App for YoutubeGuiApp {
                                         let mut s = self.state.lock().unwrap();
                                         s.subscriptions = None;
                                     }
-                                    let state_clone = self.state.clone();
-                                    let ctx_clone = ctx.clone();
-                                    tokio::spawn(async move {
-                                        let res = Self::initialize_and_fetch_async().await;
-                                        let mut s = state_clone.lock().unwrap();
-                                        match res {
-                                            Ok(subs) => {
-                                                s.subscriptions = Some(Ok(subs));
-                                            }
-                                            Err(e) => {
-                                                s.subscriptions = Some(Err(e));
-                                            }
-                                        }
-                                        ctx_clone.request_repaint();
-                                    });
+                                    Self::spawn_fetch_subscriptions(self.state.clone(), ctx.clone());
                                 }
                             });
                         }

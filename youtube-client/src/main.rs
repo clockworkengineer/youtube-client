@@ -115,17 +115,19 @@ async fn main() -> anyhow::Result<()> {
             )),
         }
     };
+    let get_client = || async {
+        let (client_id, client_secret) = get_credentials()?;
+        YoutubeClient::new_oauth(&client_id, &client_secret, &cli.token_cache).await
+    };
 
     match cli.command {
         Commands::Login => {
-            let (client_id, client_secret) = get_credentials()?;
             println!("Starting OAuth2 Login flow...");
-            let _client = YoutubeClient::new_oauth(&client_id, &client_secret, &cli.token_cache).await?;
+            let _client = get_client().await?;
             println!("Login successful! Token saved to {:?}", cli.token_cache);
         }
         Commands::Subscriptions { limit } => {
-            let (client_id, client_secret) = get_credentials()?;
-            let client = YoutubeClient::new_oauth(&client_id, &client_secret, &cli.token_cache).await?;
+            let client = get_client().await?;
             println!("Fetching subscriptions...");
             let subs = client.list_subscriptions(limit).await?;
             if subs.is_empty() {
@@ -139,8 +141,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Commands::Videos { channel_id, limit } => {
-            let (client_id, client_secret) = get_credentials()?;
-            let client = YoutubeClient::new_oauth(&client_id, &client_secret, &cli.token_cache).await?;
+            let client = get_client().await?;
             println!("Fetching videos for channel {}...", channel_id);
             let videos = client.list_videos(&channel_id, limit).await?;
             if videos.is_empty() {
@@ -161,15 +162,16 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Download { video_id, output } => {
             println!("Starting download for video {}...", video_id);
-            let client = if let Ok((id, secret)) = get_credentials() {
-                YoutubeClient::new_oauth(&id, &secret, &cli.token_cache).await?
-            } else {
-                println!("No OAuth credentials provided (optional for download). Using direct downloader...");
-                let url = format!("https://www.youtube.com/watch?v={}", video_id);
-                let video = rusty_ytdl::Video::new(url)?;
-                video.download(&output).await?;
-                println!("Download complete! Saved to {:?}", output);
-                return Ok(());
+            let client = match get_client().await {
+                Ok(c) => c,
+                Err(_) => {
+                    println!("No OAuth credentials provided (optional for download). Using direct downloader...");
+                    let url = format!("https://www.youtube.com/watch?v={}", video_id);
+                    let video = rusty_ytdl::Video::new(url)?;
+                    video.download(&output).await?;
+                    println!("Download complete! Saved to {:?}", output);
+                    return Ok(());
+                }
             };
             println!("Downloading via client...");
             client.download_video(&video_id, &output).await?;

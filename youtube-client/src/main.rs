@@ -69,11 +69,6 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    #[derive(serde::Deserialize, Default)]
-    struct Config {
-        client_id: Option<String>,
-        client_secret: Option<String>,
-    }
 
     let get_credentials = || -> anyhow::Result<(String, String)> {
         let mut cid = cli.client_id.clone().or_else(|| std::env::var("GOOGLE_CLIENT_ID").ok());
@@ -81,24 +76,21 @@ async fn main() -> anyhow::Result<()> {
 
         // If credentials are still missing, try loading from the config file
         if cid.is_none() || csec.is_none() {
-            let private_config = std::path::PathBuf::from("private_config.json");
-            let config_to_use = if private_config.exists() && cli.config == std::path::PathBuf::from("config.json") {
-                &private_config
+            let config = if cli.config != std::path::PathBuf::from("config.json") {
+                if let Ok(file_content) = std::fs::read_to_string(&cli.config) {
+                    serde_json::from_str::<youtube_client_lib::Config>(&file_content).unwrap_or_default()
+                } else {
+                    youtube_client_lib::load_config()
+                }
             } else {
-                &cli.config
+                youtube_client_lib::load_config()
             };
 
-            if config_to_use.exists() {
-                if let Ok(file_content) = std::fs::read_to_string(config_to_use) {
-                    if let Ok(config) = serde_json::from_str::<Config>(&file_content) {
-                        if cid.is_none() {
-                            cid = config.client_id;
-                        }
-                        if csec.is_none() {
-                            csec = config.client_secret;
-                        }
-                    }
-                }
+            if cid.is_none() {
+                cid = config.client_id;
+            }
+            if csec.is_none() {
+                csec = config.client_secret;
             }
         }
 
@@ -193,19 +185,7 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 println!("Decoding and playing audio from {:?} via Rodio...", file);
                 println!("Press Ctrl+C to stop playback.");
-                use rodio::{Decoder, DeviceSinkBuilder, Player};
-                use std::fs::File;
-                use std::io::BufReader;
-
-                let handle = DeviceSinkBuilder::open_default_sink()
-                    .map_err(|e| anyhow::anyhow!("Failed to open default audio stream: {:?}", e))?;
-                let player = Player::connect_new(&handle.mixer());
-                let f = File::open(&file)?;
-                let reader = BufReader::new(f);
-                let source = Decoder::new(reader)
-                    .map_err(|e| anyhow::anyhow!("Failed to decode audio: {}", e))?;
-                player.append(source);
-                player.sleep_until_end();
+                YoutubeClient::play_audio_rodio(&file)?;
             }
             println!("Playback finished.");
         }

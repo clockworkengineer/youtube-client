@@ -70,37 +70,14 @@ impl YoutubeGuiApp {
     }
 
     async fn get_client_async() -> Result<YoutubeClient, String> {
-        #[derive(serde::Deserialize, Default)]
-        struct Config {
-            client_id: Option<String>,
-            client_secret: Option<String>,
-        }
-
-        // 1. Locate credentials
-        let private_config = PathBuf::from("private_config.json");
-        let fallback_config = PathBuf::from("config.json");
-        let token_cache_path = PathBuf::from("tokencache.json");
-
-        let config_path = if private_config.exists() {
-            private_config
-        } else {
-            fallback_config
-        };
-
-        if !config_path.exists() {
-            return Err("Configuration file (private_config.json or config.json) is missing.".to_string());
-        }
-
-        let config_content = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read config: {}", e))?;
-        let config: Config = serde_json::from_str(&config_content)
-            .map_err(|e| format!("Failed to parse config: {}", e))?;
+        let config = youtube_client_lib::load_config();
 
         let client_id = config.client_id.filter(|s| s != "ENTER_YOUR_CLIENT_ID_HERE" && !s.is_empty())
             .ok_or_else(|| "Google Client ID is not configured.".to_string())?;
         let client_secret = config.client_secret.filter(|s| s != "ENTER_YOUR_CLIENT_SECRET_HERE" && !s.is_empty())
             .ok_or_else(|| "Google Client Secret is not configured.".to_string())?;
 
+        let token_cache_path = PathBuf::from("tokencache.json");
         if !token_cache_path.exists() {
             return Err("Token cache (tokencache.json) is missing. Please run the CLI login flow first: `cargo run --bin youtube-client -- login`".to_string());
         }
@@ -113,26 +90,36 @@ impl YoutubeGuiApp {
     }
 
     fn get_player_path() -> Option<String> {
-        #[derive(serde::Deserialize, Default)]
-        struct Config {
-            player_path: Option<String>,
-        }
+        let config = youtube_client_lib::load_config();
+        config.player_path.filter(|s| !s.is_empty() && s != "ENTER_PATH_TO_MEDIA_PLAYER_HERE")
+    }
 
-        let private_config = PathBuf::from("private_config.json");
-        let fallback_config = PathBuf::from("config.json");
+    fn get_or_fetch_thumbnail(&self, ctx: &egui::Context, id: &str, url: &str) -> Option<egui::TextureHandle> {
+        let mut start_fetch = false;
+        let texture = {
+            let mut s = self.state.lock().unwrap();
+            let thumbnail_entry = s.thumbnails.entry(id.to_string()).or_insert_with(|| Thumbnail {
+                texture: None,
+                loading: false,
+            });
 
-        let config_path = if private_config.exists() {
-            private_config
-        } else {
-            fallback_config
+            if thumbnail_entry.texture.is_none() && !thumbnail_entry.loading && !url.is_empty() {
+                thumbnail_entry.loading = true;
+                start_fetch = true;
+            }
+            thumbnail_entry.texture.clone()
         };
 
-        if let Ok(config_content) = std::fs::read_to_string(&config_path) {
-            if let Ok(config) = serde_json::from_str::<Config>(&config_content) {
-                return config.player_path.filter(|s| !s.is_empty() && s != "ENTER_PATH_TO_MEDIA_PLAYER_HERE");
-            }
+        if start_fetch {
+            Self::fetch_thumbnail(
+                ctx.clone(),
+                self.state.clone(),
+                self.http_client.clone(),
+                id.to_string(),
+                url.to_string(),
+            );
         }
-        None
+        texture
     }
 
     async fn initialize_and_fetch_async() -> Result<Vec<Subscription>, String> {
@@ -299,31 +286,7 @@ impl eframe::App for YoutubeGuiApp {
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
                                         for sub in subs {
-                                            // Start fetching thumbnail if not in the map
-                                            let mut start_fetch = false;
-                                            let texture = {
-                                                let mut s = self.state.lock().unwrap();
-                                                let thumbnail_entry = s.thumbnails.entry(sub.channel_id.clone()).or_insert_with(|| Thumbnail {
-                                                    texture: None,
-                                                    loading: false,
-                                                 });
-
-                                                if thumbnail_entry.texture.is_none() && !thumbnail_entry.loading && !sub.thumbnail_url.is_empty() {
-                                                    thumbnail_entry.loading = true;
-                                                    start_fetch = true;
-                                                }
-                                                thumbnail_entry.texture.clone()
-                                            };
-
-                                            if start_fetch {
-                                                Self::fetch_thumbnail(
-                                                    ctx.clone(),
-                                                    self.state.clone(),
-                                                    self.http_client.clone(),
-                                                    sub.channel_id.clone(),
-                                                    sub.thumbnail_url.clone(),
-                                                );
-                                            }
+                                            let texture = self.get_or_fetch_thumbnail(ctx, &sub.channel_id, &sub.thumbnail_url);
 
                                             // Display Card with nice layout
                                             let response = ui.group(|ui| {
@@ -478,31 +441,7 @@ impl eframe::App for YoutubeGuiApp {
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
                                         for video in vids {
-                                            // Start fetching video thumbnail if not in the map
-                                            let mut start_fetch = false;
-                                            let texture = {
-                                                let mut s = self.state.lock().unwrap();
-                                                let thumbnail_entry = s.thumbnails.entry(video.id.clone()).or_insert_with(|| Thumbnail {
-                                                    texture: None,
-                                                    loading: false,
-                                                });
-
-                                                if thumbnail_entry.texture.is_none() && !thumbnail_entry.loading && !video.thumbnail_url.is_empty() {
-                                                    thumbnail_entry.loading = true;
-                                                    start_fetch = true;
-                                                }
-                                                thumbnail_entry.texture.clone()
-                                            };
-
-                                            if start_fetch {
-                                                Self::fetch_thumbnail(
-                                                    ctx.clone(),
-                                                    self.state.clone(),
-                                                    self.http_client.clone(),
-                                                    video.id.clone(),
-                                                    video.thumbnail_url.clone(),
-                                                );
-                                            }
+                                            let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
 
                                             let response = ui.group(|ui| {
                                                 ui.horizontal(|ui| {

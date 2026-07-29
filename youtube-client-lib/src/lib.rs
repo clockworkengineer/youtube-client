@@ -2,6 +2,33 @@ use std::path::Path;
 use google_youtube3::{YouTube, hyper_rustls, hyper_util};
 use yup_oauth2::{InstalledFlowAuthenticator, InstalledFlowReturnMethod, ApplicationSecret};
 
+#[derive(serde::Deserialize, Clone, Debug, Default)]
+pub struct Config {
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub player_path: Option<String>,
+}
+
+pub fn load_config() -> Config {
+    let private_config = std::path::PathBuf::from("private_config.json");
+    let fallback_config = std::path::PathBuf::from("config.json");
+
+    let config_path = if private_config.exists() {
+        private_config
+    } else {
+        fallback_config
+    };
+
+    if config_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&config_path) {
+            if let Ok(config) = serde_json::from_str::<Config>(&content) {
+                return config;
+            }
+        }
+    }
+    Config::default()
+}
+
 #[derive(Clone, Debug)]
 pub struct Subscription {
     pub id: String,
@@ -178,7 +205,7 @@ impl YoutubeClient {
 
     /// Play the audio of the downloaded video file using Rodio.
     #[cfg(feature = "audio")]
-    pub fn play_audio_rodio(&self, file_path: &Path) -> anyhow::Result<()> {
+    pub fn play_audio_rodio(file_path: &Path) -> anyhow::Result<()> {
         use std::fs::File;
         use std::io::BufReader;
         use rodio::{Decoder, DeviceSinkBuilder, Player};

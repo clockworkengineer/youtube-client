@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "youtube-client",
-    "youtube-client-lib"
+    "youtube-client-lib",
+    "youtube-gui"
 ]
 resolver = "2"

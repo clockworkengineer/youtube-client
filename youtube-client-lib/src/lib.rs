@@ -2,18 +2,22 @@ use std::path::Path;
 use google_youtube3::{YouTube, hyper_rustls, hyper_util};
 use yup_oauth2::{InstalledFlowAuthenticator, InstalledFlowReturnMethod, ApplicationSecret};
 
+#[derive(Clone, Debug)]
 pub struct Subscription {
     pub id: String,
     pub title: String,
     pub description: String,
     pub channel_id: String,
+    pub thumbnail_url: String,
 }
 
+#[derive(Clone, Debug)]
 pub struct Video {
     pub id: String,
     pub title: String,
     pub description: String,
     pub published_at: String,
+    pub thumbnail_url: String,
 }
 
 pub struct YoutubeClient {
@@ -84,11 +88,16 @@ impl YoutubeClient {
                     let channel_id = snippet.resource_id
                         .and_then(|r| r.channel_id)
                         .unwrap_or_default();
+                    let thumbnail_url = snippet.thumbnails
+                        .and_then(|t| t.default)
+                        .and_then(|t| t.url)
+                        .unwrap_or_default();
                     subscriptions.push(Subscription {
                         id,
                         title,
                         description,
                         channel_id,
+                        thumbnail_url,
                     });
                 }
             }
@@ -140,11 +149,17 @@ impl YoutubeClient {
                     let description = snippet.description.unwrap_or_default();
                     let published_at = snippet.published_at.unwrap_or_default();
                     
+                    let thumbnail_url = snippet.thumbnails
+                        .and_then(|t| t.default)
+                        .and_then(|t| t.url)
+                        .unwrap_or_default();
+
                     videos.push(Video {
                         id: video_id,
                         title,
                         description,
                         published_at: published_at.to_string(),
+                        thumbnail_url,
                     });
                 }
             }

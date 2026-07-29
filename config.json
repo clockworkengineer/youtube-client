@@ -1,4 +1,5 @@
 {
   "client_id": "ENTER_YOUR_CLIENT_ID_HERE",
-  "client_secret": "ENTER_YOUR_CLIENT_SECRET_HERE"
+  "client_secret": "ENTER_YOUR_CLIENT_SECRET_HERE",
+  "player_path": "ENTER_PATH_TO_MEDIA_PLAYER_HERE"
 }

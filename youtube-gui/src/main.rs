@@ -58,10 +58,15 @@ impl YoutubeGuiApp {
     async fn get_client_async() -> Result<YoutubeClient, String> {
         let config = youtube_client_lib::load_config();
 
-        let client_id = config.client_id.filter(|s| s != "ENTER_YOUR_CLIENT_ID_HERE" && !s.is_empty())
-            .ok_or_else(|| "Google Client ID is not configured.".to_string())?;
-        let client_secret = config.client_secret.filter(|s| s != "ENTER_YOUR_CLIENT_SECRET_HERE" && !s.is_empty())
-            .ok_or_else(|| "Google Client Secret is not configured.".to_string())?;
+        if !config.is_valid() {
+            return Err(format!(
+                "Google Client Credentials are not configured.\n\n{}",
+                youtube_client_lib::GOOGLE_SETUP_INSTRUCTIONS
+            ));
+        }
+
+        let client_id = config.client_id.unwrap();
+        let client_secret = config.client_secret.unwrap();
 
         let token_cache_path = PathBuf::from("tokencache.json");
         if !token_cache_path.exists() {

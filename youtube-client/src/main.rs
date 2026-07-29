@@ -94,25 +94,19 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        match (cid, csec) {
-            (Some(id), Some(secret)) => Ok((id, secret)),
-            _ => Err(anyhow::anyhow!(
-                "Error: Google Client ID and Client Secret must be provided!\n\n\
-                Please configure them in one of the following ways:\n\
-                1. Pass them as arguments: --client-id <ID> --client-secret <SECRET>\n\
-                2. Set the GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables\n\
-                3. Create a config file (config.json) with client credentials, e.g.:\n\
-                   {{\n\
-                     \"client_id\": \"your_id_here\",\n\
-                     \"client_secret\": \"your_secret_here\"\n\
-                   }}\n\n\
-                To get Google API Client credentials:\n\
-                1. Go to the Google Cloud Console: https://console.cloud.google.com/\n\
-                2. Create a project and search for the \"YouTube Data API v3\" and enable it.\n\
-                3. Navigate to \"APIs & Services\" > \"Credentials\".\n\
-                4. Click \"Create Credentials\" > \"OAuth client ID\". Choose \"Desktop app\".\n\
-                5. Retrieve your Client ID and Client Secret."
-            )),
+        let temp_config = youtube_client_lib::Config {
+            client_id: cid,
+            client_secret: csec,
+            player_path: None,
+        };
+
+        if temp_config.is_valid() {
+            Ok((temp_config.client_id.unwrap(), temp_config.client_secret.unwrap()))
+        } else {
+            Err(anyhow::anyhow!(
+                "Error: Google Client ID and Client Secret must be provided!\n\n{}",
+                youtube_client_lib::GOOGLE_SETUP_INSTRUCTIONS
+            ))
         }
     };
     let get_client = || async {

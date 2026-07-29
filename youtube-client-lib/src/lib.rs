@@ -9,6 +9,32 @@ pub struct Config {
     pub player_path: Option<String>,
 }
 
+impl Config {
+    pub fn is_valid(&self) -> bool {
+        let invalid_id = |id: &str| id.is_empty() || id == "ENTER_YOUR_CLIENT_ID_HERE";
+        let invalid_secret = |sec: &str| sec.is_empty() || sec == "ENTER_YOUR_CLIENT_SECRET_HERE";
+        
+        self.client_id.as_deref().map_or(false, |id| !invalid_id(id))
+            && self.client_secret.as_deref().map_or(false, |sec| !invalid_secret(sec))
+    }
+}
+
+pub const GOOGLE_SETUP_INSTRUCTIONS: &str = "\
+Please configure them in one of the following ways:\n\
+1. Pass them as arguments: --client-id <ID> --client-secret <SECRET>\n\
+2. Set the GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables\n\
+3. Create a config file (config.json) with client credentials, e.g.:\n\
+   {\n\
+     \"client_id\": \"your_id_here\",\n\
+     \"client_secret\": \"your_secret_here\"\n\
+   }\n\n\
+To get Google API Client credentials:\n\
+1. Go to the Google Cloud Console: https://console.cloud.google.com/\n\
+2. Create a project and search for the \"YouTube Data API v3\" and enable it.\n\
+3. Navigate to \"APIs & Services\" > \"Credentials\".\n\
+4. Click \"Create Credentials\" > \"OAuth client ID\". Choose \"Desktop app\".\n\
+5. Retrieve your Client ID and Client Secret.";
+
 pub fn load_config() -> Config {
     load_config_from_dir(Path::new("."))
 }

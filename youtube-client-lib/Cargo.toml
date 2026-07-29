@@ -7,10 +7,15 @@ edition = "2024"
 anyhow.workspace = true
 google-youtube3.workspace = true
 open.workspace = true
-rodio.workspace = true
-rusty_ytdl.workspace = true
-tokio = { workspace = true, features = ["full"] }
+rodio = { workspace = true, optional = true }
+rusty_ytdl = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["rt", "sync"] }
 yup-oauth2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+
+[features]
+default = ["audio", "download"]
+audio = ["dep:rodio"]
+download = ["dep:rusty_ytdl"]
 

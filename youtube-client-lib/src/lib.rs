@@ -168,6 +168,7 @@ impl YoutubeClient {
     }
 
     /// Download a YouTube video by ID to the target path.
+    #[cfg(feature = "download")]
     pub async fn download_video(&self, video_id: &str, output_path: &Path) -> anyhow::Result<()> {
         let url = format!("https://www.youtube.com/watch?v={}", video_id);
         let video = rusty_ytdl::Video::new(url)?;
@@ -176,6 +177,7 @@ impl YoutubeClient {
     }
 
     /// Play the audio of the downloaded video file using Rodio.
+    #[cfg(feature = "audio")]
     pub fn play_audio_rodio(&self, file_path: &Path) -> anyhow::Result<()> {
         use std::fs::File;
         use std::io::BufReader;

@@ -16,6 +16,7 @@ enum View {
     ChannelVideos {
         channel_id: String,
         channel_title: String,
+        channel_description: String,
         videos: Option<Result<Vec<youtube_client_lib::Video>, String>>,
     },
 }
@@ -157,11 +158,12 @@ impl YoutubeGuiApp {
             }.await;
 
             let mut s = state_clone.lock().unwrap();
-            if let View::ChannelVideos { channel_id: current_id, channel_title: current_title, videos: _ } = &s.current_view {
+            if let View::ChannelVideos { channel_id: current_id, channel_title: current_title, channel_description: current_desc, videos: _ } = &s.current_view {
                 if current_id == &channel_id {
                     s.current_view = View::ChannelVideos {
                         channel_id,
                         channel_title: current_title.clone(),
+                        channel_description: current_desc.clone(),
                         videos: Some(res),
                     };
                 }
@@ -377,6 +379,7 @@ impl eframe::App for YoutubeGuiApp {
                                                     s.current_view = View::ChannelVideos {
                                                         channel_id: sub.channel_id.clone(),
                                                         channel_title: sub.title.clone(),
+                                                        channel_description: sub.description.clone(),
                                                         videos: None,
                                                     };
                                                 }
@@ -399,20 +402,30 @@ impl eframe::App for YoutubeGuiApp {
                         }
                     }
                 }
-                View::ChannelVideos { channel_id, channel_title, videos } => {
+                View::ChannelVideos { channel_id, channel_title, channel_description, videos } => {
                     // Header Area
-                    ui.horizontal(|ui| {
-                        if ui.button("⬅ Go Back").clicked() {
-                            let mut s = self.state.lock().unwrap();
-                            s.current_view = View::Subscriptions;
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            if ui.button("⬅ Go Back").clicked() {
+                                let mut s = self.state.lock().unwrap();
+                                s.current_view = View::Subscriptions;
+                            }
+                            ui.add_space(15.0);
+                            ui.heading(
+                                egui::RichText::new(format!("Videos: {}", channel_title))
+                                    .size(20.0)
+                                    .strong()
+                                    .color(egui::Color32::WHITE),
+                            );
+                        });
+                        if !channel_description.is_empty() {
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(&channel_description)
+                                    .size(13.0)
+                                    .color(egui::Color32::from_rgb(160, 160, 170)),
+                            );
                         }
-                        ui.add_space(15.0);
-                        ui.heading(
-                            egui::RichText::new(format!("Videos: {}", channel_title))
-                                .size(20.0)
-                                .strong()
-                                .color(egui::Color32::WHITE),
-                        );
                     });
 
                     ui.add_space(10.0);
@@ -441,6 +454,7 @@ impl eframe::App for YoutubeGuiApp {
                                         s.current_view = View::ChannelVideos {
                                             channel_id: channel_id.clone(),
                                             channel_title: channel_title.clone(),
+                                            channel_description: channel_description.clone(),
                                             videos: None,
                                         };
                                     }

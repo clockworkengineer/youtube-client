@@ -10,8 +10,12 @@ pub struct Config {
 }
 
 pub fn load_config() -> Config {
-    let private_config = std::path::PathBuf::from("private_config.json");
-    let fallback_config = std::path::PathBuf::from("config.json");
+    load_config_from_dir(Path::new("."))
+}
+
+pub fn load_config_from_dir(dir: &Path) -> Config {
+    let private_config = dir.join("private_config.json");
+    let fallback_config = dir.join("config.json");
 
     let config_path = if private_config.exists() {
         private_config
@@ -27,6 +31,13 @@ pub fn load_config() -> Config {
         }
     }
     Config::default()
+}
+
+fn extract_thumbnail_url(thumbnails: Option<google_youtube3::api::ThumbnailDetails>) -> String {
+    thumbnails
+        .and_then(|t| t.default)
+        .and_then(|t| t.url)
+        .unwrap_or_default()
 }
 
 #[derive(Clone, Debug)]
@@ -115,10 +126,8 @@ impl YoutubeClient {
                     let channel_id = snippet.resource_id
                         .and_then(|r| r.channel_id)
                         .unwrap_or_default();
-                    let thumbnail_url = snippet.thumbnails
-                        .and_then(|t| t.default)
-                        .and_then(|t| t.url)
-                        .unwrap_or_default();
+                    let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
+
                     subscriptions.push(Subscription {
                         id,
                         title,
@@ -176,10 +185,8 @@ impl YoutubeClient {
                     let description = snippet.description.unwrap_or_default();
                     let published_at = snippet.published_at.unwrap_or_default();
                     
-                    let thumbnail_url = snippet.thumbnails
-                        .and_then(|t| t.default)
-                        .and_then(|t| t.url)
-                        .unwrap_or_default();
+                    let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
+
 
                     videos.push(Video {
                         id: video_id,
@@ -283,45 +290,27 @@ mod tests {
 
         // Since the current directory of tests in cargo is the crate root (youtube-client-lib),
         // we check for `private_config.json` and `config.json` relative to it, in the parent directory (../).
-        let private_config_path = PathBuf::from("../private_config.json");
-        let fallback_config_path = PathBuf::from("../config.json");
+        let config = load_config_from_dir(Path::new(".."));
         let token_cache_path = PathBuf::from("../tokencache.json");
 
-        let config_path = if private_config_path.exists() {
-            private_config_path
-        } else {
-            fallback_config_path
-        };
-
-        if !config_path.exists() {
-            println!("Skipping real connection test because no config file exists at {:?}", config_path);
+        if config.client_id.is_none() || config.client_secret.is_none() {
+            println!("Skipping real connection test because no config file or client credentials exist.");
             return;
         }
 
-        if !token_cache_path.exists() {
-            println!("Skipping real connection test because tokencache.json does not exist at {:?}. Please run CLI login flow first.", token_cache_path);
-            return;
-        }
-
-        #[derive(serde::Deserialize)]
-        struct Config {
-            client_id: String,
-            client_secret: String,
-        }
-
-        let config_content = std::fs::read_to_string(&config_path).unwrap();
-        let config: Config = serde_json::from_str(&config_content).unwrap();
+        let client_id = config.client_id.unwrap();
+        let client_secret = config.client_secret.unwrap();
 
         // If the client ID / secret are still placeholders, skip the test
-        if config.client_id == "ENTER_YOUR_CLIENT_ID_HERE" || config.client_id.is_empty() {
+        if client_id == "ENTER_YOUR_CLIENT_ID_HERE" || client_id.is_empty() {
             println!("Skipping real connection test because config contains placeholder values.");
             return;
         }
 
-        println!("Running real YouTube connection test using {:?}", config_path);
+        println!("Running real YouTube connection test...");
         let client = YoutubeClient::new_oauth(
-            &config.client_id,
-            &config.client_secret,
+            &client_id,
+            &client_secret,
             &token_cache_path,
         ).await;
 

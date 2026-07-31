@@ -232,7 +232,17 @@ impl YoutubeGuiApp {
         let mut has_full_scope = false;
         if let Ok(content) = std::fs::read_to_string(&token_cache_path) {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(obj) = val.as_object() {
+                if let Some(arr) = val.as_array() {
+                    for item in arr {
+                        if let Some(scopes) = item.get("scopes").and_then(|s| s.as_array()) {
+                            for scope in scopes {
+                                if scope.as_str() == Some("https://www.googleapis.com/auth/youtube") {
+                                    has_full_scope = true;
+                                }
+                            }
+                        }
+                    }
+                } else if let Some(obj) = val.as_object() {
                     for (_k, v) in obj {
                         if let Some(scopes) = v.get("scopes").and_then(|s| s.as_array()) {
                             for scope in scopes {

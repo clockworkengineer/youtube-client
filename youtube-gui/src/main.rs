@@ -1542,7 +1542,15 @@ impl eframe::App for YoutubeGuiApp {
                     ui.horizontal(|ui| {
                         let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
                         if let Some(tex) = &texture {
-                            ui.add(egui::Image::from_texture(tex).max_width(200.0).max_height(150.0));
+                            let img = egui::Image::from_texture(tex).max_width(200.0).max_height(150.0).sense(egui::Sense::click());
+                            let img_response = ui.add(img);
+                            if img_response.clicked() {
+                                action = PendingAction::StreamVideo { video_id: video.id.clone() };
+                            }
+                            if img_response.hovered() {
+                                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                img_response.on_hover_text("Click to stream video");
+                            }
                         } else {
                             let (rect, _response) = ui.allocate_exact_size(
                                 egui::vec2(200.0, 150.0),
@@ -1583,7 +1591,7 @@ impl eframe::App for YoutubeGuiApp {
 
                                 match &download_status {
                                     DownloadStatus::NotStarted => {
-                                        if ui.button("📥 Download").clicked() {
+                                        if ui.button("📥 Download Audio").clicked() {
                                             action = PendingAction::SpawnDownload { video_id: video.id.clone() };
                                         }
                                     }
@@ -1592,7 +1600,7 @@ impl eframe::App for YoutubeGuiApp {
                                         ui.label("Downloading...");
                                     }
                                     DownloadStatus::Finished(_) => {
-                                        if ui.button("▶ Play Local").clicked() {
+                                        if ui.button(egui::RichText::new("▶ Play Local Audio").color(egui::Color32::from_rgb(100, 255, 100)).strong()).clicked() {
                                             if let DownloadStatus::Finished(path) = &download_status {
                                                 action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
                                             }
@@ -1608,7 +1616,7 @@ impl eframe::App for YoutubeGuiApp {
 
                                 ui.add_space(10.0);
 
-                                if ui.button("📺 Stream").clicked() {
+                                if ui.button(egui::RichText::new("📺 Stream Video").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
                                     action = PendingAction::StreamVideo { video_id: video.id.clone() };
                                 }
 

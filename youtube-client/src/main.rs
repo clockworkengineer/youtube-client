@@ -133,35 +133,28 @@ async fn main() -> anyhow::Result<()> {
             let client = get_client().await?;
             println!("Fetching subscriptions...");
             let subs = client.list_subscriptions(limit).await?;
-            if subs.is_empty() {
-                println!("No subscriptions found.");
-            } else {
-                println!("{:<5} {:<30} {:<30}", "Index", "Title", "Channel ID");
-                println!("{}", "-".repeat(70));
-                for (idx, sub) in subs.iter().enumerate() {
-                    println!("{:<5} {:<30} {:<30}", idx + 1, truncate(&sub.title, 28), sub.channel_id);
-                }
-            }
+            print_table(
+                &["Index", "Title", "Channel ID"],
+                &[5, 30, 30],
+                &subs,
+                |sub, idx| vec![(idx + 1).to_string(), truncate(&sub.title, 28), sub.channel_id.clone()],
+            );
         }
         Commands::Videos { channel_id, limit } => {
             let client = get_client().await?;
             println!("Fetching videos for channel {}...", channel_id);
             let videos = client.list_videos(&channel_id, limit).await?;
-            if videos.is_empty() {
-                println!("No videos found.");
-            } else {
-                println!("{:<5} {:<40} {:<15} {:<15}", "Index", "Title", "Video ID", "Published At");
-                println!("{}", "-".repeat(80));
-                for (idx, vid) in videos.iter().enumerate() {
-                    println!(
-                        "{:<5} {:<40} {:<15} {:<15}",
-                        idx + 1,
-                        truncate(&vid.title, 38),
-                        vid.id,
-                        truncate(&vid.published_at, 10)
-                    );
-                }
-            }
+            print_table(
+                &["Index", "Title", "Video ID", "Published At"],
+                &[5, 40, 15, 15],
+                &videos,
+                |vid, idx| vec![
+                    (idx + 1).to_string(),
+                    truncate(&vid.title, 38),
+                    vid.id.clone(),
+                    truncate(&vid.published_at, 10),
+                ],
+            );
         }
         Commands::Download { video_id, output } => {
             println!("Starting download for video {}...", video_id);
@@ -206,5 +199,33 @@ fn truncate(s: &str, max_chars: usize) -> String {
         truncated
     } else {
         s.to_string()
+    }
+}
+
+fn print_table<T>(
+    headers: &[&str],
+    widths: &[usize],
+    items: &[T],
+    row_formatter: impl Fn(&T, usize) -> Vec<String>,
+) {
+    if items.is_empty() {
+        println!("No items found.");
+        return;
+    }
+
+    for (i, header) in headers.iter().enumerate() {
+        print!("{:<width$} ", header, width = widths[i]);
+    }
+    println!();
+
+    let total_width: usize = widths.iter().sum::<usize>() + widths.len() - 1;
+    println!("{}", "-".repeat(total_width));
+
+    for (idx, item) in items.iter().enumerate() {
+        let cols = row_formatter(item, idx);
+        for (i, col) in cols.iter().enumerate() {
+            print!("{:<width$} ", col, width = widths[i]);
+        }
+        println!();
     }
 }

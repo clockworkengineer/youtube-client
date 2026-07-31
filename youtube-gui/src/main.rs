@@ -352,8 +352,13 @@ impl YoutubeGuiApp {
                 std::fs::write("private_config.json", content).map_err(|e| e.to_string())?;
 
                 let token_cache_path = PathBuf::from("tokencache.json");
-                let client = YoutubeClient::new_oauth(&id, &secret, &token_cache_path).await
-                    .map_err(|e| format!("OAuth initialization failed: {}", e))?;
+                let client = YoutubeClient::new_oauth_with_scopes(
+                    &id,
+                    &secret,
+                    &token_cache_path,
+                    &["https://www.googleapis.com/auth/youtube"],
+                ).await
+                .map_err(|e| format!("OAuth initialization failed: {}", e))?;
                 client.test_connection().await
                     .map_err(|e| format!("YouTube connection failed: {}", e))?;
                 Ok(())
@@ -774,7 +779,15 @@ impl eframe::App for YoutubeGuiApp {
                                 }
                             }
 
-                            if let Some(err) = &login_error {
+                            let display_error = login_error.as_ref().or_else(|| {
+                                if let Some(Err(err)) = &subscriptions {
+                                    Some(err)
+                                } else {
+                                    None
+                                }
+                            });
+
+                            if let Some(err) = display_error {
                                 ui.add_space(10.0);
                                 ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠️ Error: {}", err));
                             }

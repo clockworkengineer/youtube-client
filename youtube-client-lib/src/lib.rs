@@ -227,6 +227,47 @@ impl YoutubeClient {
         Ok(videos)
     }
 
+    /// Search for videos using a query string.
+    pub async fn search_videos(&self, query: &str, max_results: u32) -> anyhow::Result<Vec<Video>> {
+        let limit = max_results.min(50);
+        let req = self.hub.search()
+            .list(&vec!["snippet".to_string()])
+            .q(query)
+            .add_type("video")
+            .max_results(limit);
+
+        let (_resp, search_res) = req.doit().await?;
+        let mut videos = Vec::new();
+        if let Some(items) = search_res.items {
+            for item in items {
+                if let Some(snippet) = item.snippet {
+                    let video_id = item.id
+                        .and_then(|id| id.video_id)
+                        .unwrap_or_default();
+                    
+                    if video_id.is_empty() {
+                        continue;
+                    }
+
+                    let title = snippet.title.unwrap_or_default();
+                    let description = snippet.description.unwrap_or_default();
+                    let published_at = snippet.published_at.unwrap_or_default();
+                    let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
+
+                    videos.push(Video {
+                        id: video_id,
+                        title,
+                        description,
+                        published_at: published_at.to_string(),
+                        thumbnail_url,
+                    });
+                }
+            }
+        }
+        Ok(videos)
+    }
+
+
     /// Download a YouTube video by ID to the target path.
     #[cfg(feature = "download")]
     pub async fn download_video(&self, video_id: &str, output_path: &Path) -> anyhow::Result<()> {

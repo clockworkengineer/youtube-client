@@ -225,8 +225,13 @@ impl YoutubeGuiApp {
         }
 
         // 2. Initialize OAuth client
-        let client = YoutubeClient::new_oauth(&client_id, &client_secret, &token_cache_path).await
-            .map_err(|e| format!("Authentication failed: {}", e))?;
+        let client = YoutubeClient::new_oauth_with_scopes(
+            &client_id,
+            &client_secret,
+            &token_cache_path,
+            &["https://www.googleapis.com/auth/youtube"],
+        ).await
+        .map_err(|e| format!("Authentication failed: {}", e))?;
 
         Ok(client)
     }

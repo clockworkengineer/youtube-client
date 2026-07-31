@@ -93,6 +93,15 @@ pub struct Playlist {
     pub video_count: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct Comment {
+    pub author_name: String,
+    pub author_thumbnail: String,
+    pub text_display: String,
+    pub published_at: String,
+    pub like_count: u32,
+}
+
 
 pub struct YoutubeClient {
     hub: YouTube<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>,
@@ -106,6 +115,20 @@ impl YoutubeClient {
         client_secret: &str,
         token_cache_path: &Path,
     ) -> anyhow::Result<Self> {
+        Self::new_oauth_with_scopes(
+            client_id,
+            client_secret,
+            token_cache_path,
+            &["https://www.googleapis.com/auth/youtube.readonly"],
+        ).await
+    }
+
+    pub async fn new_oauth_with_scopes(
+        client_id: &str,
+        client_secret: &str,
+        token_cache_path: &Path,
+        scopes: &[&str],
+    ) -> anyhow::Result<Self> {
         let secret = ApplicationSecret {
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
@@ -114,9 +137,6 @@ impl YoutubeClient {
             redirect_uris: vec!["http://localhost".to_string()],
             ..Default::default()
         };
-
-        // We use the youtube.readonly scope to read subscriptions and videos
-        let scopes = &["https://www.googleapis.com/auth/youtube.readonly"];
 
         let auth = InstalledFlowAuthenticator::builder(
             secret,
@@ -352,6 +372,124 @@ impl YoutubeClient {
         }
         Ok(videos)
     }
+
+    /// Subscribe to a channel.
+    pub async fn subscribe_to_channel(&self, channel_id: &str) -> anyhow::Result<()> {
+        use google_youtube3::api::{Subscription as YtSub, SubscriptionSnippet, ResourceId};
+        let snippet = SubscriptionSnippet {
+            resource_id: Some(ResourceId {
+                kind: Some("youtube#channel".to_string()),
+                channel_id: Some(channel_id.to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let sub = YtSub {
+            snippet: Some(snippet),
+            ..Default::default()
+        };
+        self.hub.subscriptions().insert(sub).doit().await?;
+        Ok(())
+    }
+
+    /// Unsubscribe from a channel using its subscription ID.
+    pub async fn unsubscribe_from_channel(&self, subscription_id: &str) -> anyhow::Result<()> {
+        self.hub.subscriptions().delete(subscription_id).doit().await?;
+        Ok(())
+    }
+
+    /// Create a new playlist.
+    pub async fn create_playlist(&self, title: &str, description: Option<&str>) -> anyhow::Result<Playlist> {
+        use google_youtube3::api::{Playlist as YtPlaylist, PlaylistSnippet};
+        let snippet = PlaylistSnippet {
+            title: Some(title.to_string()),
+            description: description.map(|d| d.to_string()),
+            ..Default::default()
+        };
+        let pl = YtPlaylist {
+            snippet: Some(snippet),
+            ..Default::default()
+        };
+        let (_resp, playlist_res) = self.hub.playlists().insert(pl).doit().await?;
+        let id = playlist_res.id.unwrap_or_default();
+        let title = playlist_res.snippet.as_ref().and_then(|s| s.title.clone()).unwrap_or_default();
+        let description = playlist_res.snippet.as_ref().and_then(|s| s.description.clone()).unwrap_or_default();
+        let thumbnail_url = playlist_res.snippet.as_ref().and_then(|s| s.thumbnails.clone()).and_then(|t| t.default).and_then(|t| t.url).unwrap_or_default();
+        let video_count = playlist_res.content_details.and_then(|cd| cd.item_count).unwrap_or(0);
+        
+        Ok(Playlist {
+            id,
+            title,
+            description,
+            thumbnail_url,
+            video_count,
+        })
+    }
+
+    /// Add a video to a playlist.
+    pub async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> anyhow::Result<()> {
+        use google_youtube3::api::{PlaylistItem, PlaylistItemSnippet, ResourceId};
+        let snippet = PlaylistItemSnippet {
+            playlist_id: Some(playlist_id.to_string()),
+            resource_id: Some(ResourceId {
+                kind: Some("youtube#video".to_string()),
+                video_id: Some(video_id.to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let item = PlaylistItem {
+            snippet: Some(snippet),
+            ..Default::default()
+        };
+        self.hub.playlist_items().insert(item).doit().await?;
+        Ok(())
+    }
+
+    /// Remove a video from a playlist using its playlist item ID.
+    pub async fn remove_from_playlist(&self, playlist_item_id: &str) -> anyhow::Result<()> {
+        self.hub.playlist_items().delete(playlist_item_id).doit().await?;
+        Ok(())
+    }
+
+    /// Rate a video ("like", "dislike", or "none").
+    pub async fn rate_video(&self, video_id: &str, rating: &str) -> anyhow::Result<()> {
+        self.hub.videos().rate(video_id, rating).doit().await?;
+        Ok(())
+    }
+
+    /// Fetch top comment threads for a video.
+    pub async fn fetch_comments(&self, video_id: &str) -> anyhow::Result<Vec<Comment>> {
+        let (_resp, comment_res) = self.hub.comment_threads()
+            .list(&vec!["snippet".to_string()])
+            .video_id(video_id)
+            .max_results(20)
+            .doit()
+            .await?;
+
+        let mut comments = Vec::new();
+        if let Some(items) = comment_res.items {
+            for item in items {
+                if let Some(snippet) = item.snippet.and_then(|s| s.top_level_comment).and_then(|c| c.snippet) {
+                    let author_name = snippet.author_display_name.unwrap_or_default();
+                    let author_thumbnail = snippet.author_profile_image_url.unwrap_or_default();
+                    let text_display = snippet.text_display.unwrap_or_default();
+                    let published_at = snippet.published_at.unwrap_or_default();
+                    let like_count = snippet.like_count.unwrap_or(0);
+
+                    comments.push(Comment {
+                        author_name,
+                        author_thumbnail,
+                        text_display,
+                        published_at: published_at.to_string(),
+                        like_count,
+                    });
+                }
+            }
+        }
+        Ok(comments)
+    }
+
 
 
 

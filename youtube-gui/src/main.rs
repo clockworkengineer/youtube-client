@@ -63,11 +63,32 @@ struct AppState {
     subscriptions: Option<Result<Vec<Subscription>, String>>,
     thumbnails: HashMap<String, Thumbnail>,
     current_view: View,
+    view_history: Vec<View>,
     logging_in: bool,
     login_error: Option<String>,
     downloads: HashMap<String, DownloadStatus>,
     player_state: PlayerState,
     playlists: Option<Result<Vec<youtube_client_lib::Playlist>, String>>,
+}
+
+impl AppState {
+    fn navigate_to(&mut self, new_view: View) {
+        self.view_history.push(self.current_view.clone());
+        self.current_view = new_view;
+    }
+
+    fn navigate_clear_history(&mut self, new_view: View) {
+        self.view_history.clear();
+        self.current_view = new_view;
+    }
+
+    fn go_back(&mut self) {
+        if let Some(prev) = self.view_history.pop() {
+            self.current_view = prev;
+        } else {
+            self.current_view = View::Subscriptions;
+        }
+    }
 }
 
 
@@ -99,6 +120,7 @@ impl YoutubeGuiApp {
             subscriptions: None,
             thumbnails: HashMap::new(),
             current_view: View::Subscriptions,
+            view_history: Vec::new(),
             logging_in: false,
             login_error: None,
             downloads: HashMap::new(),
@@ -661,6 +683,7 @@ enum PendingAction {
     None,
     SpawnLogin { id: String, secret: String },
     RetrySubscriptions,
+    GoToSubscriptions,
     LoadChannel { id: String, title: String, description: String },
     GoBack,
     RetryVideos { id: String, title: String, description: String },
@@ -737,7 +760,7 @@ impl eframe::App for YoutubeGuiApp {
                 ui.horizontal(|ui| {
                     let on_subs = matches!(current_view, View::Subscriptions | View::ChannelVideos { .. });
                     if ui.selectable_label(on_subs, "📺 Subscriptions").clicked() {
-                        action = PendingAction::GoBack;
+                        action = PendingAction::GoToSubscriptions;
                     }
                     ui.add_space(10.0);
                     let on_playlists = matches!(current_view, View::Playlists { .. } | View::PlaylistVideos { .. });
@@ -1717,18 +1740,22 @@ impl eframe::App for YoutubeGuiApp {
             PendingAction::LoadChannel { id, title, description } => {
                 {
                     let mut s_lock = self.state.lock().unwrap();
-                    s_lock.current_view = View::ChannelVideos {
+                    s_lock.navigate_to(View::ChannelVideos {
                         channel_id: id.clone(),
                         channel_title: title.clone(),
                         channel_description: description.clone(),
                         videos: None,
-                    };
+                    });
                 }
                 Self::fetch_videos(ctx.clone(), self.state.clone(), id, title);
             }
             PendingAction::GoBack => {
                 let mut s_lock = self.state.lock().unwrap();
-                s_lock.current_view = View::Subscriptions;
+                s_lock.go_back();
+            }
+            PendingAction::GoToSubscriptions => {
+                let mut s_lock = self.state.lock().unwrap();
+                s_lock.navigate_clear_history(View::Subscriptions);
             }
             PendingAction::RetryVideos { id, title, description } => {
                 {
@@ -1793,10 +1820,10 @@ impl eframe::App for YoutubeGuiApp {
             PendingAction::Search { query } => {
                 {
                     let mut s_lock = self.state.lock().unwrap();
-                    s_lock.current_view = View::SearchResults {
+                    s_lock.navigate_to(View::SearchResults {
                         query: query.clone(),
                         videos: None,
-                    };
+                    });
                 }
                 Self::fetch_search_results(ctx.clone(), self.state.clone(), query);
             }
@@ -1813,8 +1840,9 @@ impl eframe::App for YoutubeGuiApp {
             PendingAction::LoadPlaylists => {
                 let cache = {
                     let mut s_lock = self.state.lock().unwrap();
-                    s_lock.current_view = View::Playlists { playlists: s_lock.playlists.clone() };
-                    s_lock.playlists.clone()
+                    let cached = s_lock.playlists.clone();
+                    s_lock.navigate_clear_history(View::Playlists { playlists: cached.clone() });
+                    cached
                 };
                 if cache.is_none() {
                     Self::spawn_fetch_playlists(self.state.clone(), ctx.clone());
@@ -1831,11 +1859,11 @@ impl eframe::App for YoutubeGuiApp {
             PendingAction::LoadPlaylistVideos { id, title } => {
                 {
                     let mut s_lock = self.state.lock().unwrap();
-                    s_lock.current_view = View::PlaylistVideos {
+                    s_lock.navigate_to(View::PlaylistVideos {
                         playlist_id: id.clone(),
                         playlist_title: title.clone(),
                         videos: None,
-                    };
+                    });
                 }
                 Self::fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
             }
@@ -1853,10 +1881,10 @@ impl eframe::App for YoutubeGuiApp {
             PendingAction::LoadVideoDetails { video } => {
                 {
                     let mut s_lock = self.state.lock().unwrap();
-                    s_lock.current_view = View::VideoDetails {
+                    s_lock.navigate_to(View::VideoDetails {
                         video: video.clone(),
                         comments: None,
-                    };
+                    });
                 }
                 Self::spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
             }

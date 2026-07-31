@@ -69,6 +69,7 @@ struct AppState {
     downloads: HashMap<String, DownloadStatus>,
     player_state: PlayerState,
     playlists: Option<Result<Vec<youtube_client_lib::Playlist>, String>>,
+    playlist_action_status: Option<Result<String, String>>,
 }
 
 impl AppState {
@@ -129,6 +130,7 @@ impl YoutubeGuiApp {
                 playing: false,
             },
             playlists: None,
+            playlist_action_status: None,
         }));
 
         let http_client = reqwest::Client::new();
@@ -632,6 +634,22 @@ impl YoutubeGuiApp {
         });
     }
 
+    fn spawn_add_to_playlist(state: Arc<Mutex<AppState>>, ctx: egui::Context, playlist_id: String, playlist_title: String, video_id: String) {
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            let res: Result<String, String> = async {
+                let client = Self::get_client_async().await?;
+                client.add_to_playlist(&playlist_id, &video_id).await
+                    .map_err(|e| format!("Failed to add to playlist: {}", e))?;
+                Ok(format!("Added to '{}'", playlist_title))
+            }.await;
+
+            let mut s = state_clone.lock().unwrap();
+            s.playlist_action_status = Some(res);
+            ctx.request_repaint();
+        });
+    }
+
 
 
 
@@ -701,11 +719,12 @@ enum PendingAction {
     Subscribe { channel_id: String },
     Unsubscribe { subscription_id: String },
     RateVideo { video_id: String, rating: String },
+    AddToPlaylist { playlist_id: String, playlist_title: String, video_id: String },
 }
 
 impl eframe::App for YoutubeGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let (current_view, subscriptions, logging_in, login_error, player_state) = {
+        let (current_view, subscriptions, logging_in, login_error, player_state, playlists, playlist_action_status) = {
             let s = self.state.lock().unwrap();
             (
                 s.current_view.clone(),
@@ -713,6 +732,8 @@ impl eframe::App for YoutubeGuiApp {
                 s.logging_in,
                 s.login_error.clone(),
                 s.player_state.clone(),
+                s.playlists.clone(),
+                s.playlist_action_status.clone(),
             )
         };
         let mut action = PendingAction::None;
@@ -1655,6 +1676,47 @@ impl eframe::App for YoutubeGuiApp {
                                     action = PendingAction::RateVideo { video_id: video.id.clone(), rating: "dislike".to_string() };
                                 }
                             });
+
+                            ui.add_space(8.0);
+
+                            ui.horizontal(|ui| {
+                                ui.label("📂 Add to Playlist:");
+                                match &playlists {
+                                    None => {
+                                        ui.spinner();
+                                    }
+                                    Some(Err(_)) => {
+                                        ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "Failed to load playlists.");
+                                    }
+                                    Some(Ok(items)) => {
+                                        egui::ComboBox::from_id_source("add_to_playlist_cb")
+                                            .selected_text("Select Playlist...")
+                                            .show_ui(ui, |ui| {
+                                                for playlist in items {
+                                                    if ui.selectable_label(false, &playlist.title).clicked() {
+                                                        action = PendingAction::AddToPlaylist {
+                                                            playlist_id: playlist.id.clone(),
+                                                            playlist_title: playlist.title.clone(),
+                                                            video_id: video.id.clone(),
+                                                        };
+                                                    }
+                                                }
+                                            });
+                                    }
+                                }
+
+                                if let Some(status) = &playlist_action_status {
+                                    ui.add_space(10.0);
+                                    match status {
+                                        Ok(msg) => {
+                                            ui.colored_label(egui::Color32::from_rgb(100, 255, 100), msg);
+                                        }
+                                        Err(err) => {
+                                            ui.colored_label(egui::Color32::from_rgb(255, 100, 100), err);
+                                        }
+                                    }
+                                }
+                            });
                         });
                     });
 
@@ -1879,24 +1941,34 @@ impl eframe::App for YoutubeGuiApp {
                 Self::fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
             }
             PendingAction::LoadVideoDetails { video } => {
-                {
+                let cache = {
                     let mut s_lock = self.state.lock().unwrap();
+                    s_lock.playlist_action_status = None;
                     s_lock.navigate_to(View::VideoDetails {
                         video: video.clone(),
                         comments: None,
                     });
-                }
+                    s_lock.playlists.clone()
+                };
                 Self::spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
+                if cache.is_none() {
+                    Self::spawn_fetch_playlists(self.state.clone(), ctx.clone());
+                }
             }
             PendingAction::RetryVideoDetails { video } => {
-                {
+                let cache = {
                     let mut s_lock = self.state.lock().unwrap();
+                    s_lock.playlist_action_status = None;
                     s_lock.current_view = View::VideoDetails {
                         video: video.clone(),
                         comments: None,
                     };
-                }
+                    s_lock.playlists.clone()
+                };
                 Self::spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
+                if cache.is_none() {
+                    Self::spawn_fetch_playlists(self.state.clone(), ctx.clone());
+                }
             }
             PendingAction::Subscribe { channel_id } => {
                 Self::spawn_subscribe(self.state.clone(), ctx.clone(), channel_id);
@@ -1906,6 +1978,9 @@ impl eframe::App for YoutubeGuiApp {
             }
             PendingAction::RateVideo { video_id, rating } => {
                 Self::spawn_rate_video(video_id, rating);
+            }
+            PendingAction::AddToPlaylist { playlist_id, playlist_title, video_id } => {
+                Self::spawn_add_to_playlist(self.state.clone(), ctx.clone(), playlist_id, playlist_title, video_id);
             }
         }
     }

@@ -7,11 +7,13 @@ edition = "2024"
 eframe.workspace = true
 egui.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-youtube-client-lib = { workspace = true, features = ["download"] }
+youtube-client-lib = { workspace = true, features = ["download", "audio"] }
 anyhow.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 reqwest = { workspace = true }
 image = { workspace = true }
 open.workspace = true
+rodio.workspace = true
+
 

@@ -6872,6 +6872,7 @@ dependencies = [
  "image 0.25.10",
  "open",
  "reqwest",
+ "rodio",
  "serde",
  "serde_json",
  "tokio",

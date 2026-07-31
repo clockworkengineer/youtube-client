@@ -34,6 +34,19 @@ enum View {
     },
 }
 
+#[derive(Clone, Debug)]
+struct PlayerState {
+    current_title: String,
+    playing: bool,
+}
+
+enum PlayerCommand {
+    Play(PathBuf, String),
+    Pause,
+    Resume,
+    Stop,
+}
+
 struct AppState {
     subscriptions: Option<Result<Vec<Subscription>, String>>,
     thumbnails: HashMap<String, Thumbnail>,
@@ -41,6 +54,7 @@ struct AppState {
     logging_in: bool,
     login_error: Option<String>,
     downloads: HashMap<String, DownloadStatus>,
+    player_state: PlayerState,
 }
 
 struct YoutubeGuiApp {
@@ -49,7 +63,9 @@ struct YoutubeGuiApp {
     client_id_input: String,
     client_secret_input: String,
     search_input: String,
+    audio_tx: std::sync::mpsc::Sender<PlayerCommand>,
 }
+
 
 
 impl YoutubeGuiApp {
@@ -72,9 +88,99 @@ impl YoutubeGuiApp {
             logging_in: false,
             login_error: None,
             downloads: HashMap::new(),
+            player_state: PlayerState {
+                current_title: String::new(),
+                playing: false,
+            },
         }));
 
         let http_client = reqwest::Client::new();
+
+        let (audio_tx, audio_rx) = std::sync::mpsc::channel::<PlayerCommand>();
+        let state_clone = state.clone();
+        let ctx_clone = cc.egui_ctx.clone();
+        std::thread::spawn(move || {
+            let mut stream_opt: Option<rodio::MixerDeviceSink> = None;
+            let mut sink_opt: Option<rodio::Player> = None;
+
+            loop {
+                let cmd_opt = audio_rx.recv_timeout(std::time::Duration::from_millis(200));
+                match cmd_opt {
+                    Ok(cmd) => {
+                        match cmd {
+                            PlayerCommand::Play(path, title) => {
+                                if let Some(sink) = &sink_opt {
+                                    sink.stop();
+                                }
+                                if stream_opt.is_none() {
+                                    if let Ok(stream) = rodio::DeviceSinkBuilder::open_default_sink() {
+                                        let sink = rodio::Player::connect_new(stream.mixer());
+                                        stream_opt = Some(stream);
+                                        sink_opt = Some(sink);
+                                    }
+                                }
+                                if let Some(sink) = &sink_opt {
+                                    if let Ok(file) = std::fs::File::open(&path) {
+                                        if let Ok(source) = rodio::Decoder::new(std::io::BufReader::new(file)) {
+                                            sink.append(source);
+                                            sink.play();
+                                            let mut s = state_clone.lock().unwrap();
+                                            s.player_state.current_title = title;
+                                            s.player_state.playing = true;
+                                        }
+                                    }
+                                }
+                            }
+                            PlayerCommand::Pause => {
+                                if let Some(sink) = &sink_opt {
+                                    sink.pause();
+                                    let mut s = state_clone.lock().unwrap();
+                                    s.player_state.playing = false;
+                                }
+                            }
+                            PlayerCommand::Resume => {
+                                if let Some(sink) = &sink_opt {
+                                    sink.play();
+                                    let mut s = state_clone.lock().unwrap();
+                                    s.player_state.playing = true;
+                                }
+                            }
+                            PlayerCommand::Stop => {
+                                if let Some(sink) = &sink_opt {
+                                    sink.stop();
+                                    let mut s = state_clone.lock().unwrap();
+                                    s.player_state.playing = false;
+                                    s.player_state.current_title = String::new();
+                                }
+                            }
+                        }
+                        ctx_clone.request_repaint();
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        // Check if track ended
+                        if let Some(sink) = &sink_opt {
+                            if sink.empty() {
+                                let mut updated = false;
+                                {
+                                    let mut s = state_clone.lock().unwrap();
+                                    if s.player_state.playing {
+                                        s.player_state.playing = false;
+                                        s.player_state.current_title = String::new();
+                                        updated = true;
+                                    }
+                                }
+                                if updated {
+                                    ctx_clone.request_repaint();
+                                }
+                            }
+                        }
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        break; // Channel closed
+                    }
+                }
+            }
+        });
 
         // Initialize YoutubeClient and fetch subscriptions asynchronously
         Self::spawn_fetch_subscriptions(state.clone(), cc.egui_ctx.clone());
@@ -85,6 +191,7 @@ impl YoutubeGuiApp {
             client_id_input,
             client_secret_input,
             search_input: String::new(),
+            audio_tx,
         }
     }
 
@@ -360,7 +467,7 @@ enum PendingAction {
     GoBack,
     RetryVideos { id: String, title: String, description: String },
     SpawnDownload { video_id: String },
-    PlayLocal { path: PathBuf },
+    PlayLocal { path: PathBuf, title: String },
     StreamVideo { video_id: String },
     Search { query: String },
     RetrySearch { query: String },
@@ -368,11 +475,42 @@ enum PendingAction {
 
 impl eframe::App for YoutubeGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let (current_view, subscriptions, logging_in, login_error) = {
+        let (current_view, subscriptions, logging_in, login_error, player_state) = {
             let s = self.state.lock().unwrap();
-            (s.current_view.clone(), s.subscriptions.clone(), s.logging_in, s.login_error.clone())
+            (
+                s.current_view.clone(),
+                s.subscriptions.clone(),
+                s.logging_in,
+                s.login_error.clone(),
+                s.player_state.clone(),
+            )
         };
         let mut action = PendingAction::None;
+
+        if !matches!(current_view, View::Login) && !player_state.current_title.is_empty() {
+            egui::TopBottomPanel::bottom("audio_player").show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("🎵 Playing:").strong());
+                    ui.label(&player_state.current_title);
+                    
+                    ui.add_space(20.0);
+
+                    if player_state.playing {
+                        if ui.button("⏸ Pause").clicked() {
+                            let _ = self.audio_tx.send(PlayerCommand::Pause);
+                        }
+                    } else {
+                        if ui.button("▶ Resume").clicked() {
+                            let _ = self.audio_tx.send(PlayerCommand::Resume);
+                        }
+                    }
+
+                    if ui.button("⏹ Stop").clicked() {
+                        let _ = self.audio_tx.send(PlayerCommand::Stop);
+                    }
+                });
+            });
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if !matches!(current_view, View::Login) {
@@ -721,7 +859,7 @@ impl eframe::App for YoutubeGuiApp {
                                                                 DownloadStatus::Finished(_) => {
                                                                     if ui.button("▶ Play Local").clicked() {
                                                                         if let DownloadStatus::Finished(path) = &download_status {
-                                                                            action = PendingAction::PlayLocal { path: path.clone() };
+                                                                            action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
                                                                         }
                                                                     }
                                                                 }
@@ -875,7 +1013,7 @@ impl eframe::App for YoutubeGuiApp {
                                                                 DownloadStatus::Finished(_) => {
                                                                     if ui.button("▶ Play Local").clicked() {
                                                                         if let DownloadStatus::Finished(path) = &download_status {
-                                                                            action = PendingAction::PlayLocal { path: path.clone() };
+                                                                            action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
                                                                         }
                                                                     }
                                                                 }
@@ -947,9 +1085,9 @@ impl eframe::App for YoutubeGuiApp {
             PendingAction::SpawnDownload { video_id } => {
                 Self::spawn_download(self.state.clone(), ctx.clone(), video_id);
             }
-            PendingAction::PlayLocal { path } => {
-                println!("Playing local video: {:?}", path);
-                let _ = open::that(path);
+            PendingAction::PlayLocal { path, title } => {
+                println!("Playing local audio: {:?}", path);
+                let _ = self.audio_tx.send(PlayerCommand::Play(path, title));
             }
             PendingAction::StreamVideo { video_id } => {
                 let url = format!("https://www.youtube.com/watch?v={}", video_id);

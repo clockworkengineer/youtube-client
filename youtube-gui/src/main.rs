@@ -32,6 +32,14 @@ enum View {
         query: String,
         videos: Option<Result<Vec<youtube_client_lib::Video>, String>>,
     },
+    Playlists {
+        playlists: Option<Result<Vec<youtube_client_lib::Playlist>, String>>,
+    },
+    PlaylistVideos {
+        playlist_id: String,
+        playlist_title: String,
+        videos: Option<Result<Vec<youtube_client_lib::Video>, String>>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -55,7 +63,9 @@ struct AppState {
     login_error: Option<String>,
     downloads: HashMap<String, DownloadStatus>,
     player_state: PlayerState,
+    playlists: Option<Result<Vec<youtube_client_lib::Playlist>, String>>,
 }
+
 
 struct YoutubeGuiApp {
     state: Arc<Mutex<AppState>>,
@@ -92,6 +102,7 @@ impl YoutubeGuiApp {
                 current_title: String::new(),
                 playing: false,
             },
+            playlists: None,
         }));
 
         let http_client = reqwest::Client::new();
@@ -414,6 +425,55 @@ impl YoutubeGuiApp {
         });
     }
 
+    fn spawn_fetch_playlists(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            let res = async {
+                let client = Self::get_client_async().await?;
+                let playlists = client.list_playlists(50).await
+                    .map_err(|e| format!("Failed to fetch playlists: {}", e))?;
+                Ok(playlists)
+            }.await;
+
+            let mut s = state_clone.lock().unwrap();
+            s.playlists = Some(res.clone());
+            if let View::Playlists { playlists: _ } = &s.current_view {
+                s.current_view = View::Playlists { playlists: Some(res) };
+            }
+            ctx.request_repaint();
+        });
+    }
+
+    fn fetch_playlist_videos(
+        ctx: egui::Context,
+        state: Arc<Mutex<AppState>>,
+        playlist_id: String,
+        _playlist_title: String,
+    ) {
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            let res = async {
+                let client = Self::get_client_async().await?;
+                let videos = client.list_playlist_videos(&playlist_id, 50).await
+                    .map_err(|e| format!("Failed to fetch playlist videos: {}", e))?;
+                Ok(videos)
+            }.await;
+
+            let mut s = state_clone.lock().unwrap();
+            if let View::PlaylistVideos { playlist_id: current_id, playlist_title: current_title, videos: _ } = &s.current_view {
+                if current_id == &playlist_id {
+                    s.current_view = View::PlaylistVideos {
+                        playlist_id,
+                        playlist_title: current_title.clone(),
+                        videos: Some(res),
+                    };
+                }
+            }
+            ctx.request_repaint();
+        });
+    }
+
+
 
     fn fetch_thumbnail(
         ctx: egui::Context,
@@ -471,6 +531,10 @@ enum PendingAction {
     StreamVideo { video_id: String },
     Search { query: String },
     RetrySearch { query: String },
+    LoadPlaylists,
+    LoadPlaylistVideos { id: String, title: String },
+    RetryPlaylists,
+    RetryPlaylistVideos { id: String, title: String },
 }
 
 impl eframe::App for YoutubeGuiApp {
@@ -525,9 +589,24 @@ impl eframe::App for YoutubeGuiApp {
                     }
                 });
                 ui.add_space(5.0);
+
+                // Navigation Tabs
+                ui.horizontal(|ui| {
+                    let on_subs = matches!(current_view, View::Subscriptions | View::ChannelVideos { .. });
+                    if ui.selectable_label(on_subs, "📺 Subscriptions").clicked() {
+                        action = PendingAction::GoBack;
+                    }
+                    ui.add_space(10.0);
+                    let on_playlists = matches!(current_view, View::Playlists { .. } | View::PlaylistVideos { .. });
+                    if ui.selectable_label(on_playlists, "📂 Playlists").clicked() {
+                        action = PendingAction::LoadPlaylists;
+                    }
+                });
+                ui.add_space(5.0);
                 ui.separator();
                 ui.add_space(5.0);
             }
+
 
             match current_view {
                 View::Login => {
@@ -1038,6 +1117,253 @@ impl eframe::App for YoutubeGuiApp {
                         }
                     }
                 }
+                View::Playlists { playlists } => {
+                    ui.heading("📂 Your Playlists");
+                    ui.add_space(10.0);
+
+                    match playlists {
+                        None => {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(50.0);
+                                ui.spinner();
+                                ui.label("Loading playlists...");
+                            });
+                        }
+                        Some(Err(err_msg)) => {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(50.0);
+                                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Failed to load playlists");
+                                ui.add_space(10.0);
+                                ui.label(err_msg);
+                                ui.add_space(20.0);
+                                if ui.button("Retry").clicked() {
+                                    action = PendingAction::RetryPlaylists;
+                                }
+                            });
+                        }
+                        Some(Ok(lists)) => {
+                            if lists.is_empty() {
+                                ui.vertical_centered(|ui| {
+                                    ui.add_space(50.0);
+                                    ui.label("No playlists found on your account.");
+                                });
+                            } else {
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        for list in lists {
+                                            ui.push_id(&list.id, |ui| {
+                                                let texture = self.get_or_fetch_thumbnail(ctx, &list.id, &list.thumbnail_url);
+
+                                                let response = ui.group(|ui| {
+                                                    ui.horizontal(|ui| {
+                                                        if let Some(tex) = &texture {
+                                                            ui.add(egui::Image::from_texture(tex).max_width(80.0).max_height(80.0));
+                                                        } else {
+                                                            let (rect, _response) = ui.allocate_exact_size(
+                                                                egui::vec2(80.0, 80.0),
+                                                                egui::Sense::hover(),
+                                                            );
+                                                            ui.painter().rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
+                                                            ui.painter().text(
+                                                                rect.center(),
+                                                                egui::Align2::CENTER_CENTER,
+                                                                "📂",
+                                                                egui::FontId::proportional(30.0),
+                                                                egui::Color32::LIGHT_GRAY,
+                                                            );
+                                                        }
+
+                                                        ui.add_space(15.0);
+
+                                                        ui.vertical(|ui| {
+                                                            ui.label(
+                                                                egui::RichText::new(&list.title)
+                                                                    .size(16.0)
+                                                                    .strong()
+                                                                    .color(egui::Color32::WHITE),
+                                                            );
+                                                            ui.add_space(4.0);
+                                                            ui.label(
+                                                                egui::RichText::new(format!("Videos: {}", list.video_count))
+                                                                    .size(12.0)
+                                                                    .color(egui::Color32::from_rgb(160, 160, 170)),
+                                                            );
+                                                        });
+                                                    });
+                                                });
+
+                                                let click_resp = ui.interact(response.response.rect, response.response.id, egui::Sense::click());
+                                                if click_resp.clicked() {
+                                                    action = PendingAction::LoadPlaylistVideos {
+                                                        id: list.id.clone(),
+                                                        title: list.title.clone(),
+                                                    };
+                                                }
+                                                if click_resp.hovered() {
+                                                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                                }
+
+                                                ui.add_space(8.0);
+                                            });
+                                        }
+                                    });
+                            }
+                        }
+                    }
+                }
+                View::PlaylistVideos { playlist_id, playlist_title, videos } => {
+                    ui.horizontal(|ui| {
+                        if ui.button("⬅ Back to Playlists").clicked() {
+                            action = PendingAction::LoadPlaylists;
+                        }
+                        ui.heading(format!("📂 Playlist: {}", playlist_title));
+                    });
+                    ui.add_space(10.0);
+
+                    match videos {
+                        None => {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(50.0);
+                                ui.spinner();
+                                ui.label("Loading playlist videos...");
+                            });
+                        }
+                        Some(Err(err_msg)) => {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(50.0);
+                                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Failed to load playlist videos");
+                                ui.add_space(10.0);
+                                ui.label(err_msg);
+                                ui.add_space(20.0);
+                                if ui.button("Retry").clicked() {
+                                    action = PendingAction::RetryPlaylistVideos {
+                                        id: playlist_id.clone(),
+                                        title: playlist_title.clone(),
+                                    };
+                                }
+                            });
+                        }
+                        Some(Ok(vids)) => {
+                            if vids.is_empty() {
+                                ui.vertical_centered(|ui| {
+                                    ui.add_space(50.0);
+                                    ui.label("No videos found in this playlist.");
+                                });
+                            } else {
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        for video in vids {
+                                            ui.push_id(&video.id, |ui| {
+                                                let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
+                                                let download_status = {
+                                                    let s_lock = self.state.lock().unwrap();
+                                                    s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted)
+                                                };
+                                                let mut card_clicked = false;
+                                                let _response = ui.group(|ui| {
+                                                    ui.horizontal(|ui| {
+                                                        let left_response = ui.horizontal(|ui| {
+                                                            if let Some(tex) = &texture {
+                                                                ui.add(egui::Image::from_texture(tex).max_width(100.0).max_height(100.0));
+                                                            } else {
+                                                                let (rect, _response) = ui.allocate_exact_size(
+                                                                    egui::vec2(100.0, 100.0),
+                                                                    egui::Sense::hover(),
+                                                                );
+                                                                ui.painter().rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
+                                                                ui.painter().text(
+                                                                    rect.center(),
+                                                                    egui::Align2::CENTER_CENTER,
+                                                                    "🎬",
+                                                                    egui::FontId::proportional(40.0),
+                                                                    egui::Color32::LIGHT_GRAY,
+                                                                );
+                                                            }
+
+                                                            ui.add_space(15.0);
+
+                                                            ui.vertical(|ui| {
+                                                                ui.label(
+                                                                    egui::RichText::new(&video.title)
+                                                                        .size(15.0)
+                                                                        .strong()
+                                                                        .color(egui::Color32::WHITE),
+                                                                );
+                                                                ui.add_space(4.0);
+                                                                ui.horizontal(|ui| {
+                                                                    let date = if video.published_at.len() >= 10 {
+                                                                        &video.published_at[..10]
+                                                                    } else {
+                                                                        &video.published_at
+                                                                    };
+                                                                    ui.label(
+                                                                        egui::RichText::new(format!("Published: {}", date))
+                                                                            .size(11.0)
+                                                                            .color(egui::Color32::from_rgb(140, 140, 150)),
+                                                                    );
+                                                                    ui.add_space(20.0);
+                                                                    ui.label(
+                                                                        egui::RichText::new(format!("ID: {}", video.id))
+                                                                            .size(11.0)
+                                                                            .color(egui::Color32::from_rgb(140, 140, 150)),
+                                                                    );
+                                                                });
+                                                            });
+                                                        });
+
+                                                        let left_interact = ui.interact(
+                                                            left_response.response.rect,
+                                                            left_response.response.id.with("click"),
+                                                            egui::Sense::click(),
+                                                        );
+                                                        if left_interact.clicked() {
+                                                            card_clicked = true;
+                                                        }
+                                                        if left_interact.hovered() {
+                                                            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                                        }
+
+                                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                            match &download_status {
+                                                                DownloadStatus::NotStarted => {
+                                                                    if ui.button("📥 Download").clicked() {
+                                                                        action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                                                    }
+                                                                }
+                                                                DownloadStatus::Downloading => {
+                                                                    ui.spinner();
+                                                                    ui.label("Downloading...");
+                                                                }
+                                                                DownloadStatus::Finished(_) => {
+                                                                    if ui.button("▶ Play Local").clicked() {
+                                                                        if let DownloadStatus::Finished(path) = &download_status {
+                                                                            action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                                                        }
+                                                                    }
+                                                                }
+                                                                DownloadStatus::Failed(err) => {
+                                                                    if ui.button("❌ Retry").clicked() {
+                                                                        action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                                                    }
+                                                                    ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
+                                                                }
+                                                            }
+                                                        });
+                                                    });
+                                                });
+
+                                                if card_clicked && matches!(action, PendingAction::None) {
+                                                    action = PendingAction::StreamVideo { video_id: video.id.clone() };
+                                                }
+                                            });
+                                        }
+                                    });
+                            }
+                        }
+                    }
+                }
             }
         });
 
@@ -1150,9 +1476,50 @@ impl eframe::App for YoutubeGuiApp {
                 }
                 Self::fetch_search_results(ctx.clone(), self.state.clone(), query);
             }
+            PendingAction::LoadPlaylists => {
+                let cache = {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.current_view = View::Playlists { playlists: s_lock.playlists.clone() };
+                    s_lock.playlists.clone()
+                };
+                if cache.is_none() {
+                    Self::spawn_fetch_playlists(self.state.clone(), ctx.clone());
+                }
+            }
+            PendingAction::RetryPlaylists => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.playlists = None;
+                    s_lock.current_view = View::Playlists { playlists: None };
+                }
+                Self::spawn_fetch_playlists(self.state.clone(), ctx.clone());
+            }
+            PendingAction::LoadPlaylistVideos { id, title } => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.current_view = View::PlaylistVideos {
+                        playlist_id: id.clone(),
+                        playlist_title: title.clone(),
+                        videos: None,
+                    };
+                }
+                Self::fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
+            }
+            PendingAction::RetryPlaylistVideos { id, title } => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.current_view = View::PlaylistVideos {
+                        playlist_id: id.clone(),
+                        playlist_title: title.clone(),
+                        videos: None,
+                    };
+                }
+                Self::fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
+            }
         }
     }
 }
+
 
 
 #[tokio::main]

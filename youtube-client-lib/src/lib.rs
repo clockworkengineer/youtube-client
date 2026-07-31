@@ -84,6 +84,16 @@ pub struct Video {
     pub thumbnail_url: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct Playlist {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub thumbnail_url: String,
+    pub video_count: u32,
+}
+
+
 pub struct YoutubeClient {
     hub: YouTube<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>,
 }
@@ -266,6 +276,83 @@ impl YoutubeClient {
         }
         Ok(videos)
     }
+
+    /// List the authenticated user's playlists.
+    pub async fn list_playlists(&self, max_results: u32) -> anyhow::Result<Vec<Playlist>> {
+        let limit = max_results.min(50);
+        let req = self.hub.playlists()
+            .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
+            .mine(true)
+            .max_results(limit);
+
+        let (_resp, playlist_res) = req.doit().await?;
+        let mut playlists = Vec::new();
+        if let Some(items) = playlist_res.items {
+            for item in items {
+                let id = item.id.unwrap_or_default();
+                if id.is_empty() {
+                    continue;
+                }
+                if let Some(snippet) = item.snippet {
+                    let title = snippet.title.unwrap_or_default();
+                    let description = snippet.description.unwrap_or_default();
+                    let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
+                    let video_count = item.content_details
+                        .and_then(|cd| cd.item_count)
+                        .unwrap_or(0);
+
+                    playlists.push(Playlist {
+                        id,
+                        title,
+                        description,
+                        thumbnail_url,
+                        video_count,
+                    });
+                }
+            }
+        }
+        Ok(playlists)
+    }
+
+    /// List the videos inside a specific playlist.
+    pub async fn list_playlist_videos(&self, playlist_id: &str, max_results: u32) -> anyhow::Result<Vec<Video>> {
+        let limit = max_results.min(50);
+        let (_resp, playlist_res) = self.hub.playlist_items()
+            .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
+            .playlist_id(playlist_id)
+            .max_results(limit)
+            .doit()
+            .await?;
+
+        let mut videos = Vec::new();
+        if let Some(items) = playlist_res.items {
+            for item in items {
+                if let Some(snippet) = item.snippet {
+                    let video_id = item.content_details
+                        .and_then(|cd| cd.video_id)
+                        .unwrap_or_else(|| {
+                            snippet.resource_id
+                                .and_then(|r| r.video_id)
+                                .unwrap_or_default()
+                        });
+                    let title = snippet.title.unwrap_or_default();
+                    let description = snippet.description.unwrap_or_default();
+                    let published_at = snippet.published_at.unwrap_or_default();
+                    let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
+
+                    videos.push(Video {
+                        id: video_id,
+                        title,
+                        description,
+                        published_at: published_at.to_string(),
+                        thumbnail_url,
+                    });
+                }
+            }
+        }
+        Ok(videos)
+    }
+
 
 
     /// Download a YouTube video by ID to the target path.

@@ -692,75 +692,102 @@ impl YoutubeGuiApp {
         });
     }
 
-    fn spawn_subscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, channel_id: String) {
+    fn spawn_client_action<F, Fut, T>(
+        state: Arc<Mutex<AppState>>,
+        ctx: egui::Context,
+        action_name: &'static str,
+        f: F,
+        on_complete: impl FnOnce(Result<T, String>, &mut AppState, &egui::Context) + Send + 'static,
+    )
+    where
+        F: FnOnce(YoutubeClient) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<T, String>> + Send + 'static,
+        T: Send + 'static,
+    {
         let state_clone = state.clone();
         tokio::spawn(async move {
-            let res: Result<(), String> = async {
+            let res = async {
                 let client = Self::get_client_async().await?;
-                client.subscribe_to_channel(&channel_id).await
-                    .map_err(|e| format!("Failed to subscribe: {}", e))?;
-                Ok(())
+                f(client).await
             }.await;
 
-            if let Err(e) = res {
-                println!("Error subscribing: {}", e);
-            } else {
-                // Refresh subscriptions in background to update UI sub state
-                Self::spawn_fetch_subscriptions(state_clone, ctx);
+            if let Err(e) = &res {
+                println!("Error during {}: {}", action_name, e);
             }
+            let mut s = state_clone.lock().unwrap();
+            on_complete(res, &mut *s, &ctx);
         });
+    }
+
+    fn spawn_subscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, channel_id: String) {
+        let state_clone = state.clone();
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "subscribe",
+            move |client| async move {
+                client.subscribe_to_channel(&channel_id).await
+                    .map_err(|e| format!("Failed to subscribe: {}", e))
+            },
+            move |res, _, ctx| {
+                if res.is_ok() {
+                    Self::spawn_fetch_subscriptions(state_clone, ctx.clone());
+                }
+            },
+        );
     }
 
     fn spawn_unsubscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, subscription_id: String) {
         let state_clone = state.clone();
-        tokio::spawn(async move {
-            let res: Result<(), String> = async {
-                let client = Self::get_client_async().await?;
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "unsubscribe",
+            move |client| async move {
                 client.unsubscribe_from_channel(&subscription_id).await
-                    .map_err(|e| format!("Failed to unsubscribe: {}", e))?;
-                Ok(())
-            }.await;
-
-            if let Err(e) = res {
-                println!("Error unsubscribing: {}", e);
-            } else {
-                // Refresh subscriptions in background to update UI sub state
-                Self::spawn_fetch_subscriptions(state_clone, ctx);
-            }
-        });
+                    .map_err(|e| format!("Failed to unsubscribe: {}", e))
+            },
+            move |res, _, ctx| {
+                if res.is_ok() {
+                    Self::spawn_fetch_subscriptions(state_clone, ctx.clone());
+                }
+            },
+        );
     }
 
-    fn spawn_rate_video(video_id: String, rating: String) {
-        tokio::spawn(async move {
-            let res: Result<(), String> = async {
-                let client = Self::get_client_async().await?;
+    fn spawn_rate_video(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_id: String, rating: String) {
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "rate_video",
+            move |client| async move {
                 client.rate_video(&video_id, &rating).await
-                    .map_err(|e| format!("Failed to rate video: {}", e))?;
-                Ok(())
-            }.await;
-
-            if let Err(e) = res {
-                println!("Error rating video: {}", e);
-            } else {
-                println!("Successfully rated video {} as {}", video_id, rating);
-            }
-        });
+                    .map_err(|e| format!("Failed to rate: {}", e))?;
+                Ok((video_id, rating))
+            },
+            move |res, _, _| {
+                if let Ok((vid, rat)) = res {
+                    println!("Successfully rated video {} as {}", vid, rat);
+                }
+            },
+        );
     }
 
     fn spawn_add_to_playlist(state: Arc<Mutex<AppState>>, ctx: egui::Context, playlist_id: String, playlist_title: String, video_id: String) {
-        let state_clone = state.clone();
-        tokio::spawn(async move {
-            let res: Result<String, String> = async {
-                let client = Self::get_client_async().await?;
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "add_to_playlist",
+            move |client| async move {
                 client.add_to_playlist(&playlist_id, &video_id).await
                     .map_err(|e| format!("Failed to add to playlist: {}", e))?;
                 Ok(format!("Added to '{}'", playlist_title))
-            }.await;
-
-            let mut s = state_clone.lock().unwrap();
-            s.playlist_action_status = Some(res);
-            ctx.request_repaint();
-        });
+            },
+            move |res, s, ctx| {
+                s.playlist_action_status = Some(res);
+                ctx.request_repaint();
+            },
+        );
     }
 
 
@@ -1770,7 +1797,7 @@ impl eframe::App for YoutubeGuiApp {
                 Self::spawn_unsubscribe(self.state.clone(), ctx.clone(), subscription_id);
             }
             PendingAction::RateVideo { video_id, rating } => {
-                Self::spawn_rate_video(video_id, rating);
+                Self::spawn_rate_video(self.state.clone(), ctx.clone(), video_id, rating);
             }
             PendingAction::AddToPlaylist { playlist_id, playlist_title, video_id } => {
                 Self::spawn_add_to_playlist(self.state.clone(), ctx.clone(), playlist_id, playlist_title, video_id);

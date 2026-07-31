@@ -228,7 +228,7 @@ impl YoutubeGuiApp {
             return Err("Token cache (tokencache.json) is missing. Please run the CLI login flow first: `cargo run --bin youtube-client -- login`".to_string());
         }
 
-        // Verify if the cache contains the full youtube scope to prevent GUI hanging
+        // Verify if the cache contains the full youtube or force-ssl scope to prevent GUI hanging
         let mut has_full_scope = false;
         if let Ok(content) = std::fs::read_to_string(&token_cache_path) {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -236,7 +236,9 @@ impl YoutubeGuiApp {
                     for item in arr {
                         if let Some(scopes) = item.get("scopes").and_then(|s| s.as_array()) {
                             for scope in scopes {
-                                if scope.as_str() == Some("https://www.googleapis.com/auth/youtube") {
+                                let scope_str = scope.as_str().unwrap_or_default();
+                                if scope_str == "https://www.googleapis.com/auth/youtube"
+                                    || scope_str == "https://www.googleapis.com/auth/youtube.force-ssl" {
                                     has_full_scope = true;
                                 }
                             }
@@ -246,7 +248,9 @@ impl YoutubeGuiApp {
                     for (_k, v) in obj {
                         if let Some(scopes) = v.get("scopes").and_then(|s| s.as_array()) {
                             for scope in scopes {
-                                if scope.as_str() == Some("https://www.googleapis.com/auth/youtube") {
+                                let scope_str = scope.as_str().unwrap_or_default();
+                                if scope_str == "https://www.googleapis.com/auth/youtube"
+                                    || scope_str == "https://www.googleapis.com/auth/youtube.force-ssl" {
                                     has_full_scope = true;
                                 }
                             }
@@ -265,7 +269,11 @@ impl YoutubeGuiApp {
             &client_id,
             &client_secret,
             &token_cache_path,
-            &["https://www.googleapis.com/auth/youtube"],
+            &[
+                "https://www.googleapis.com/auth/youtube",
+                "https://www.googleapis.com/auth/youtube.force-ssl",
+                "https://www.googleapis.com/auth/youtube.readonly"
+            ],
         ).await
         .map_err(|e| format!("Authentication failed: {}", e))?;
 
@@ -356,7 +364,11 @@ impl YoutubeGuiApp {
                     &id,
                     &secret,
                     &token_cache_path,
-                    &["https://www.googleapis.com/auth/youtube"],
+                    &[
+                        "https://www.googleapis.com/auth/youtube",
+                        "https://www.googleapis.com/auth/youtube.force-ssl",
+                        "https://www.googleapis.com/auth/youtube.readonly"
+                    ],
                 ).await
                 .map_err(|e| format!("OAuth initialization failed: {}", e))?;
                 client.test_connection().await

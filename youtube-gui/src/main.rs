@@ -40,6 +40,10 @@ enum View {
         playlist_title: String,
         videos: Option<Result<Vec<youtube_client_lib::Video>, String>>,
     },
+    VideoDetails {
+        video: youtube_client_lib::Video,
+        comments: Option<Result<Vec<youtube_client_lib::Comment>, String>>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -478,6 +482,86 @@ impl YoutubeGuiApp {
         });
     }
 
+    fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: youtube_client_lib::Video) {
+        let state_clone = state.clone();
+        let video_clone = video.clone();
+        tokio::spawn(async move {
+            let res = async {
+                let client = Self::get_client_async().await?;
+                let comments = client.fetch_comments(&video_clone.id).await
+                    .map_err(|e| format!("Failed to fetch comments: {}", e))?;
+                Ok(comments)
+            }.await;
+
+            let mut s = state_clone.lock().unwrap();
+            if let View::VideoDetails { video: current_video, comments: _ } = &s.current_view {
+                if current_video.id == video_clone.id {
+                    s.current_view = View::VideoDetails {
+                        video: video_clone,
+                        comments: Some(res),
+                    };
+                }
+            }
+            ctx.request_repaint();
+        });
+    }
+
+    fn spawn_subscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, channel_id: String) {
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            let res: Result<(), String> = async {
+                let client = Self::get_client_async().await?;
+                client.subscribe_to_channel(&channel_id).await
+                    .map_err(|e| format!("Failed to subscribe: {}", e))?;
+                Ok(())
+            }.await;
+
+            if let Err(e) = res {
+                println!("Error subscribing: {}", e);
+            } else {
+                // Refresh subscriptions in background to update UI sub state
+                Self::spawn_fetch_subscriptions(state_clone, ctx);
+            }
+        });
+    }
+
+    fn spawn_unsubscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, subscription_id: String) {
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            let res: Result<(), String> = async {
+                let client = Self::get_client_async().await?;
+                client.unsubscribe_from_channel(&subscription_id).await
+                    .map_err(|e| format!("Failed to unsubscribe: {}", e))?;
+                Ok(())
+            }.await;
+
+            if let Err(e) = res {
+                println!("Error unsubscribing: {}", e);
+            } else {
+                // Refresh subscriptions in background to update UI sub state
+                Self::spawn_fetch_subscriptions(state_clone, ctx);
+            }
+        });
+    }
+
+    fn spawn_rate_video(video_id: String, rating: String) {
+        tokio::spawn(async move {
+            let res: Result<(), String> = async {
+                let client = Self::get_client_async().await?;
+                client.rate_video(&video_id, &rating).await
+                    .map_err(|e| format!("Failed to rate video: {}", e))?;
+                Ok(())
+            }.await;
+
+            if let Err(e) = res {
+                println!("Error rating video: {}", e);
+            } else {
+                println!("Successfully rated video {} as {}", video_id, rating);
+            }
+        });
+    }
+
+
 
 
     fn fetch_thumbnail(
@@ -540,6 +624,11 @@ enum PendingAction {
     LoadPlaylistVideos { id: String, title: String },
     RetryPlaylists,
     RetryPlaylistVideos { id: String, title: String },
+    LoadVideoDetails { video: youtube_client_lib::Video },
+    RetryVideoDetails { video: youtube_client_lib::Video },
+    Subscribe { channel_id: String },
+    Unsubscribe { subscription_id: String },
+    RateVideo { video_id: String, rating: String },
 }
 
 impl eframe::App for YoutubeGuiApp {
@@ -801,6 +890,21 @@ impl eframe::App for YoutubeGuiApp {
                                     .strong()
                                     .color(egui::Color32::WHITE),
                             );
+
+                            ui.add_space(20.0);
+                            if let Some(sub_details) = if let Some(Ok(subs)) = &subscriptions {
+                                subs.iter().find(|sub| sub.channel_id == *channel_id)
+                            } else {
+                                None
+                            } {
+                                if ui.button("✓ Subscribed").on_hover_text("Click to unsubscribe").clicked() {
+                                    action = PendingAction::Unsubscribe { subscription_id: sub_details.id.clone() };
+                                }
+                            } else {
+                                if ui.button("➕ Subscribe").clicked() {
+                                    action = PendingAction::Subscribe { channel_id: channel_id.clone() };
+                                }
+                            }
                         });
                         if !channel_description.is_empty() {
                             ui.add_space(4.0);
@@ -959,7 +1063,7 @@ impl eframe::App for YoutubeGuiApp {
                                                 });
 
                                                 if card_clicked && matches!(action, PendingAction::None) {
-                                                    action = PendingAction::StreamVideo { video_id: video.id.clone() };
+                                                    action = PendingAction::LoadVideoDetails { video: video.clone() };
                                                 }
                                             });
                                         }
@@ -1113,7 +1217,7 @@ impl eframe::App for YoutubeGuiApp {
                                                 });
 
                                                 if card_clicked && matches!(action, PendingAction::None) {
-                                                    action = PendingAction::StreamVideo { video_id: video.id.clone() };
+                                                    action = PendingAction::LoadVideoDetails { video: video.clone() };
                                                 }
                                             });
                                         }
@@ -1360,9 +1464,169 @@ impl eframe::App for YoutubeGuiApp {
                                                 });
 
                                                 if card_clicked && matches!(action, PendingAction::None) {
-                                                    action = PendingAction::StreamVideo { video_id: video.id.clone() };
+                                                    action = PendingAction::LoadVideoDetails { video: video.clone() };
                                                 }
                                             });
+                                        }
+                                    });
+                            }
+                        }
+                    }
+                }
+                View::VideoDetails { video, comments } => {
+                    ui.horizontal(|ui| {
+                        if ui.button("⬅ Back").clicked() {
+                            action = PendingAction::GoBack;
+                        }
+                        ui.heading("🎬 Video Details");
+                    });
+                    ui.add_space(15.0);
+
+                    ui.horizontal(|ui| {
+                        let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
+                        if let Some(tex) = &texture {
+                            ui.add(egui::Image::from_texture(tex).max_width(200.0).max_height(150.0));
+                        } else {
+                            let (rect, _response) = ui.allocate_exact_size(
+                                egui::vec2(200.0, 150.0),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
+                        }
+
+                        ui.add_space(20.0);
+
+                        ui.vertical(|ui| {
+                            ui.label(
+                                egui::RichText::new(&video.title)
+                                    .size(18.0)
+                                    .strong()
+                                    .color(egui::Color32::WHITE),
+                            );
+                            ui.add_space(8.0);
+                            ui.label(
+                                egui::RichText::new(format!("Published: {}", video.published_at))
+                                    .size(12.0)
+                                    .color(egui::Color32::from_rgb(160, 160, 170)),
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(format!("Video ID: {}", video.id))
+                                    .size(12.0)
+                                    .color(egui::Color32::from_rgb(160, 160, 170)),
+                            );
+
+                            ui.add_space(12.0);
+
+                            ui.horizontal(|ui| {
+                                let download_status = {
+                                    let s_lock = self.state.lock().unwrap();
+                                    s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted)
+                                };
+
+                                match &download_status {
+                                    DownloadStatus::NotStarted => {
+                                        if ui.button("📥 Download").clicked() {
+                                            action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                        }
+                                    }
+                                    DownloadStatus::Downloading => {
+                                        ui.spinner();
+                                        ui.label("Downloading...");
+                                    }
+                                    DownloadStatus::Finished(_) => {
+                                        if ui.button("▶ Play Local").clicked() {
+                                            if let DownloadStatus::Finished(path) = &download_status {
+                                                action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                            }
+                                        }
+                                    }
+                                    DownloadStatus::Failed(err) => {
+                                        if ui.button("❌ Retry").clicked() {
+                                            action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                        }
+                                        ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
+                                    }
+                                }
+
+                                ui.add_space(10.0);
+
+                                if ui.button("📺 Stream").clicked() {
+                                    action = PendingAction::StreamVideo { video_id: video.id.clone() };
+                                }
+
+                                ui.add_space(15.0);
+                                ui.separator();
+                                ui.add_space(15.0);
+
+                                ui.label("Rate video:");
+                                if ui.button("👍 Like").clicked() {
+                                    action = PendingAction::RateVideo { video_id: video.id.clone(), rating: "like".to_string() };
+                                }
+                                if ui.button("👎 Dislike").clicked() {
+                                    action = PendingAction::RateVideo { video_id: video.id.clone(), rating: "dislike".to_string() };
+                                }
+                            });
+                        });
+                    });
+
+                    ui.add_space(20.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+
+                    ui.heading("💬 Comments");
+                    ui.add_space(5.0);
+
+                    match comments {
+                        None => {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(30.0);
+                                ui.spinner();
+                                ui.label("Loading comments...");
+                            });
+                        }
+                        Some(Err(err_msg)) => {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(30.0);
+                                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Failed to load comments");
+                                ui.add_space(5.0);
+                                ui.label(err_msg);
+                                ui.add_space(10.0);
+                                if ui.button("Retry").clicked() {
+                                    action = PendingAction::RetryVideoDetails { video: video.clone() };
+                                }
+                            });
+                        }
+                        Some(Ok(items)) => {
+                            if items.is_empty() {
+                                ui.label("No comments found on this video.");
+                            } else {
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        for comment in items {
+                                            ui.group(|ui| {
+                                                ui.horizontal(|ui| {
+                                                    ui.vertical(|ui| {
+                                                        ui.horizontal(|ui| {
+                                                            ui.label(
+                                                                egui::RichText::new(&comment.author_name)
+                                                                    .strong()
+                                                                    .color(egui::Color32::from_rgb(200, 200, 210)),
+                                                            );
+                                                            ui.add_space(10.0);
+                                                            ui.label(
+                                                                egui::RichText::new(format!("Likes: {}", comment.like_count))
+                                                                    .size(11.0)
+                                                                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                                                            );
+                                                        });
+                                                        ui.add_space(4.0);
+                                                        ui.label(&comment.text_display);
+                                                    });
+                                                });
+                                            });
+                                            ui.add_space(5.0);
                                         }
                                     });
                             }
@@ -1521,9 +1785,39 @@ impl eframe::App for YoutubeGuiApp {
                 }
                 Self::fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
             }
+            PendingAction::LoadVideoDetails { video } => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.current_view = View::VideoDetails {
+                        video: video.clone(),
+                        comments: None,
+                    };
+                }
+                Self::spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
+            }
+            PendingAction::RetryVideoDetails { video } => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.current_view = View::VideoDetails {
+                        video: video.clone(),
+                        comments: None,
+                    };
+                }
+                Self::spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
+            }
+            PendingAction::Subscribe { channel_id } => {
+                Self::spawn_subscribe(self.state.clone(), ctx.clone(), channel_id);
+            }
+            PendingAction::Unsubscribe { subscription_id } => {
+                Self::spawn_unsubscribe(self.state.clone(), ctx.clone(), subscription_id);
+            }
+            PendingAction::RateVideo { video_id, rating } => {
+                Self::spawn_rate_video(video_id, rating);
+            }
         }
     }
 }
+
 
 
 

@@ -111,12 +111,17 @@ async fn main() -> anyhow::Result<()> {
     };
     let get_client = || async {
         let (client_id, client_secret) = get_credentials()?;
-        YoutubeClient::new_oauth(&client_id, &client_secret, &cli.token_cache).await
+        YoutubeClient::new_oauth_with_scopes(
+            &client_id,
+            &client_secret,
+            &cli.token_cache,
+            &["https://www.googleapis.com/auth/youtube"],
+        ).await
     };
 
     match cli.command {
         Commands::Login => {
-            println!("Starting OAuth2 Login flow...");
+            println!("Starting OAuth2 Login flow with full YouTube permissions...");
             let _client = get_client().await?;
             println!("Login successful! Token saved to {:?}", cli.token_cache);
         }

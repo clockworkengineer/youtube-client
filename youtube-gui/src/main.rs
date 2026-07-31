@@ -228,9 +228,36 @@ impl YoutubeGuiApp {
             return Err("Token cache (tokencache.json) is missing. Please run the CLI login flow first: `cargo run --bin youtube-client -- login`".to_string());
         }
 
+        // Verify if the cache contains the full youtube scope to prevent GUI hanging
+        let mut has_full_scope = false;
+        if let Ok(content) = std::fs::read_to_string(&token_cache_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(obj) = val.as_object() {
+                    for (_k, v) in obj {
+                        if let Some(scopes) = v.get("scopes").and_then(|s| s.as_array()) {
+                            for scope in scopes {
+                                if scope.as_str() == Some("https://www.googleapis.com/auth/youtube") {
+                                    has_full_scope = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !has_full_scope {
+            return Err("Token cache does not have full write permissions.\n\nPlease log in again via the terminal:\n`cargo run --bin youtube-client -- login`".to_string());
+        }
+
         // 2. Initialize OAuth client
-        let client = YoutubeClient::new_oauth(&client_id, &client_secret, &token_cache_path).await
-            .map_err(|e| format!("Authentication failed: {}", e))?;
+        let client = YoutubeClient::new_oauth_with_scopes(
+            &client_id,
+            &client_secret,
+            &token_cache_path,
+            &["https://www.googleapis.com/auth/youtube"],
+        ).await
+        .map_err(|e| format!("Authentication failed: {}", e))?;
 
         Ok(client)
     }

@@ -58,7 +58,7 @@ Following the completion of the first set of refactoring steps, we have identifi
 - [x] **Step 1: Centralize OAuth Scopes**
   - Define `YOUTUBE_SCOPES` constant in `youtube-client-lib/src/lib.rs`.
   - Update `youtube-gui` and `youtube-client` to use `YOUTUBE_SCOPES`.
-- [ ] **Step 2: Extract Token Cache Verification Helper**
+- [x] **Step 2: Extract Token Cache Verification Helper**
   - Implement `check_token_cache_scopes` in `youtube-client-lib/src/lib.rs`.
   - Simplify the verification block in `youtube-gui/src/main.rs`.
 - [ ] **Step 3: Centralize direct `yt-dlp` download logic**

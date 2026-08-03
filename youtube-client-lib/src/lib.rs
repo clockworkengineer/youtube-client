@@ -66,6 +66,45 @@ pub fn load_config_from_dir(dir: &Path) -> Config {
     Config::default()
 }
 
+pub fn check_token_cache_scopes(token_cache_path: &Path, required_scopes: &[&str]) -> bool {
+    if let Ok(content) = std::fs::read_to_string(token_cache_path) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            let check_scopes = |scopes: &serde_json::Value| -> bool {
+                if let Some(arr) = scopes.as_array() {
+                    for scope in arr {
+                        if let Some(scope_str) = scope.as_str() {
+                            if required_scopes.iter().any(|&s| s == scope_str) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            };
+
+            if let Some(arr) = val.as_array() {
+                for item in arr {
+                    if let Some(scopes) = item.get("scopes") {
+                        if check_scopes(scopes) {
+                            return true;
+                        }
+                    }
+                }
+            } else if let Some(obj) = val.as_object() {
+                for (_k, v) in obj {
+                    if let Some(scopes) = v.get("scopes") {
+                        if check_scopes(scopes) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+
 fn extract_thumbnail_url(thumbnails: Option<google_youtube3::api::ThumbnailDetails>) -> String {
     thumbnails
         .and_then(|t| t.default)
@@ -724,6 +763,25 @@ mod tests {
                 panic!("Failed to initialize YoutubeClient with credentials from config.json: {:?}", e);
             }
         }
+    }
+
+    #[test]
+    fn test_check_token_cache_scopes() {
+        let temp_dir = std::env::temp_dir();
+        let cache_path = temp_dir.join("test_check_token_cache_scopes.json");
+        
+        let dummy_cache_content = r#"[
+            {
+                "scopes": ["https://www.googleapis.com/auth/youtube.readonly"],
+                "token": {}
+            }
+        ]"#;
+        std::fs::write(&cache_path, dummy_cache_content).unwrap();
+
+        assert!(check_token_cache_scopes(&cache_path, &["https://www.googleapis.com/auth/youtube.readonly"]));
+        assert!(!check_token_cache_scopes(&cache_path, &["https://www.googleapis.com/auth/youtube"]));
+
+        let _ = std::fs::remove_file(&cache_path);
     }
 }
 

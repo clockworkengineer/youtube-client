@@ -516,7 +516,8 @@ impl YoutubeClient {
             .map_or(false, |ext| ext.eq_ignore_ascii_case("mp3"));
 
         let mut cmd = tokio::process::Command::new("yt-dlp");
-        cmd.arg("--newline");
+        cmd.arg("--newline")
+           .arg("--no-keep-video");
         if is_mp3 {
             cmd.arg("-x")
                 .arg("--audio-format")

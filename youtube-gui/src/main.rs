@@ -119,6 +119,11 @@ impl YoutubeGuiApp {
         let client_secret_input = config.client_secret.unwrap_or_default();
         let downloads_dir = PathBuf::from(config.downloads_dir.unwrap_or_else(|| "downloads".to_string()));
 
+        let mut downloads = HashMap::new();
+        if downloads_dir.exists() {
+            scan_downloads_dir(&downloads_dir, &mut downloads);
+        }
+
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
             thumbnails: HashMap::new(),
@@ -126,7 +131,7 @@ impl YoutubeGuiApp {
             view_history: Vec::new(),
             logging_in: false,
             login_error: None,
-            downloads: HashMap::new(),
+            downloads,
             player_state: PlayerState {
                 current_title: String::new(),
                 playing: false,
@@ -424,8 +429,8 @@ impl YoutubeGuiApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         match &download_status {
                             DownloadStatus::NotStarted => {
-                                if ui.button("📥 Download").clicked() {
-                                    *action = PendingAction::SpawnDownload { video: video.clone() };
+                                if ui.button("📥 Download Video").clicked() {
+                                    *action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
                                 }
                             }
                             DownloadStatus::Downloading { progress } => {
@@ -433,14 +438,28 @@ impl YoutubeGuiApp {
                                 ui.label(progress);
                             }
                             DownloadStatus::Finished(_) => {
-                                let is_playing = player_state.playing && player_state.current_title == video.title;
-                                if is_playing {
-                                    if ui.button(egui::RichText::new("⏹ Stop").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
-                                        let _ = self.audio_tx.send(PlayerCommand::Stop);
+                                let path_opt = match &download_status {
+                                    DownloadStatus::Finished(path) => Some(path),
+                                    _ => None,
+                                };
+                                let is_mp3 = path_opt.map(|p| p.extension().map(|ext| ext == "mp3").unwrap_or(false)).unwrap_or(false);
+                                
+                                if is_mp3 {
+                                    let is_playing = player_state.playing && player_state.current_title == video.title;
+                                    if is_playing {
+                                        if ui.button(egui::RichText::new("⏹ Stop").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
+                                            let _ = self.audio_tx.send(PlayerCommand::Stop);
+                                        }
+                                    } else {
+                                        if ui.button("▶ Play Local").clicked() {
+                                            if let Some(path) = path_opt {
+                                                *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                            }
+                                        }
                                     }
                                 } else {
-                                    if ui.button("▶ Play Local").clicked() {
-                                        if let DownloadStatus::Finished(path) = &download_status {
+                                    if ui.button("▶ Play Local Video").clicked() {
+                                        if let Some(path) = path_opt {
                                             *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
                                         }
                                     }
@@ -448,7 +467,7 @@ impl YoutubeGuiApp {
                             }
                             DownloadStatus::Failed(err) => {
                                 if ui.button("❌ Retry").clicked() {
-                                    *action = PendingAction::SpawnDownload { video: video.clone() };
+                                    *action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
                                 }
                                 ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
                             }
@@ -543,7 +562,7 @@ impl YoutubeGuiApp {
         });
     }
 
-    fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: youtube_client_lib::Video) {
+    fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: youtube_client_lib::Video, is_audio: bool) {
         let video_id = video.id.clone();
         {
             let mut s = state.lock().unwrap();
@@ -564,7 +583,8 @@ impl YoutubeGuiApp {
                     sanitize_filename(&video.channel_title)
                 };
 
-                let file_name = format!("{} [{}].mp3", sanitize_filename(&video.title), video.id);
+                let ext = if is_audio { "mp3" } else { "mp4" };
+                let file_name = format!("{} [{}].{}", sanitize_filename(&video.title), video.id, ext);
                 let downloads_dir = downloads_base.join(channel_dir_name);
 
                 if !downloads_dir.exists() {
@@ -882,7 +902,7 @@ enum PendingAction {
     LoadChannel { id: String, title: String, description: String },
     GoBack,
     RetryVideos { id: String, title: String, description: String },
-    SpawnDownload { video: youtube_client_lib::Video },
+    SpawnDownload { video: youtube_client_lib::Video, is_audio: bool },
     PlayLocal { path: PathBuf, title: String },
     StreamVideo { video_id: String },
     Search { query: String },
@@ -1492,8 +1512,11 @@ impl eframe::App for YoutubeGuiApp {
 
                                 match &download_status {
                                     DownloadStatus::NotStarted => {
+                                        if ui.button("📥 Download Video").clicked() {
+                                            action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
+                                        }
                                         if ui.button("📥 Download Audio").clicked() {
-                                            action = PendingAction::SpawnDownload { video: video.clone() };
+                                            action = PendingAction::SpawnDownload { video: video.clone(), is_audio: true };
                                         }
                                     }
                                     DownloadStatus::Downloading { progress } => {
@@ -1501,22 +1524,39 @@ impl eframe::App for YoutubeGuiApp {
                                         ui.label(progress);
                                     }
                                     DownloadStatus::Finished(_) => {
-                                        let is_playing = player_state.playing && player_state.current_title == video.title;
-                                        if is_playing {
-                                            if ui.button(egui::RichText::new("⏹ Stop Audio").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
-                                                let _ = self.audio_tx.send(PlayerCommand::Stop);
+                                        let path_opt = match &download_status {
+                                            DownloadStatus::Finished(path) => Some(path),
+                                            _ => None,
+                                        };
+                                        let is_mp3 = path_opt.map(|p| p.extension().map(|ext| ext == "mp3").unwrap_or(false)).unwrap_or(false);
+                                        
+                                        if is_mp3 {
+                                            let is_playing = player_state.playing && player_state.current_title == video.title;
+                                            if is_playing {
+                                                if ui.button(egui::RichText::new("⏹ Stop Audio").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
+                                                    let _ = self.audio_tx.send(PlayerCommand::Stop);
+                                                }
+                                            } else {
+                                                if ui.button(egui::RichText::new("▶ Play Local Audio").color(egui::Color32::from_rgb(100, 255, 100)).strong()).clicked() {
+                                                    if let Some(path) = path_opt {
+                                                        action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                                    }
+                                                }
                                             }
                                         } else {
-                                            if ui.button(egui::RichText::new("▶ Play Local Audio").color(egui::Color32::from_rgb(100, 255, 100)).strong()).clicked() {
-                                                if let DownloadStatus::Finished(path) = &download_status {
+                                            if ui.button(egui::RichText::new("▶ Play Local Video").color(egui::Color32::from_rgb(100, 255, 100)).strong()).clicked() {
+                                                if let Some(path) = path_opt {
                                                     action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
                                                 }
                                             }
                                         }
                                     }
                                     DownloadStatus::Failed(err) => {
-                                        if ui.button("❌ Retry").clicked() {
-                                            action = PendingAction::SpawnDownload { video: video.clone() };
+                                        if ui.button("❌ Retry Video").clicked() {
+                                            action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
+                                        }
+                                        if ui.button("❌ Retry Audio").clicked() {
+                                            action = PendingAction::SpawnDownload { video: video.clone(), is_audio: true };
                                         }
                                         ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
                                     }
@@ -1695,12 +1735,51 @@ impl eframe::App for YoutubeGuiApp {
                 }
                 Self::fetch_videos(ctx.clone(), self.state.clone(), id, title);
             }
-            PendingAction::SpawnDownload { video } => {
-                Self::spawn_download(self.state.clone(), ctx.clone(), video);
+            PendingAction::SpawnDownload { video, is_audio } => {
+                Self::spawn_download(self.state.clone(), ctx.clone(), video, is_audio);
             }
             PendingAction::PlayLocal { path, title } => {
-                println!("Playing local audio: {:?}", path);
-                let _ = self.audio_tx.send(PlayerCommand::Play(path, title));
+                let is_mp3 = path.extension().map(|e| e == "mp3").unwrap_or(false);
+                if is_mp3 {
+                    println!("Playing local audio: {:?}", path);
+                    let _ = self.audio_tx.send(PlayerCommand::Play(path, title));
+                } else {
+                    println!("Opening local video: {:?}", path);
+                    let mut players = Vec::new();
+                    let resolved_path = Self::get_player_path();
+                    if let Some(user_player) = resolved_path {
+                        players.push(user_player);
+                    }
+                    players.extend(vec![
+                        "mpv".to_string(),
+                        "vlc".to_string(),
+                        "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
+                        "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
+                    ]);
+                    
+                    let mut opened = false;
+                    for player in players {
+                        print!("Trying player: {} ... ", player);
+                        match std::process::Command::new(&player)
+                            .arg(&path)
+                            .spawn()
+                        {
+                            Ok(_) => {
+                                println!("SUCCESS!");
+                                opened = true;
+                                break;
+                            }
+                            Err(e) => {
+                                println!("FAILED ({})", e);
+                            }
+                        }
+                    }
+
+                    if !opened {
+                        println!("No media players succeeded. Falling back to default file opener.");
+                        let _ = open::that(path);
+                    }
+                }
             }
             PendingAction::StreamVideo { video_id } => {
                 let url = format!("https://www.youtube.com/watch?v={}", video_id);
@@ -1865,6 +1944,42 @@ fn sanitize_filename(name: &str) -> String {
     }
     // Trim trailing dots and spaces, which are invalid on Windows filesystems
     truncated.trim_end_matches(|c| c == ' ' || c == '.').to_string()
+}
+
+fn extract_video_id_from_path(path: &std::path::Path) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?;
+    if stem.len() == 11 {
+        return Some(stem.to_string());
+    }
+    let open_bracket = stem.rfind('[')?;
+    let close_bracket = stem.rfind(']')?;
+    if open_bracket < close_bracket && close_bracket == stem.len() - 1 {
+        let id = &stem[open_bracket + 1..close_bracket];
+        if id.len() == 11 {
+            return Some(id.to_string());
+        }
+    }
+    None
+}
+
+fn scan_downloads_dir(dir: &std::path::Path, downloads: &mut HashMap<String, DownloadStatus>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                scan_downloads_dir(&path, downloads);
+            } else if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    let ext_str = ext.to_string_lossy();
+                    if ext_str == "mp3" || ext_str == "mp4" {
+                        if let Some(video_id) = extract_video_id_from_path(&path) {
+                            downloads.insert(video_id, DownloadStatus::Finished(path));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 

@@ -70,6 +70,7 @@ struct AppState {
     player_state: PlayerState,
     playlists: Option<Result<Vec<youtube_client_lib::Playlist>, String>>,
     playlist_action_status: Option<Result<String, String>>,
+    downloads_dir: PathBuf,
 }
 
 impl AppState {
@@ -116,6 +117,7 @@ impl YoutubeGuiApp {
         let config = youtube_client_lib::load_config();
         let client_id_input = config.client_id.unwrap_or_default();
         let client_secret_input = config.client_secret.unwrap_or_default();
+        let downloads_dir = PathBuf::from(config.downloads_dir.unwrap_or_else(|| "downloads".to_string()));
 
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
@@ -131,6 +133,7 @@ impl YoutubeGuiApp {
             },
             playlists: None,
             playlist_action_status: None,
+            downloads_dir,
         }));
 
         let http_client = reqwest::Client::new();
@@ -422,7 +425,7 @@ impl YoutubeGuiApp {
                         match &download_status {
                             DownloadStatus::NotStarted => {
                                 if ui.button("📥 Download").clicked() {
-                                    *action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                    *action = PendingAction::SpawnDownload { video: video.clone() };
                                 }
                             }
                             DownloadStatus::Downloading { progress } => {
@@ -445,7 +448,7 @@ impl YoutubeGuiApp {
                             }
                             DownloadStatus::Failed(err) => {
                                 if ui.button("❌ Retry").clicked() {
-                                    *action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                    *action = PendingAction::SpawnDownload { video: video.clone() };
                                 }
                                 ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
                             }
@@ -540,7 +543,8 @@ impl YoutubeGuiApp {
         });
     }
 
-    fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_id: String) {
+    fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: youtube_client_lib::Video) {
+        let video_id = video.id.clone();
         {
             let mut s = state.lock().unwrap();
             s.downloads.insert(video_id.clone(), DownloadStatus::Downloading { progress: "Starting...".to_string() });
@@ -549,11 +553,24 @@ impl YoutubeGuiApp {
         let ctx_clone = ctx.clone();
         tokio::spawn(async move {
             let res = async {
-                let downloads_dir = PathBuf::from("downloads");
+                let downloads_base = {
+                    let s = state_clone.lock().unwrap();
+                    s.downloads_dir.clone()
+                };
+
+                let channel_dir_name = if video.channel_title.is_empty() {
+                    "Unknown Channel".to_string()
+                } else {
+                    sanitize_filename(&video.channel_title)
+                };
+
+                let file_name = format!("{} [{}].mp3", sanitize_filename(&video.title), video.id);
+                let downloads_dir = downloads_base.join(channel_dir_name);
+
                 if !downloads_dir.exists() {
                     std::fs::create_dir_all(&downloads_dir).map_err(|e| e.to_string())?;
                 }
-                let output_path = downloads_dir.join(format!("{}.mp3", video_id));
+                let output_path = downloads_dir.join(file_name);
 
                 let client = Self::get_client_async().await.map_err(|e| e.to_string())?;
                 
@@ -865,7 +882,7 @@ enum PendingAction {
     LoadChannel { id: String, title: String, description: String },
     GoBack,
     RetryVideos { id: String, title: String, description: String },
-    SpawnDownload { video_id: String },
+    SpawnDownload { video: youtube_client_lib::Video },
     PlayLocal { path: PathBuf, title: String },
     StreamVideo { video_id: String },
     Search { query: String },
@@ -1476,7 +1493,7 @@ impl eframe::App for YoutubeGuiApp {
                                 match &download_status {
                                     DownloadStatus::NotStarted => {
                                         if ui.button("📥 Download Audio").clicked() {
-                                            action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                            action = PendingAction::SpawnDownload { video: video.clone() };
                                         }
                                     }
                                     DownloadStatus::Downloading { progress } => {
@@ -1499,7 +1516,7 @@ impl eframe::App for YoutubeGuiApp {
                                     }
                                     DownloadStatus::Failed(err) => {
                                         if ui.button("❌ Retry").clicked() {
-                                            action = PendingAction::SpawnDownload { video_id: video.id.clone() };
+                                            action = PendingAction::SpawnDownload { video: video.clone() };
                                         }
                                         ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
                                     }
@@ -1678,8 +1695,8 @@ impl eframe::App for YoutubeGuiApp {
                 }
                 Self::fetch_videos(ctx.clone(), self.state.clone(), id, title);
             }
-            PendingAction::SpawnDownload { video_id } => {
-                Self::spawn_download(self.state.clone(), ctx.clone(), video_id);
+            PendingAction::SpawnDownload { video } => {
+                Self::spawn_download(self.state.clone(), ctx.clone(), video);
             }
             PendingAction::PlayLocal { path, title } => {
                 println!("Playing local audio: {:?}", path);
@@ -1831,6 +1848,15 @@ impl eframe::App for YoutubeGuiApp {
             }
         }
     }
+}
+
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect()
 }
 
 

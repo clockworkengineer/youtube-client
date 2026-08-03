@@ -98,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
             client_id: cid,
             client_secret: csec,
             player_path: None,
+            downloads_dir: None,
         };
 
         if temp_config.is_valid() {

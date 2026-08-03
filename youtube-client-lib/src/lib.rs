@@ -7,6 +7,7 @@ pub struct Config {
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
     pub player_path: Option<String>,
+    pub downloads_dir: Option<String>,
 }
 
 impl Config {
@@ -82,6 +83,7 @@ pub struct Video {
     pub description: String,
     pub published_at: String,
     pub thumbnail_url: String,
+    pub channel_title: String,
 }
 
 #[derive(Clone, Debug)]
@@ -240,7 +242,7 @@ impl YoutubeClient {
                     let title = snippet.title.unwrap_or_default();
                     let description = snippet.description.unwrap_or_default();
                     let published_at = snippet.published_at.unwrap_or_default();
-                    
+                    let channel_title = snippet.channel_title.clone().unwrap_or_default();
                     let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
 
 
@@ -250,6 +252,7 @@ impl YoutubeClient {
                         description,
                         published_at: published_at.to_string(),
                         thumbnail_url,
+                        channel_title,
                     });
                 }
             }
@@ -282,6 +285,7 @@ impl YoutubeClient {
                     let title = snippet.title.unwrap_or_default();
                     let description = snippet.description.unwrap_or_default();
                     let published_at = snippet.published_at.unwrap_or_default();
+                    let channel_title = snippet.channel_title.clone().unwrap_or_default();
                     let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
 
                     videos.push(Video {
@@ -290,6 +294,7 @@ impl YoutubeClient {
                         description,
                         published_at: published_at.to_string(),
                         thumbnail_url,
+                        channel_title,
                     });
                 }
             }
@@ -358,6 +363,9 @@ impl YoutubeClient {
                     let title = snippet.title.unwrap_or_default();
                     let description = snippet.description.unwrap_or_default();
                     let published_at = snippet.published_at.unwrap_or_default();
+                    let channel_title = snippet.video_owner_channel_title.clone()
+                        .or_else(|| snippet.channel_title.clone())
+                        .unwrap_or_default();
                     let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
 
                     videos.push(Video {
@@ -366,6 +374,7 @@ impl YoutubeClient {
                         description,
                         published_at: published_at.to_string(),
                         thumbnail_url,
+                        channel_title,
                     });
                 }
             }

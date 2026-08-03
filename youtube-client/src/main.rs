@@ -163,15 +163,29 @@ async fn main() -> anyhow::Result<()> {
                 Err(_) => {
                     println!("No OAuth credentials provided (optional for download). Using direct downloader...");
                     let url = format!("https://www.youtube.com/watch?v={}", video_id);
-                    let video = rusty_ytdl::Video::new(url)?;
-                    video.download(&output).await?;
+                    let mut cmd = tokio::process::Command::new("yt-dlp");
+                    let is_mp3 = output.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("mp3"));
+                    if is_mp3 {
+                        cmd.arg("-x").arg("--audio-format").arg("mp3");
+                    } else {
+                        cmd.arg("-f").arg("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]");
+                    }
+                    cmd.arg("-o").arg(&output).arg(&url);
+                    let status = cmd.status().await?;
+                    if !status.success() {
+                        anyhow::bail!("yt-dlp download failed");
+                    }
                     println!("Download complete! Saved to {:?}", output);
                     return Ok(());
                 }
             };
             println!("Downloading via client...");
-            client.download_video(&video_id, &output).await?;
-            println!("Download complete! Saved to {:?}", output);
+            client.download_video(&video_id, &output, |prog| {
+                print!("\r{}", prog);
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+            }).await?;
+            println!("\nDownload complete! Saved to {:?}", output);
         }
         Commands::Play { file, system } => {
             if !file.exists() {

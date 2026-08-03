@@ -7,7 +7,7 @@ use youtube_client_lib::{YoutubeClient, Subscription};
 #[derive(Clone, Debug, PartialEq)]
 enum DownloadStatus {
     NotStarted,
-    Downloading,
+    Downloading { progress: String },
     Finished(PathBuf),
     Failed(String),
 }
@@ -346,9 +346,12 @@ impl YoutubeGuiApp {
     ) {
         ui.push_id(&video.id, |ui| {
             let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
-            let download_status = {
+            let (download_status, player_state) = {
                 let s_lock = self.state.lock().unwrap();
-                s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted)
+                (
+                    s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted),
+                    s_lock.player_state.clone(),
+                )
             };
             let mut card_clicked = false;
 
@@ -422,14 +425,21 @@ impl YoutubeGuiApp {
                                     *action = PendingAction::SpawnDownload { video_id: video.id.clone() };
                                 }
                             }
-                            DownloadStatus::Downloading => {
+                            DownloadStatus::Downloading { progress } => {
                                 ui.spinner();
-                                ui.label("Downloading...");
+                                ui.label(progress);
                             }
                             DownloadStatus::Finished(_) => {
-                                if ui.button("▶ Play Local").clicked() {
-                                    if let DownloadStatus::Finished(path) = &download_status {
-                                        *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                let is_playing = player_state.playing && player_state.current_title == video.title;
+                                if is_playing {
+                                    if ui.button(egui::RichText::new("⏹ Stop").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
+                                        let _ = self.audio_tx.send(PlayerCommand::Stop);
+                                    }
+                                } else {
+                                    if ui.button("▶ Play Local").clicked() {
+                                        if let DownloadStatus::Finished(path) = &download_status {
+                                            *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                        }
                                     }
                                 }
                             }
@@ -533,7 +543,7 @@ impl YoutubeGuiApp {
     fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_id: String) {
         {
             let mut s = state.lock().unwrap();
-            s.downloads.insert(video_id.clone(), DownloadStatus::Downloading);
+            s.downloads.insert(video_id.clone(), DownloadStatus::Downloading { progress: "Starting...".to_string() });
         }
         let state_clone = state.clone();
         let ctx_clone = ctx.clone();
@@ -543,10 +553,20 @@ impl YoutubeGuiApp {
                 if !downloads_dir.exists() {
                     std::fs::create_dir_all(&downloads_dir).map_err(|e| e.to_string())?;
                 }
-                let output_path = downloads_dir.join(format!("{}.mp4", video_id));
+                let output_path = downloads_dir.join(format!("{}.mp3", video_id));
 
                 let client = Self::get_client_async().await.map_err(|e| e.to_string())?;
-                client.download_video(&video_id, &output_path).await.map_err(|e| e.to_string())?;
+                
+                let state_inner = state_clone.clone();
+                let ctx_inner = ctx_clone.clone();
+                let vid_id = video_id.clone();
+                client.download_video(&video_id, &output_path, move |prog| {
+                    if let Ok(mut s) = state_inner.lock() {
+                        s.downloads.insert(vid_id.clone(), DownloadStatus::Downloading { progress: prog.to_string() });
+                    }
+                    ctx_inner.request_repaint();
+                }).await.map_err(|e| e.to_string())?;
+                
                 Ok(output_path)
             }.await;
 
@@ -1459,14 +1479,21 @@ impl eframe::App for YoutubeGuiApp {
                                             action = PendingAction::SpawnDownload { video_id: video.id.clone() };
                                         }
                                     }
-                                    DownloadStatus::Downloading => {
+                                    DownloadStatus::Downloading { progress } => {
                                         ui.spinner();
-                                        ui.label("Downloading...");
+                                        ui.label(progress);
                                     }
                                     DownloadStatus::Finished(_) => {
-                                        if ui.button(egui::RichText::new("▶ Play Local Audio").color(egui::Color32::from_rgb(100, 255, 100)).strong()).clicked() {
-                                            if let DownloadStatus::Finished(path) = &download_status {
-                                                action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                        let is_playing = player_state.playing && player_state.current_title == video.title;
+                                        if is_playing {
+                                            if ui.button(egui::RichText::new("⏹ Stop Audio").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
+                                                let _ = self.audio_tx.send(PlayerCommand::Stop);
+                                            }
+                                        } else {
+                                            if ui.button(egui::RichText::new("▶ Play Local Audio").color(egui::Color32::from_rgb(100, 255, 100)).strong()).clicked() {
+                                                if let DownloadStatus::Finished(path) = &download_status {
+                                                    action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                                }
                                             }
                                         }
                                     }

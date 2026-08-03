@@ -495,12 +495,90 @@ impl YoutubeClient {
 
     /// Download a YouTube video by ID to the target path.
     #[cfg(feature = "download")]
-    pub async fn download_video(&self, video_id: &str, output_path: &Path) -> anyhow::Result<()> {
+    pub async fn download_video<F>(&self, video_id: &str, output_path: &Path, on_progress: F) -> anyhow::Result<()>
+    where
+        F: Fn(&str) + Send + Sync + 'static,
+    {
+        use tokio::io::AsyncReadExt;
+
         let url = format!("https://www.youtube.com/watch?v={}", video_id);
-        let video = rusty_ytdl::Video::new(url)?;
-        video.download(output_path).await?;
+        let is_mp3 = output_path
+            .extension()
+            .map_or(false, |ext| ext.eq_ignore_ascii_case("mp3"));
+
+        let mut cmd = tokio::process::Command::new("yt-dlp");
+        cmd.arg("--newline");
+        if is_mp3 {
+            cmd.arg("-x")
+                .arg("--audio-format")
+                .arg("mp3")
+                .arg("-o")
+                .arg(output_path)
+                .arg(&url);
+        } else {
+            cmd.arg("-f")
+                .arg("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]")
+                .arg("-o")
+                .arg(output_path)
+                .arg(&url);
+        }
+
+        let mut child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+
+        let mut stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("Failed to capture stdout"))?;
+        
+        let mut buffer = Vec::new();
+        let mut temp_buf = [0u8; 1024];
+
+        on_progress("Starting download...");
+
+        loop {
+            let n = stdout.read(&mut temp_buf).await?;
+            if n == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&temp_buf[..n]);
+
+            while let Some(pos) = buffer.iter().position(|&b| b == b'\n' || b == b'\r') {
+                let line_bytes = buffer.drain(..pos + 1).collect::<Vec<u8>>();
+                if line_bytes.is_empty() {
+                    continue;
+                }
+                let content_len = line_bytes.len() - 1;
+                if let Ok(line_str) = std::str::from_utf8(&line_bytes[..content_len]) {
+                    let line = line_str.trim();
+                    if !line.is_empty() {
+                        if line.contains("[download]") {
+                            if let Some(pct_idx) = line.find('%') {
+                                if let Some(dl_idx) = line.find("[download]") {
+                                    let start = dl_idx + 10;
+                                    if start < pct_idx {
+                                        let pct = line[start..pct_idx].trim();
+                                        on_progress(&format!("Downloading: {}%", pct));
+                                    }
+                                }
+                            } else if line.contains("Destination:") {
+                                on_progress("Starting download...");
+                            }
+                        } else if line.contains("[ExtractAudio]") || line.contains("[ffmpeg]") {
+                            on_progress("Extracting audio...");
+                        }
+                    }
+                }
+            }
+        }
+
+        let status = child.wait().await?;
+        if !status.success() {
+            anyhow::bail!("yt-dlp download failed with status: {:?}", status.code());
+        }
         Ok(())
     }
+
+
 
     /// Play the audio of the downloaded video file using Rodio.
     #[cfg(feature = "audio")]

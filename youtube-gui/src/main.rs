@@ -317,6 +317,44 @@ impl YoutubeGuiApp {
         config.player_path.filter(|s| !s.is_empty() && s != "ENTER_PATH_TO_MEDIA_PLAYER_HERE")
     }
 
+    fn launch_media_player(target: &std::ffi::OsStr) -> Result<(), String> {
+        let mut players = Vec::new();
+        let resolved_path = Self::get_player_path();
+        if let Some(user_player) = resolved_path {
+            players.push(user_player);
+        }
+        players.extend(vec![
+            "mpv".to_string(),
+            "vlc".to_string(),
+            "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
+            "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
+        ]);
+        
+        let mut opened = false;
+        for player in players {
+            print!("Trying player: {} ... ", player);
+            match std::process::Command::new(&player)
+                .arg(target)
+                .spawn()
+            {
+                Ok(_) => {
+                    println!("SUCCESS!");
+                    opened = true;
+                    break;
+                }
+                Err(e) => {
+                    println!("FAILED ({})", e);
+                }
+            }
+        }
+
+        if opened {
+            Ok(())
+        } else {
+            Err("No media players succeeded.".to_string())
+        }
+    }
+
     fn get_or_fetch_thumbnail(&self, ctx: &egui::Context, id: &str, url: &str) -> Option<egui::TextureHandle> {
         let mut start_fetch = false;
         let texture = {
@@ -1745,38 +1783,8 @@ impl eframe::App for YoutubeGuiApp {
                     let _ = self.audio_tx.send(PlayerCommand::Play(path, title));
                 } else {
                     println!("Opening local video: {:?}", path);
-                    let mut players = Vec::new();
-                    let resolved_path = Self::get_player_path();
-                    if let Some(user_player) = resolved_path {
-                        players.push(user_player);
-                    }
-                    players.extend(vec![
-                        "mpv".to_string(),
-                        "vlc".to_string(),
-                        "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
-                        "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
-                    ]);
-                    
-                    let mut opened = false;
-                    for player in players {
-                        print!("Trying player: {} ... ", player);
-                        match std::process::Command::new(&player)
-                            .arg(&path)
-                            .spawn()
-                        {
-                            Ok(_) => {
-                                println!("SUCCESS!");
-                                opened = true;
-                                break;
-                            }
-                            Err(e) => {
-                                println!("FAILED ({})", e);
-                            }
-                        }
-                    }
-
-                    if !opened {
-                        println!("No media players succeeded. Falling back to default file opener.");
+                    if let Err(e) = Self::launch_media_player(path.as_os_str()) {
+                        println!("{} Falling back to default file opener.", e);
                         let _ = open::that(path);
                     }
                 }
@@ -1786,39 +1794,8 @@ impl eframe::App for YoutubeGuiApp {
                 println!("Video clicked: {}", url);
                 
                 // Try to open the stream in MPV or VLC first
-                let mut players = Vec::new();
-                let resolved_path = Self::get_player_path();
-                println!("Resolved player path from config: {:?}", resolved_path);
-                if let Some(user_player) = resolved_path {
-                    players.push(user_player);
-                }
-                players.extend(vec![
-                    "mpv".to_string(),
-                    "vlc".to_string(),
-                    "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
-                    "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
-                ]);
-                
-                let mut opened = false;
-                for player in players {
-                    print!("Trying player: {} ... ", player);
-                    match std::process::Command::new(&player)
-                        .arg(&url)
-                        .spawn()
-                    {
-                        Ok(_) => {
-                            println!("SUCCESS!");
-                            opened = true;
-                            break;
-                        }
-                        Err(e) => {
-                            println!("FAILED ({})", e);
-                        }
-                    }
-                }
-
-                if !opened {
-                    println!("No media players succeeded. Falling back to default browser.");
+                if let Err(e) = Self::launch_media_player(std::ffi::OsStr::new(&url)) {
+                    println!("{} Falling back to default browser.", e);
                     let _ = open::that(url);
                 }
             }

@@ -19,3 +19,5 @@ default = ["audio", "download"]
 audio = ["dep:rodio"]
 download = ["dep:rusty_ytdl"]
 
+[dev-dependencies]
+tempfile = "3"

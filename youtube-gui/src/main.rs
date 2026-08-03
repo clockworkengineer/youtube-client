@@ -3,14 +3,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
 use youtube_client_lib::{YoutubeClient, Subscription};
+use youtube_client_lib::utils::{extract_video_id_from_path, sanitize_filename, scan_downloads_dir, DownloadStatus};
 
-#[derive(Clone, Debug, PartialEq)]
-enum DownloadStatus {
-    NotStarted,
-    Downloading { progress: String },
-    Finished(PathBuf),
-    Failed(String),
-}
+
+
 
 #[derive(Clone)]
 struct Thumbnail {
@@ -1883,58 +1879,11 @@ fn get_download_path(downloads_base: &std::path::Path, channel_title: &str, vide
     downloads_base.join(channel_dir_name).join(file_name)
 }
 
-fn sanitize_filename(name: &str) -> String {
-    let sanitized: String = name.chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            _ => c,
-        })
-        .collect();
-    
-    // Truncate to a safe length (e.g., 60 characters) to avoid MAX_PATH issues on Windows
-    let mut truncated = sanitized;
-    if truncated.len() > 60 {
-        truncated.truncate(60);
-    }
-    // Trim trailing dots and spaces, which are invalid on Windows filesystems
-    truncated.trim_end_matches(|c| c == ' ' || c == '.').to_string()
-}
+// sanitize_filename moved to youtube_client_lib::utils
 
-fn extract_video_id_from_path(path: &std::path::Path) -> Option<String> {
-    let stem = path.file_stem()?.to_str()?;
-    if stem.len() == 11 {
-        return Some(stem.to_string());
-    }
-    let open_bracket = stem.rfind('[')?;
-    let close_bracket = stem.rfind(']')?;
-    if open_bracket < close_bracket && close_bracket == stem.len() - 1 {
-        let id = &stem[open_bracket + 1..close_bracket];
-        if id.len() == 11 {
-            return Some(id.to_string());
-        }
-    }
-    None
-}
+// extract_video_id_from_path moved to youtube_client_lib::utils
 
-fn scan_downloads_dir(dir: &std::path::Path, downloads: &mut HashMap<String, DownloadStatus>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                scan_downloads_dir(&path, downloads);
-            } else if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    let ext_str = ext.to_string_lossy();
-                    if ext_str == "mp3" || ext_str == "mp4" {
-                        if let Some(video_id) = extract_video_id_from_path(&path) {
-                            downloads.insert(video_id, DownloadStatus::Finished(path));
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+// scan_downloads_dir moved to youtube_client_lib::utils
 
 
 

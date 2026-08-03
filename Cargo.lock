@@ -6858,6 +6858,7 @@ dependencies = [
  "rusty_ytdl",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "yup-oauth2",
 ]

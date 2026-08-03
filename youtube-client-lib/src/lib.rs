@@ -2,6 +2,8 @@ use std::path::Path;
 use google_youtube3::{YouTube, hyper_rustls, hyper_util};
 use yup_oauth2::{InstalledFlowAuthenticator, InstalledFlowReturnMethod, ApplicationSecret};
 
+pub mod utils;
+
 #[derive(serde::Deserialize, Clone, Debug, Default)]
 pub struct Config {
     pub client_id: Option<String>,

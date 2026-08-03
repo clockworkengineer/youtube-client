@@ -57,6 +57,6 @@ During our recent work, we identified several patterns of code duplication (DRY 
 - [x] **Step 2: Consolidate Background Fetch Boilerplate**
   - Implement the generic `spawn_fetch_action` wrapper.
   - Refactor `fetch_videos`, `fetch_search_results`, `fetch_playlist_videos`, `spawn_fetch_comments`, and `spawn_fetch_playlists` to utilize the new wrapper.
-- [ ] **Step 3: Centralize Download Path Logic**
+- [x] **Step 3: Centralize Download Path Logic**
   - Extract `get_download_path` helper.
   - Simplify path building in `spawn_download`.

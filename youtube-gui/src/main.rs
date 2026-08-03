@@ -615,20 +615,13 @@ impl YoutubeGuiApp {
                     s.downloads_dir.clone()
                 };
 
-                let channel_dir_name = if video.channel_title.is_empty() {
-                    "Unknown Channel".to_string()
-                } else {
-                    sanitize_filename(&video.channel_title)
-                };
+                let output_path = get_download_path(&downloads_base, &video.channel_title, &video.title, &video.id, is_audio);
 
-                let ext = if is_audio { "mp3" } else { "mp4" };
-                let file_name = format!("{} [{}].{}", sanitize_filename(&video.title), video.id, ext);
-                let downloads_dir = downloads_base.join(channel_dir_name);
-
-                if !downloads_dir.exists() {
-                    std::fs::create_dir_all(&downloads_dir).map_err(|e| e.to_string())?;
+                if let Some(parent) = output_path.parent() {
+                    if !parent.exists() {
+                        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                    }
                 }
-                let output_path = downloads_dir.join(file_name);
 
                 let client = Self::get_client_async().await.map_err(|e| e.to_string())?;
                 
@@ -1909,6 +1902,18 @@ impl eframe::App for YoutubeGuiApp {
     }
 }
 
+fn get_download_path(downloads_base: &std::path::Path, channel_title: &str, video_title: &str, video_id: &str, is_audio: bool) -> std::path::PathBuf {
+    let channel_dir_name = if channel_title.is_empty() {
+        "Unknown Channel".to_string()
+    } else {
+        sanitize_filename(channel_title)
+    };
+
+    let ext = if is_audio { "mp3" } else { "mp4" };
+    let file_name = format!("{} [{}].{}", sanitize_filename(video_title), video_id, ext);
+    downloads_base.join(channel_dir_name).join(file_name)
+}
+
 fn sanitize_filename(name: &str) -> String {
     let sanitized: String = name.chars()
         .map(|c| match c {
@@ -1979,4 +1984,38 @@ async fn main() -> eframe::Result<()> {
         native_options,
         Box::new(|cc| Box::new(YoutubeGuiApp::new(cc))),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_filename() {
+        assert_eq!(sanitize_filename("Hello/World?"), "Hello_World_");
+        assert_eq!(sanitize_filename(&"A very long name ".repeat(10)), "A very long name A very long name A very long name A very lo");
+        assert_eq!(sanitize_filename("dots... "), "dots");
+    }
+
+    #[test]
+    fn test_get_download_path() {
+        let base = std::path::Path::new("downloads");
+        let path = get_download_path(base, "Channel Title?", "Video Title*", "abcdefghijk", false);
+        assert_eq!(
+            path,
+            std::path::PathBuf::from("downloads/Channel Title_/Video Title_ [abcdefghijk].mp4")
+        );
+    }
+
+    #[test]
+    fn test_extract_video_id_from_path() {
+        let path1 = std::path::Path::new("downloads/Channel Title/Video Title [abcdefghijk].mp4");
+        assert_eq!(extract_video_id_from_path(path1), Some("abcdefghijk".to_string()));
+
+        let path2 = std::path::Path::new("downloads/Channel Title/abcdefghijk.mp3");
+        assert_eq!(extract_video_id_from_path(path2), Some("abcdefghijk".to_string()));
+
+        let path3 = std::path::Path::new("downloads/Channel Title/invalid_name.mp4");
+        assert_eq!(extract_video_id_from_path(path3), None);
+    }
 }

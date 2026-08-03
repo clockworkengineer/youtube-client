@@ -46,6 +46,18 @@ pub fn load_config() -> Config {
     load_config_from_dir(Path::new("."))
 }
 
+pub fn load_config_from_file_or_default(path: &Path) -> Config {
+    if path != Path::new("config.json") {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(config) = serde_json::from_str::<Config>(&content) {
+                return config;
+            }
+        }
+    }
+    load_config()
+}
+
+
 pub fn load_config_from_dir(dir: &Path) -> Config {
     let private_config = dir.join("private_config.json");
     let fallback_config = dir.join("config.json");
@@ -794,6 +806,30 @@ mod tests {
         assert!(!check_token_cache_scopes(&cache_path, &["https://www.googleapis.com/auth/youtube"]));
 
         let _ = std::fs::remove_file(&cache_path);
+    }
+
+    #[test]
+    fn test_load_config_from_file_or_default() {
+        let temp_dir = std::env::temp_dir();
+        let custom_config_path = temp_dir.join("test_custom_config.json");
+
+        let custom_content = r#"{
+            "client_id": "custom_id",
+            "client_secret": "custom_secret"
+        }"#;
+        std::fs::write(&custom_config_path, custom_content).unwrap();
+
+        // 1. Loads from custom config
+        let cfg1 = load_config_from_file_or_default(&custom_config_path);
+        assert_eq!(cfg1.client_id, Some("custom_id".to_string()));
+        assert_eq!(cfg1.client_secret, Some("custom_secret".to_string()));
+
+        // 2. Falls back to default config if config.json is passed
+        let cfg2 = load_config_from_file_or_default(Path::new("config.json"));
+        // This should run without error, returning default / loaded values
+        let _ = cfg2.is_valid();
+
+        let _ = std::fs::remove_file(&custom_config_path);
     }
 }
 

@@ -76,15 +76,7 @@ async fn main() -> anyhow::Result<()> {
 
         // If credentials are still missing, try loading from the config file
         if cid.is_none() || csec.is_none() {
-            let config = if cli.config != std::path::PathBuf::from("config.json") {
-                if let Ok(file_content) = std::fs::read_to_string(&cli.config) {
-                    serde_json::from_str::<youtube_client_lib::Config>(&file_content).unwrap_or_default()
-                } else {
-                    youtube_client_lib::load_config()
-                }
-            } else {
-                youtube_client_lib::load_config()
-            };
+            let config = youtube_client_lib::load_config_from_file_or_default(&cli.config);
 
             if cid.is_none() {
                 cid = config.client_id;

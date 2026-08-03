@@ -64,6 +64,6 @@ Following the completion of the first set of refactoring steps, we have identifi
 - [x] **Step 3: Centralize direct `yt-dlp` download logic**
   - Implement `download_video_direct` in `youtube-client-lib/src/lib.rs`.
   - Refactor `download_video` in `youtube-client-lib` and `Commands::Download` in `youtube-client` to use the new library method.
-- [ ] **Step 4: Refactor Config Loader**
+- [x] **Step 4: Refactor Config Loader**
   - Implement `load_config_from_file_or_default` in `youtube-client-lib/src/lib.rs`.
   - Replace the custom config file parsing logic in `youtube-client/src/main.rs`.

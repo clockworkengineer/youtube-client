@@ -61,7 +61,7 @@ Following the completion of the first set of refactoring steps, we have identifi
 - [x] **Step 2: Extract Token Cache Verification Helper**
   - Implement `check_token_cache_scopes` in `youtube-client-lib/src/lib.rs`.
   - Simplify the verification block in `youtube-gui/src/main.rs`.
-- [ ] **Step 3: Centralize direct `yt-dlp` download logic**
+- [x] **Step 3: Centralize direct `yt-dlp` download logic**
   - Implement `download_video_direct` in `youtube-client-lib/src/lib.rs`.
   - Refactor `download_video` in `youtube-client-lib` and `Commands::Download` in `youtube-client` to use the new library method.
 - [ ] **Step 4: Refactor Config Loader**

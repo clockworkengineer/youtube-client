@@ -155,29 +155,14 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Download { video_id, output } => {
             println!("Starting download for video {}...", video_id);
-            let client = match get_client().await {
-                Ok(c) => c,
-                Err(_) => {
-                    println!("No OAuth credentials provided (optional for download). Using direct downloader...");
-                    let url = format!("https://www.youtube.com/watch?v={}", video_id);
-                    let mut cmd = tokio::process::Command::new("yt-dlp");
-                    let is_mp3 = output.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("mp3"));
-                    if is_mp3 {
-                        cmd.arg("-x").arg("--audio-format").arg("mp3");
-                    } else {
-                        cmd.arg("-f").arg("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]");
-                    }
-                    cmd.arg("-o").arg(&output).arg(&url);
-                    let status = cmd.status().await?;
-                    if !status.success() {
-                        anyhow::bail!("yt-dlp download failed");
-                    }
-                    println!("Download complete! Saved to {:?}", output);
-                    return Ok(());
-                }
-            };
-            println!("Downloading via client...");
-            client.download_video(&video_id, &output, |prog| {
+            let client_res = get_client().await;
+            if client_res.is_err() {
+                println!("No OAuth credentials provided (optional for download). Using direct downloader...");
+            } else {
+                println!("Downloading via client...");
+            }
+
+            youtube_client_lib::download_video_direct(&video_id, &output, |prog| {
                 print!("\r{}", prog);
                 use std::io::Write;
                 let _ = std::io::stdout().flush();

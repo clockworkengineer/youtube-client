@@ -553,99 +553,111 @@ impl YoutubeClient {
     where
         F: Fn(&str) + Send + Sync + 'static,
     {
-        use tokio::io::AsyncReadExt;
+        download_video_direct(video_id, output_path, on_progress).await
+    }
+}
 
-        let url = format!("https://www.youtube.com/watch?v={}", video_id);
-        let is_mp3 = output_path
-            .extension()
-            .map_or(false, |ext| ext.eq_ignore_ascii_case("mp3"));
+/// Download a YouTube video directly by ID using yt-dlp.
+#[cfg(feature = "download")]
+pub async fn download_video_direct<F>(video_id: &str, output_path: &Path, on_progress: F) -> anyhow::Result<()>
+where
+    F: Fn(&str) + Send + Sync + 'static,
+{
+    use tokio::io::AsyncReadExt;
 
-        let mut cmd = tokio::process::Command::new("yt-dlp");
-        cmd.arg("--newline")
-           .arg("--no-keep-video");
-        if is_mp3 {
-            cmd.arg("-x")
-                .arg("--audio-format")
-                .arg("mp3")
-                .arg("-o")
-                .arg(output_path)
-                .arg(&url);
-        } else {
-            cmd.arg("-f")
-                .arg("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]")
-                .arg("-o")
-                .arg(output_path)
-                .arg(&url);
-        }
+    let url = format!("https://www.youtube.com/watch?v={}", video_id);
+    let is_mp3 = output_path
+        .extension()
+        .map_or(false, |ext| ext.eq_ignore_ascii_case("mp3"));
 
-        let mut child = cmd
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
+    let mut cmd = tokio::process::Command::new("yt-dlp");
+    cmd.arg("--newline")
+       .arg("--no-keep-video");
+    if is_mp3 {
+        cmd.arg("-x")
+            .arg("--audio-format")
+            .arg("mp3")
+            .arg("-o")
+            .arg(output_path)
+            .arg(&url);
+    } else {
+        cmd.arg("-f")
+            .arg("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]")
+            .arg("-o")
+            .arg(output_path)
+            .arg(&url);
+    }
 
-        let mut stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("Failed to capture stdout"))?;
-        let mut stderr = child.stderr.take().ok_or_else(|| anyhow::anyhow!("Failed to capture stderr"))?;
-        
-        let stderr_handle = tokio::spawn(async move {
-            let mut err_buf = Vec::new();
-            let mut temp_err = [0u8; 1024];
-            while let Ok(n) = stderr.read(&mut temp_err).await {
-                if n == 0 {
-                    break;
-                }
-                err_buf.extend_from_slice(&temp_err[..n]);
-            }
-            String::from_utf8_lossy(&err_buf).into_owned()
-        });
-        
-        let mut buffer = Vec::new();
-        let mut temp_buf = [0u8; 1024];
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
 
-        on_progress("Starting download...");
-
-        loop {
-            let n = stdout.read(&mut temp_buf).await?;
+    let mut stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("Failed to capture stdout"))?;
+    let mut stderr = child.stderr.take().ok_or_else(|| anyhow::anyhow!("Failed to capture stderr"))?;
+    
+    let stderr_handle = tokio::spawn(async move {
+        let mut err_buf = Vec::new();
+        let mut temp_err = [0u8; 1024];
+        while let Ok(n) = stderr.read(&mut temp_err).await {
             if n == 0 {
                 break;
             }
-            buffer.extend_from_slice(&temp_buf[..n]);
+            err_buf.extend_from_slice(&temp_err[..n]);
+        }
+        String::from_utf8_lossy(&err_buf).into_owned()
+    });
+    
+    let mut buffer = Vec::new();
+    let mut temp_buf = [0u8; 1024];
 
-            while let Some(pos) = buffer.iter().position(|&b| b == b'\n' || b == b'\r') {
-                let line_bytes = buffer.drain(..pos + 1).collect::<Vec<u8>>();
-                if line_bytes.is_empty() {
-                    continue;
-                }
-                let content_len = line_bytes.len() - 1;
-                if let Ok(line_str) = std::str::from_utf8(&line_bytes[..content_len]) {
-                    let line = line_str.trim();
-                    if !line.is_empty() {
-                        if line.contains("[download]") {
-                            if let Some(pct_idx) = line.find('%') {
-                                if let Some(dl_idx) = line.find("[download]") {
-                                    let start = dl_idx + 10;
-                                    if start < pct_idx {
-                                        let pct = line[start..pct_idx].trim();
-                                        on_progress(&format!("Downloading: {}%", pct));
-                                    }
+    on_progress("Starting download...");
+
+    loop {
+        let n = stdout.read(&mut temp_buf).await?;
+        if n == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&temp_buf[..n]);
+
+        while let Some(pos) = buffer.iter().position(|&b| b == b'\n' || b == b'\r') {
+            let line_bytes = buffer.drain(..pos + 1).collect::<Vec<u8>>();
+            if line_bytes.is_empty() {
+                continue;
+            }
+            let content_len = line_bytes.len() - 1;
+            if let Ok(line_str) = std::str::from_utf8(&line_bytes[..content_len]) {
+                let line = line_str.trim();
+                if !line.is_empty() {
+                    if line.contains("[download]") {
+                        if let Some(pct_idx) = line.find('%') {
+                            if let Some(dl_idx) = line.find("[download]") {
+                                let start = dl_idx + 10;
+                                if start < pct_idx {
+                                    let pct = line[start..pct_idx].trim();
+                                    on_progress(&format!("Downloading: {}%", pct));
                                 }
-                            } else if line.contains("Destination:") {
-                                on_progress("Starting download...");
                             }
-                        } else if line.contains("[ExtractAudio]") || line.contains("[ffmpeg]") {
-                            on_progress("Extracting audio...");
+                        } else if line.contains("Destination:") {
+                            on_progress("Starting download...");
                         }
+                    } else if line.contains("[ExtractAudio]") || line.contains("[ffmpeg]") {
+                        on_progress("Extracting audio...");
                     }
                 }
             }
         }
-
-        let status = child.wait().await?;
-        let stderr_output = stderr_handle.await.unwrap_or_default();
-        if !status.success() {
-            anyhow::bail!("yt-dlp download failed: {}", stderr_output.trim());
-        }
-        Ok(())
     }
+
+    let status = child.wait().await?;
+    let stderr_output = stderr_handle.await.unwrap_or_default();
+    if !status.success() {
+        anyhow::bail!("yt-dlp download failed: {}", stderr_output.trim());
+    }
+    Ok(())
+}
+
+impl YoutubeClient {
 
 
 

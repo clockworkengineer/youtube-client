@@ -534,10 +534,23 @@ impl YoutubeClient {
 
         let mut child = cmd
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .spawn()?;
 
         let mut stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("Failed to capture stdout"))?;
+        let mut stderr = child.stderr.take().ok_or_else(|| anyhow::anyhow!("Failed to capture stderr"))?;
+        
+        let stderr_handle = tokio::spawn(async move {
+            let mut err_buf = Vec::new();
+            let mut temp_err = [0u8; 1024];
+            while let Ok(n) = stderr.read(&mut temp_err).await {
+                if n == 0 {
+                    break;
+                }
+                err_buf.extend_from_slice(&temp_err[..n]);
+            }
+            String::from_utf8_lossy(&err_buf).into_owned()
+        });
         
         let mut buffer = Vec::new();
         let mut temp_buf = [0u8; 1024];
@@ -581,8 +594,9 @@ impl YoutubeClient {
         }
 
         let status = child.wait().await?;
+        let stderr_output = stderr_handle.await.unwrap_or_default();
         if !status.success() {
-            anyhow::bail!("yt-dlp download failed with status: {:?}", status.code());
+            anyhow::bail!("yt-dlp download failed: {}", stderr_output.trim());
         }
         Ok(())
     }

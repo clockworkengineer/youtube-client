@@ -1851,12 +1851,20 @@ impl eframe::App for YoutubeGuiApp {
 }
 
 fn sanitize_filename(name: &str) -> String {
-    name.chars()
+    let sanitized: String = name.chars()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
             _ => c,
         })
-        .collect()
+        .collect();
+    
+    // Truncate to a safe length (e.g., 60 characters) to avoid MAX_PATH issues on Windows
+    let mut truncated = sanitized;
+    if truncated.len() > 60 {
+        truncated.truncate(60);
+    }
+    // Trim trailing dots and spaces, which are invalid on Windows filesystems
+    truncated.trim_end_matches(|c| c == ' ' || c == '.').to_string()
 }
 
 

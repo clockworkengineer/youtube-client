@@ -116,11 +116,7 @@ async fn main() -> anyhow::Result<()> {
             &client_id,
             &client_secret,
             &cli.token_cache,
-            &[
-                "https://www.googleapis.com/auth/youtube",
-                "https://www.googleapis.com/auth/youtube.force-ssl",
-                "https://www.googleapis.com/auth/youtube.readonly"
-            ],
+            youtube_client_lib::YOUTUBE_SCOPES,
         ).await
     };
 

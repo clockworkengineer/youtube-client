@@ -301,11 +301,7 @@ impl YoutubeGuiApp {
             &client_id,
             &client_secret,
             &token_cache_path,
-            &[
-                "https://www.googleapis.com/auth/youtube",
-                "https://www.googleapis.com/auth/youtube.force-ssl",
-                "https://www.googleapis.com/auth/youtube.readonly"
-            ],
+            youtube_client_lib::YOUTUBE_SCOPES,
         ).await
         .map_err(|e| format!("Authentication failed: {}", e))?;
 
@@ -571,11 +567,7 @@ impl YoutubeGuiApp {
                     &id,
                     &secret,
                     &token_cache_path,
-                    &[
-                        "https://www.googleapis.com/auth/youtube",
-                        "https://www.googleapis.com/auth/youtube.force-ssl",
-                        "https://www.googleapis.com/auth/youtube.readonly"
-                    ],
+                    youtube_client_lib::YOUTUBE_SCOPES,
                 ).await
                 .map_err(|e| format!("OAuth initialization failed: {}", e))?;
                 client.test_connection().await

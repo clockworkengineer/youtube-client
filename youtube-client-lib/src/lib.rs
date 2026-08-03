@@ -20,6 +20,12 @@ impl Config {
     }
 }
 
+pub const YOUTUBE_SCOPES: &[&str] = &[
+    "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+    "https://www.googleapis.com/auth/youtube.readonly",
+];
+
 pub const GOOGLE_SETUP_INSTRUCTIONS: &str = "\
 Please configure them in one of the following ways:\n\
 1. Pass them as arguments: --client-id <ID> --client-secret <SECRET>\n\

@@ -520,28 +520,28 @@ impl YoutubeGuiApp {
         });
     }
 
-    async fn initialize_and_fetch_async() -> Result<Vec<Subscription>, String> {
-        let client = Self::get_client_async().await?;
-        let subs = client.list_subscriptions(50).await
-            .map_err(|e| format!("Failed to fetch subscriptions: {}", e))?;
-        Ok(subs)
-    }
-
     fn spawn_fetch_subscriptions(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
-        tokio::spawn(async move {
-            let res = Self::initialize_and_fetch_async().await;
-            let mut s = state.lock().unwrap();
-            match res {
-                Ok(subs) => {
-                    s.subscriptions = Some(Ok(subs));
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "fetch_subscriptions",
+            |client| async move {
+                client.list_subscriptions(50).await
+                    .map_err(|e| format!("Failed to fetch subscriptions: {}", e))
+            },
+            |res, s, ctx| {
+                match res {
+                    Ok(subs) => {
+                        s.subscriptions = Some(Ok(subs));
+                    }
+                    Err(e) => {
+                        s.subscriptions = Some(Err(e));
+                        s.current_view = View::Login;
+                    }
                 }
-                Err(e) => {
-                    s.subscriptions = Some(Err(e));
-                    s.current_view = View::Login;
-                }
-            }
-            ctx.request_repaint();
-        });
+                ctx.request_repaint();
+            },
+        );
     }
 
     fn spawn_login_and_auth(state: Arc<Mutex<AppState>>, ctx: egui::Context, id: String, secret: String) {
@@ -664,28 +664,29 @@ impl YoutubeGuiApp {
         channel_id: String,
         _channel_title: String,
     ) {
-        let state_clone = state.clone();
-        tokio::spawn(async move {
-            let res = async {
-                let client = Self::get_client_async().await?;
-                let videos = client.list_videos(&channel_id, 20).await
-                    .map_err(|e| format!("Failed to fetch videos: {}", e))?;
-                Ok(videos)
-            }.await;
-
-            let mut s = state_clone.lock().unwrap();
-            if let View::ChannelVideos { channel_id: current_id, channel_title: current_title, channel_description: current_desc, videos: _ } = &s.current_view {
-                if current_id == &channel_id {
-                    s.current_view = View::ChannelVideos {
-                        channel_id,
-                        channel_title: current_title.clone(),
-                        channel_description: current_desc.clone(),
-                        videos: Some(res),
-                    };
+        let channel_id_clone = channel_id.clone();
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "fetch_videos",
+            move |client| async move {
+                client.list_videos(&channel_id, 20).await
+                    .map_err(|e| format!("Failed to fetch videos: {}", e))
+            },
+            move |res, s, ctx| {
+                if let View::ChannelVideos { channel_id: current_id, channel_title: current_title, channel_description: current_desc, videos: _ } = &s.current_view {
+                    if current_id == &channel_id_clone {
+                        s.current_view = View::ChannelVideos {
+                            channel_id: channel_id_clone,
+                            channel_title: current_title.clone(),
+                            channel_description: current_desc.clone(),
+                            videos: Some(res),
+                        };
+                    }
                 }
-            }
-            ctx.request_repaint();
-        });
+                ctx.request_repaint();
+            },
+        );
     }
 
     fn fetch_search_results(
@@ -693,45 +694,46 @@ impl YoutubeGuiApp {
         state: Arc<Mutex<AppState>>,
         query: String,
     ) {
-        let state_clone = state.clone();
-        tokio::spawn(async move {
-            let res = async {
-                let client = Self::get_client_async().await?;
-                let videos = client.search_videos(&query, 20).await
-                    .map_err(|e| format!("Failed to search videos: {}", e))?;
-                Ok(videos)
-            }.await;
-
-            let mut s = state_clone.lock().unwrap();
-            if let View::SearchResults { query: current_q, videos: _ } = &s.current_view {
-                if current_q == &query {
-                    s.current_view = View::SearchResults {
-                        query,
-                        videos: Some(res),
-                    };
+        let query_clone = query.clone();
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "fetch_search_results",
+            move |client| async move {
+                client.search_videos(&query, 20).await
+                    .map_err(|e| format!("Failed to search videos: {}", e))
+            },
+            move |res, s, ctx| {
+                if let View::SearchResults { query: current_q, videos: _ } = &s.current_view {
+                    if current_q == &query_clone {
+                        s.current_view = View::SearchResults {
+                            query: query_clone,
+                            videos: Some(res),
+                        };
+                    }
                 }
-            }
-            ctx.request_repaint();
-        });
+                ctx.request_repaint();
+            },
+        );
     }
 
     fn spawn_fetch_playlists(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
-        let state_clone = state.clone();
-        tokio::spawn(async move {
-            let res = async {
-                let client = Self::get_client_async().await?;
-                let playlists = client.list_playlists(50).await
-                    .map_err(|e| format!("Failed to fetch playlists: {}", e))?;
-                Ok(playlists)
-            }.await;
-
-            let mut s = state_clone.lock().unwrap();
-            s.playlists = Some(res.clone());
-            if let View::Playlists { playlists: _ } = &s.current_view {
-                s.current_view = View::Playlists { playlists: Some(res) };
-            }
-            ctx.request_repaint();
-        });
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "fetch_playlists",
+            |client| async move {
+                client.list_playlists(50).await
+                    .map_err(|e| format!("Failed to fetch playlists: {}", e))
+            },
+            |res, s, ctx| {
+                s.playlists = Some(res.clone());
+                if let View::Playlists { playlists: _ } = &s.current_view {
+                    s.current_view = View::Playlists { playlists: Some(res) };
+                }
+                ctx.request_repaint();
+            },
+        );
     }
 
     fn fetch_playlist_videos(
@@ -740,51 +742,52 @@ impl YoutubeGuiApp {
         playlist_id: String,
         _playlist_title: String,
     ) {
-        let state_clone = state.clone();
-        tokio::spawn(async move {
-            let res = async {
-                let client = Self::get_client_async().await?;
-                let videos = client.list_playlist_videos(&playlist_id, 50).await
-                    .map_err(|e| format!("Failed to fetch playlist videos: {}", e))?;
-                Ok(videos)
-            }.await;
-
-            let mut s = state_clone.lock().unwrap();
-            if let View::PlaylistVideos { playlist_id: current_id, playlist_title: current_title, videos: _ } = &s.current_view {
-                if current_id == &playlist_id {
-                    s.current_view = View::PlaylistVideos {
-                        playlist_id,
-                        playlist_title: current_title.clone(),
-                        videos: Some(res),
-                    };
+        let playlist_id_clone = playlist_id.clone();
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "fetch_playlist_videos",
+            move |client| async move {
+                client.list_playlist_videos(&playlist_id, 50).await
+                    .map_err(|e| format!("Failed to fetch playlist videos: {}", e))
+            },
+            move |res, s, ctx| {
+                if let View::PlaylistVideos { playlist_id: current_id, playlist_title: current_title, videos: _ } = &s.current_view {
+                    if current_id == &playlist_id_clone {
+                        s.current_view = View::PlaylistVideos {
+                            playlist_id: playlist_id_clone,
+                            playlist_title: current_title.clone(),
+                            videos: Some(res),
+                        };
+                    }
                 }
-            }
-            ctx.request_repaint();
-        });
+                ctx.request_repaint();
+            },
+        );
     }
 
     fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: youtube_client_lib::Video) {
-        let state_clone = state.clone();
         let video_clone = video.clone();
-        tokio::spawn(async move {
-            let res = async {
-                let client = Self::get_client_async().await?;
-                let comments = client.fetch_comments(&video_clone.id).await
-                    .map_err(|e| format!("Failed to fetch comments: {}", e))?;
-                Ok(comments)
-            }.await;
-
-            let mut s = state_clone.lock().unwrap();
-            if let View::VideoDetails { video: current_video, comments: _ } = &s.current_view {
-                if current_video.id == video_clone.id {
-                    s.current_view = View::VideoDetails {
-                        video: video_clone,
-                        comments: Some(res),
-                    };
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "fetch_comments",
+            move |client| async move {
+                client.fetch_comments(&video.id).await
+                    .map_err(|e| format!("Failed to fetch comments: {}", e))
+            },
+            move |res, s, ctx| {
+                if let View::VideoDetails { video: current_video, comments: _ } = &s.current_view {
+                    if current_video.id == video_clone.id {
+                        s.current_view = View::VideoDetails {
+                            video: video_clone,
+                            comments: Some(res),
+                        };
+                    }
                 }
-            }
-            ctx.request_repaint();
-        });
+                ctx.request_repaint();
+            },
+        );
     }
 
     fn spawn_client_action<F, Fut, T>(

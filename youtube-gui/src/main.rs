@@ -2,8 +2,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
-use youtube_client_lib::{YoutubeClient, Subscription};
-use youtube_client_lib::utils::{sanitize_filename, scan_downloads_dir, DownloadStatus};
+use youtube_client_lib::{Subscription, YoutubeClient};
+use youtube_client_lib::utils::{
+    get_download_path, launch_external_player, load_string_set_from_file,
+    save_string_set_to_file, scan_downloads_dir, DownloadStatus,
+};
 
 
 
@@ -123,7 +126,7 @@ impl YoutubeGuiApp {
             scan_downloads_dir(&downloads_dir, &mut downloads);
         }
 
-        let cleared_video_ids = load_cleared_video_ids();
+        let cleared_video_ids = load_string_set_from_file(std::path::Path::new("cleared_videos.json"));
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
             new_videos: None,
@@ -285,49 +288,6 @@ impl YoutubeGuiApp {
         .map_err(|e| format!("Authentication failed: {}", e))?;
 
         Ok(client)
-    }
-
-    fn get_player_path() -> Option<String> {
-        let config = youtube_client_lib::load_config();
-        config.player_path.filter(|s| !s.is_empty() && s != "ENTER_PATH_TO_MEDIA_PLAYER_HERE")
-    }
-
-    fn launch_media_player(target: &std::ffi::OsStr) -> Result<(), String> {
-        let mut players = Vec::new();
-        let resolved_path = Self::get_player_path();
-        if let Some(user_player) = resolved_path {
-            players.push(user_player);
-        }
-        players.extend(vec![
-            "mpv".to_string(),
-            "vlc".to_string(),
-            "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
-            "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
-        ]);
-        
-        let mut opened = false;
-        for player in players {
-            print!("Trying player: {} ... ", player);
-            match std::process::Command::new(&player)
-                .arg(target)
-                .spawn()
-            {
-                Ok(_) => {
-                    println!("SUCCESS!");
-                    opened = true;
-                    break;
-                }
-                Err(e) => {
-                    println!("FAILED ({})", e);
-                }
-            }
-        }
-
-        if opened {
-            Ok(())
-        } else {
-            Err("No media players succeeded.".to_string())
-        }
     }
 
     fn get_or_fetch_thumbnail(&self, ctx: &egui::Context, id: &str, url: &str) -> Option<egui::TextureHandle> {
@@ -1870,13 +1830,13 @@ impl eframe::App for YoutubeGuiApp {
                 for id in ids_to_clear {
                     s_lock.cleared_video_ids.insert(id);
                 }
-                save_cleared_video_ids(&s_lock.cleared_video_ids);
+                let _ = save_string_set_to_file(std::path::Path::new("cleared_videos.json"), &s_lock.cleared_video_ids);
                 s_lock.new_videos = Some(Ok(Vec::new()));
             }
             PendingAction::DismissNewVideo { video_id } => {
                 let mut s_lock = self.state.lock().unwrap();
                 s_lock.cleared_video_ids.insert(video_id.clone());
-                save_cleared_video_ids(&s_lock.cleared_video_ids);
+                let _ = save_string_set_to_file(std::path::Path::new("cleared_videos.json"), &s_lock.cleared_video_ids);
                 if let Some(Ok(ref mut vids)) = s_lock.new_videos {
                     vids.retain(|v| v.id != video_id);
                 }
@@ -1885,7 +1845,7 @@ impl eframe::App for YoutubeGuiApp {
                 {
                     let mut s_lock = self.state.lock().unwrap();
                     s_lock.cleared_video_ids.clear();
-                    save_cleared_video_ids(&s_lock.cleared_video_ids);
+                    let _ = save_string_set_to_file(std::path::Path::new("cleared_videos.json"), &s_lock.cleared_video_ids);
                     s_lock.new_videos = None;
                 }
                 Self::spawn_fetch_new_videos(self.state.clone(), ctx.clone());
@@ -1928,7 +1888,7 @@ impl eframe::App for YoutubeGuiApp {
                     let _ = self.audio_tx.send(PlayerCommand::Play(path, title));
                 } else {
                     println!("Opening local video: {:?}", path);
-                    if let Err(e) = Self::launch_media_player(path.as_os_str()) {
+                    if let Err(e) = launch_external_player(path.as_os_str()) {
                         println!("{} Falling back to default file opener.", e);
                         let _ = open::that(path);
                     }
@@ -1939,7 +1899,7 @@ impl eframe::App for YoutubeGuiApp {
                 println!("Video clicked: {}", url);
                 
                 // Try to open the stream in MPV or VLC first
-                if let Err(e) = Self::launch_media_player(std::ffi::OsStr::new(&url)) {
+                if let Err(e) = launch_external_player(std::ffi::OsStr::new(&url)) {
                     println!("{} Falling back to default browser.", e);
                     let _ = open::that(url);
                 }
@@ -2051,45 +2011,6 @@ impl eframe::App for YoutubeGuiApp {
     }
 }
 
-fn get_download_path(downloads_base: &std::path::Path, channel_title: &str, video_title: &str, video_id: &str, is_audio: bool) -> std::path::PathBuf {
-    let channel_dir_name = if channel_title.is_empty() {
-        "Unknown Channel".to_string()
-    } else {
-        sanitize_filename(channel_title)
-    };
-
-    let ext = if is_audio { "mp3" } else { "mp4" };
-    let file_name = format!("{} [{}].{}", sanitize_filename(video_title), video_id, ext);
-    downloads_base.join(channel_dir_name).join(file_name)
-}
-
-fn load_cleared_video_ids() -> std::collections::HashSet<String> {
-    let path = std::path::Path::new("cleared_videos.json");
-    if path.exists() {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(ids) = serde_json::from_str::<Vec<String>>(&content) {
-                return ids.into_iter().collect();
-            }
-        }
-    }
-    std::collections::HashSet::new()
-}
-
-fn save_cleared_video_ids(ids: &std::collections::HashSet<String>) {
-    let list: Vec<&String> = ids.iter().collect();
-    if let Ok(content) = serde_json::to_string_pretty(&list) {
-        let _ = std::fs::write("cleared_videos.json", content);
-    }
-}
-
-// sanitize_filename moved to youtube_client_lib::utils
-
-// extract_video_id_from_path moved to youtube_client_lib::utils
-
-// scan_downloads_dir moved to youtube_client_lib::utils
-
-
-
 
 #[tokio::main]
 async fn main() -> eframe::Result<()> {
@@ -2107,37 +2028,3 @@ async fn main() -> eframe::Result<()> {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use youtube_client_lib::utils::extract_video_id_from_path;
-
-    #[test]
-    fn test_sanitize_filename() {
-        assert_eq!(sanitize_filename("Hello/World?"), "Hello_World_");
-        assert_eq!(sanitize_filename(&"A very long name ".repeat(10)), "A very long name A very long name A very long name A very lo");
-        assert_eq!(sanitize_filename("dots... "), "dots");
-    }
-
-    #[test]
-    fn test_get_download_path() {
-        let base = std::path::Path::new("downloads");
-        let path = get_download_path(base, "Channel Title?", "Video Title*", "abcdefghijk", false);
-        assert_eq!(
-            path,
-            std::path::PathBuf::from("downloads/Channel Title_/Video Title_ [abcdefghijk].mp4")
-        );
-    }
-
-    #[test]
-    fn test_extract_video_id_from_path() {
-        let path1 = std::path::Path::new("downloads/Channel Title/Video Title [abcdefghijk].mp4");
-        assert_eq!(extract_video_id_from_path(path1), Some("abcdefghijk".to_string()));
-
-        let path2 = std::path::Path::new("downloads/Channel Title/abcdefghijk.mp3");
-        assert_eq!(extract_video_id_from_path(path2), Some("abcdefghijk".to_string()));
-
-        let path3 = std::path::Path::new("downloads/Channel Title/invalid_name.mp4");
-        assert_eq!(extract_video_id_from_path(path3), None);
-    }
-}

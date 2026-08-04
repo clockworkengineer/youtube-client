@@ -113,3 +113,70 @@ pub fn print_table<T>(
     }
 }
 
+/// Construct the expected file path for a downloaded video/audio file.
+pub fn get_download_path(
+    downloads_base: &Path,
+    channel_title: &str,
+    video_title: &str,
+    video_id: &str,
+    is_audio: bool,
+) -> PathBuf {
+    let channel_dir_name = if channel_title.is_empty() {
+        "Unknown Channel".to_string()
+    } else {
+        sanitize_filename(channel_title)
+    };
+
+    let ext = if is_audio { "mp3" } else { "mp4" };
+    let file_name = format!("{} [{}].{}", sanitize_filename(video_title), video_id, ext);
+    downloads_base.join(channel_dir_name).join(file_name)
+}
+
+/// Retrieve configured media player path from config if specified.
+pub fn get_configured_player_path() -> Option<String> {
+    let config = crate::load_config();
+    config.player_path.filter(|s| !s.is_empty() && s != "ENTER_PATH_TO_MEDIA_PLAYER_HERE")
+}
+
+/// Launch an external media player for a file or URL target.
+pub fn launch_external_player(target: &std::ffi::OsStr) -> Result<(), String> {
+    let mut players = Vec::new();
+    if let Some(user_player) = get_configured_player_path() {
+        players.push(user_player);
+    }
+    players.extend(vec![
+        "mpv".to_string(),
+        "vlc".to_string(),
+        "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
+        "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
+    ]);
+
+    for player in players {
+        if std::process::Command::new(&player).arg(target).spawn().is_ok() {
+            return Ok(());
+        }
+    }
+
+    Err("No media players succeeded.".to_string())
+}
+
+/// Load a set of strings from a JSON array file.
+pub fn load_string_set_from_file(path: &Path) -> std::collections::HashSet<String> {
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(ids) = serde_json::from_str::<Vec<String>>(&content) {
+                return ids.into_iter().collect();
+            }
+        }
+    }
+    std::collections::HashSet::new()
+}
+
+/// Save a set of strings to a JSON array file.
+pub fn save_string_set_to_file(path: &Path, set: &std::collections::HashSet<String>) -> Result<(), String> {
+    let list: Vec<&String> = set.iter().collect();
+    let content = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+    std::fs::write(path, content).map_err(|e| e.to_string())
+}
+
+

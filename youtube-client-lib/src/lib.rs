@@ -18,6 +18,9 @@ pub enum YoutubeError {
     #[error("API request failed: {0}")]
     Api(#[from] google_youtube3::Error),
 
+    #[error("API Quota exceeded. Please check your Google Developer Console quota limits: {0}")]
+    QuotaExceeded(String),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -45,11 +48,12 @@ pub const YOUTUBE_SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/youtube.readonly",
 ];
 
-async fn retry_api_call<F, Fut, T>(f: F) -> std::result::Result<T, google_youtube3::Error>
+async fn retry_api_call<F, Fut, T>(f: F) -> std::result::Result<T, YoutubeError>
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = std::result::Result<T, google_youtube3::Error>>,
 {
+    use rand::Rng;
     let mut attempts = 0;
     let mut delay = std::time::Duration::from_millis(500);
     loop {
@@ -57,8 +61,22 @@ where
             Ok(val) => return Ok(val),
             Err(e) => {
                 attempts += 1;
+                
+                // Check if the error indicates a quota limit breach (commonly status code 403 or failure messages)
+                if let google_youtube3::Error::Failure(ref resp) = e {
+                    if resp.status().as_u16() == 403 {
+                        // In google-youtube3/hyper client, we can't easily extract bytes from hyper::Response BoxBody in a simple way
+                        // since BoxBody isn't easily readable without pinning and polling. Let's inspect the response headers or simply
+                        // look at the string representation or status.
+                        let status_str = format!("{:?}", resp);
+                        if status_str.contains("quotaExceeded") || status_str.contains("Quota Exceeded") || status_str.contains("403") {
+                            return Err(YoutubeError::QuotaExceeded(status_str));
+                        }
+                    }
+                }
+
                 if attempts >= 3 {
-                    return Err(e);
+                    return Err(YoutubeError::Api(e));
                 }
                 let is_retryable = match &e {
                     google_youtube3::Error::HttpError(_) => true,
@@ -69,9 +87,14 @@ where
                     _ => false,
                 };
                 if !is_retryable {
-                    return Err(e);
+                    return Err(YoutubeError::Api(e));
                 }
-                tokio::time::sleep(delay).await;
+                
+                // Exponential backoff with jitter: delay * (0.5 to 1.5)
+                let jitter: f64 = rand::thread_rng().gen_range(0.5..1.5);
+                let wait_duration = delay.mul_f64(jitter);
+                
+                tokio::time::sleep(wait_duration).await;
                 delay *= 2;
             }
         }
@@ -204,16 +227,23 @@ impl YoutubeClient {
     }
 
     /// List the authenticated user's subscriptions.
-    pub async fn list_subscriptions(&self, max_results: u32) -> Result<Vec<Subscription>> {
+    pub async fn list_subscriptions_page(
+        &self,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<(Vec<Subscription>, Option<String>)> {
         let limit = max_results.min(50);
         let (_response, list) = retry_api_call(|| async {
-            self.hub.subscriptions()
+            let mut req = self.hub.subscriptions()
                 .list(&vec!["snippet".to_string()])
                 .mine(true)
-                .max_results(limit)
-                .doit()
-                .await
+                .max_results(limit);
+            if let Some(token) = page_token {
+                req = req.page_token(token);
+            }
+            req.doit().await
         }).await?;
+        let next_page_token = list.next_page_token;
         let mut subscriptions = Vec::new();
         if let Some(items) = list.items {
             for item in items {
@@ -236,11 +266,22 @@ impl YoutubeClient {
                 }
             }
         }
-        Ok(subscriptions)
+        Ok((subscriptions, next_page_token))
+    }
+
+    /// List the authenticated user's subscriptions.
+    pub async fn list_subscriptions(&self, max_results: u32) -> Result<Vec<Subscription>> {
+        let (subs, _) = self.list_subscriptions_page(max_results, None).await?;
+        Ok(subs)
     }
 
     /// List uploaded videos from a channel (usually a channel you're subscribed to).
-    pub async fn list_videos(&self, channel_id: &str, max_results: u32) -> Result<Vec<Video>> {
+    pub async fn list_videos_page(
+        &self,
+        channel_id: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<(Vec<Video>, Option<String>)> {
         // Step 1: Get the channel details to retrieve the uploads playlist ID
         let (_resp, channel_res) = retry_api_call(|| async {
             self.hub.channels()
@@ -264,14 +305,17 @@ impl YoutubeClient {
         // Step 2: Fetch playlist items (videos) from the uploads playlist
         let limit = max_results.min(50);
         let (_resp, playlist_res) = retry_api_call(|| async {
-            self.hub.playlist_items()
+            let mut req = self.hub.playlist_items()
                 .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
                 .playlist_id(uploads_playlist_id)
-                .max_results(limit)
-                .doit()
-                .await
+                .max_results(limit);
+            if let Some(token) = page_token {
+                req = req.page_token(token);
+            }
+            req.doit().await
         }).await?;
 
+        let next_page_token = playlist_res.next_page_token;
         let mut videos = Vec::new();
         if let Some(items) = playlist_res.items {
             for item in items {
@@ -289,7 +333,6 @@ impl YoutubeClient {
                     let channel_title = snippet.channel_title.clone().unwrap_or_default();
                     let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
 
-
                     videos.push(Video {
                         id: video_id,
                         title,
@@ -301,21 +344,35 @@ impl YoutubeClient {
                 }
             }
         }
-        Ok(videos)
+        Ok((videos, next_page_token))
+    }
+
+    /// List uploaded videos from a channel (usually a channel you're subscribed to).
+    pub async fn list_videos(&self, channel_id: &str, max_results: u32) -> Result<Vec<Video>> {
+        let (vids, _) = self.list_videos_page(channel_id, max_results, None).await?;
+        Ok(vids)
     }
 
     /// Search for videos using a query string.
-    pub async fn search_videos(&self, query: &str, max_results: u32) -> Result<Vec<Video>> {
+    pub async fn search_videos_page(
+        &self,
+        query: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<(Vec<Video>, Option<String>)> {
         let limit = max_results.min(50);
         let (_resp, search_res) = retry_api_call(|| async {
-            self.hub.search()
+            let mut req = self.hub.search()
                 .list(&vec!["snippet".to_string()])
                 .q(query)
                 .add_type("video")
-                .max_results(limit)
-                .doit()
-                .await
+                .max_results(limit);
+            if let Some(token) = page_token {
+                req = req.page_token(token);
+            }
+            req.doit().await
         }).await?;
+        let next_page_token = search_res.next_page_token;
         let mut videos = Vec::new();
         if let Some(items) = search_res.items {
             for item in items {
@@ -345,20 +402,33 @@ impl YoutubeClient {
                 }
             }
         }
-        Ok(videos)
+        Ok((videos, next_page_token))
+    }
+
+    /// Search for videos using a query string.
+    pub async fn search_videos(&self, query: &str, max_results: u32) -> Result<Vec<Video>> {
+        let (vids, _) = self.search_videos_page(query, max_results, None).await?;
+        Ok(vids)
     }
 
     /// List the authenticated user's playlists.
-    pub async fn list_playlists(&self, max_results: u32) -> Result<Vec<Playlist>> {
+    pub async fn list_playlists_page(
+        &self,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<(Vec<Playlist>, Option<String>)> {
         let limit = max_results.min(50);
         let (_resp, playlist_res) = retry_api_call(|| async {
-            self.hub.playlists()
+            let mut req = self.hub.playlists()
                 .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
                 .mine(true)
-                .max_results(limit)
-                .doit()
-                .await
+                .max_results(limit);
+            if let Some(token) = page_token {
+                req = req.page_token(token);
+            }
+            req.doit().await
         }).await?;
+        let next_page_token = playlist_res.next_page_token;
         let mut playlists = Vec::new();
         if let Some(items) = playlist_res.items {
             for item in items {
@@ -384,21 +454,35 @@ impl YoutubeClient {
                 }
             }
         }
-        Ok(playlists)
+        Ok((playlists, next_page_token))
+    }
+
+    /// List the authenticated user's playlists.
+    pub async fn list_playlists(&self, max_results: u32) -> Result<Vec<Playlist>> {
+        let (pls, _) = self.list_playlists_page(max_results, None).await?;
+        Ok(pls)
     }
 
     /// List the videos inside a specific playlist.
-    pub async fn list_playlist_videos(&self, playlist_id: &str, max_results: u32) -> Result<Vec<Video>> {
+    pub async fn list_playlist_videos_page(
+        &self,
+        playlist_id: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<(Vec<Video>, Option<String>)> {
         let limit = max_results.min(50);
         let (_resp, playlist_res) = retry_api_call(|| async {
-            self.hub.playlist_items()
+            let mut req = self.hub.playlist_items()
                 .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
                 .playlist_id(playlist_id)
-                .max_results(limit)
-                .doit()
-                .await
+                .max_results(limit);
+            if let Some(token) = page_token {
+                req = req.page_token(token);
+            }
+            req.doit().await
         }).await?;
 
+        let next_page_token = playlist_res.next_page_token;
         let mut videos = Vec::new();
         if let Some(items) = playlist_res.items {
             for item in items {
@@ -429,7 +513,13 @@ impl YoutubeClient {
                 }
             }
         }
-        Ok(videos)
+        Ok((videos, next_page_token))
+    }
+
+    /// List the videos inside a specific playlist.
+    pub async fn list_playlist_videos(&self, playlist_id: &str, max_results: u32) -> Result<Vec<Video>> {
+        let (vids, _) = self.list_playlist_videos_page(playlist_id, max_results, None).await?;
+        Ok(vids)
     }
 
     /// Subscribe to a channel.
@@ -700,6 +790,7 @@ impl YoutubeClient {
                 .map_err(|e| YoutubeError::Media(format!("Failed to decode audio: {}", e)))?;
 
             player.append(source);
+            player.play();
             player.sleep_until_end();
             Ok(())
         })
@@ -852,7 +943,7 @@ mod tests {
 
         let counter = Arc::new(AtomicUsize::new(0));
 
-        let res: std::result::Result<(), google_youtube3::Error> = retry_api_call(|| {
+        let res: std::result::Result<(), YoutubeError> = retry_api_call(|| {
             let counter_clone = counter.clone();
             async move {
                 counter_clone.fetch_add(1, Ordering::SeqCst);

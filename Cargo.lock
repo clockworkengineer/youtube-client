@@ -6854,6 +6854,7 @@ dependencies = [
  "anyhow",
  "google-youtube3",
  "open",
+ "rand 0.8.7",
  "rodio",
  "rusty_ytdl",
  "serde",

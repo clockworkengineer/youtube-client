@@ -7,11 +7,76 @@ pub mod utils;
 
 pub use config::*;
 
+#[derive(thiserror::Error, Debug)]
+pub enum YoutubeError {
+    #[error("Credentials error: {0}")]
+    Credentials(String),
+
+    #[error("Authentication error: {0}")]
+    Auth(#[from] yup_oauth2::Error),
+
+    #[error("API request failed: {0}")]
+    Api(#[from] google_youtube3::Error),
+
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("Media error: {0}")]
+    Media(String),
+
+    #[error("Download error: {0}")]
+    Download(String),
+
+    #[error("yt-dlp is missing. Please make sure yt-dlp is installed and in your PATH: {0}")]
+    YtDlpMissing(String),
+
+    #[error("Other error: {0}")]
+    Other(String),
+}
+
+pub type Result<T> = std::result::Result<T, YoutubeError>;
+
 pub const YOUTUBE_SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/youtube",
     "https://www.googleapis.com/auth/youtube.force-ssl",
     "https://www.googleapis.com/auth/youtube.readonly",
 ];
+
+async fn retry_api_call<F, Fut, T>(f: F) -> std::result::Result<T, google_youtube3::Error>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = std::result::Result<T, google_youtube3::Error>>,
+{
+    let mut attempts = 0;
+    let mut delay = std::time::Duration::from_millis(500);
+    loop {
+        match f().await {
+            Ok(val) => return Ok(val),
+            Err(e) => {
+                attempts += 1;
+                if attempts >= 3 {
+                    return Err(e);
+                }
+                let is_retryable = match &e {
+                    google_youtube3::Error::HttpError(_) => true,
+                    google_youtube3::Error::Failure(resp) => {
+                        let status = resp.status();
+                        status.is_server_error() || status.as_u16() == 429
+                    }
+                    _ => false,
+                };
+                if !is_retryable {
+                    return Err(e);
+                }
+                tokio::time::sleep(delay).await;
+                delay *= 2;
+            }
+        }
+    }
+}
 
 /// Initialize a `YoutubeClient` with resolved credentials and standard YouTube scopes.
 pub async fn init_client(
@@ -19,7 +84,7 @@ pub async fn init_client(
     opt_client_secret: Option<String>,
     config_path: &Path,
     token_cache_path: &Path,
-) -> anyhow::Result<YoutubeClient> {
+) -> Result<YoutubeClient> {
     let (client_id, client_secret) = resolve_credentials(opt_client_id, opt_client_secret, config_path)?;
     YoutubeClient::new_oauth_with_scopes(
         &client_id,
@@ -89,7 +154,7 @@ impl YoutubeClient {
         client_id: &str,
         client_secret: &str,
         token_cache_path: &Path,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self> {
         Self::new_oauth_with_scopes(
             client_id,
             client_secret,
@@ -103,7 +168,7 @@ impl YoutubeClient {
         client_secret: &str,
         token_cache_path: &Path,
         scopes: &[&str],
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self> {
         let secret = ApplicationSecret {
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
@@ -139,14 +204,16 @@ impl YoutubeClient {
     }
 
     /// List the authenticated user's subscriptions.
-    pub async fn list_subscriptions(&self, max_results: u32) -> anyhow::Result<Vec<Subscription>> {
+    pub async fn list_subscriptions(&self, max_results: u32) -> Result<Vec<Subscription>> {
         let limit = max_results.min(50);
-        let req = self.hub.subscriptions()
-            .list(&vec!["snippet".to_string()])
-            .mine(true)
-            .max_results(limit);
-
-        let (_response, list) = req.doit().await?;
+        let (_response, list) = retry_api_call(|| async {
+            self.hub.subscriptions()
+                .list(&vec!["snippet".to_string()])
+                .mine(true)
+                .max_results(limit)
+                .doit()
+                .await
+        }).await?;
         let mut subscriptions = Vec::new();
         if let Some(items) = list.items {
             for item in items {
@@ -173,33 +240,37 @@ impl YoutubeClient {
     }
 
     /// List uploaded videos from a channel (usually a channel you're subscribed to).
-    pub async fn list_videos(&self, channel_id: &str, max_results: u32) -> anyhow::Result<Vec<Video>> {
+    pub async fn list_videos(&self, channel_id: &str, max_results: u32) -> Result<Vec<Video>> {
         // Step 1: Get the channel details to retrieve the uploads playlist ID
-        let (_resp, channel_res) = self.hub.channels()
-            .list(&vec!["contentDetails".to_string()])
-            .add_id(channel_id)
-            .doit()
-            .await?;
+        let (_resp, channel_res) = retry_api_call(|| async {
+            self.hub.channels()
+                .list(&vec!["contentDetails".to_string()])
+                .add_id(channel_id)
+                .doit()
+                .await
+        }).await?;
 
-        let items = channel_res.items.ok_or_else(|| anyhow::anyhow!("Channel not found"))?;
+        let items = channel_res.items.ok_or_else(|| YoutubeError::Other("Channel not found".to_string()))?;
         if items.is_empty() {
-            return Err(anyhow::anyhow!("Channel has no content details"));
+            return Err(YoutubeError::Other("Channel has no content details".to_string()));
         }
         let uploads_playlist_id = items[0]
             .content_details
             .as_ref()
             .and_then(|cd| cd.related_playlists.as_ref())
             .and_then(|rp| rp.uploads.as_ref())
-            .ok_or_else(|| anyhow::anyhow!("No uploads playlist found for this channel"))?;
+            .ok_or_else(|| YoutubeError::Other("No uploads playlist found for this channel".to_string()))?;
 
         // Step 2: Fetch playlist items (videos) from the uploads playlist
         let limit = max_results.min(50);
-        let (_resp, playlist_res) = self.hub.playlist_items()
-            .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
-            .playlist_id(uploads_playlist_id)
-            .max_results(limit)
-            .doit()
-            .await?;
+        let (_resp, playlist_res) = retry_api_call(|| async {
+            self.hub.playlist_items()
+                .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
+                .playlist_id(uploads_playlist_id)
+                .max_results(limit)
+                .doit()
+                .await
+        }).await?;
 
         let mut videos = Vec::new();
         if let Some(items) = playlist_res.items {
@@ -234,15 +305,17 @@ impl YoutubeClient {
     }
 
     /// Search for videos using a query string.
-    pub async fn search_videos(&self, query: &str, max_results: u32) -> anyhow::Result<Vec<Video>> {
+    pub async fn search_videos(&self, query: &str, max_results: u32) -> Result<Vec<Video>> {
         let limit = max_results.min(50);
-        let req = self.hub.search()
-            .list(&vec!["snippet".to_string()])
-            .q(query)
-            .add_type("video")
-            .max_results(limit);
-
-        let (_resp, search_res) = req.doit().await?;
+        let (_resp, search_res) = retry_api_call(|| async {
+            self.hub.search()
+                .list(&vec!["snippet".to_string()])
+                .q(query)
+                .add_type("video")
+                .max_results(limit)
+                .doit()
+                .await
+        }).await?;
         let mut videos = Vec::new();
         if let Some(items) = search_res.items {
             for item in items {
@@ -276,14 +349,16 @@ impl YoutubeClient {
     }
 
     /// List the authenticated user's playlists.
-    pub async fn list_playlists(&self, max_results: u32) -> anyhow::Result<Vec<Playlist>> {
+    pub async fn list_playlists(&self, max_results: u32) -> Result<Vec<Playlist>> {
         let limit = max_results.min(50);
-        let req = self.hub.playlists()
-            .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
-            .mine(true)
-            .max_results(limit);
-
-        let (_resp, playlist_res) = req.doit().await?;
+        let (_resp, playlist_res) = retry_api_call(|| async {
+            self.hub.playlists()
+                .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
+                .mine(true)
+                .max_results(limit)
+                .doit()
+                .await
+        }).await?;
         let mut playlists = Vec::new();
         if let Some(items) = playlist_res.items {
             for item in items {
@@ -313,14 +388,16 @@ impl YoutubeClient {
     }
 
     /// List the videos inside a specific playlist.
-    pub async fn list_playlist_videos(&self, playlist_id: &str, max_results: u32) -> anyhow::Result<Vec<Video>> {
+    pub async fn list_playlist_videos(&self, playlist_id: &str, max_results: u32) -> Result<Vec<Video>> {
         let limit = max_results.min(50);
-        let (_resp, playlist_res) = self.hub.playlist_items()
-            .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
-            .playlist_id(playlist_id)
-            .max_results(limit)
-            .doit()
-            .await?;
+        let (_resp, playlist_res) = retry_api_call(|| async {
+            self.hub.playlist_items()
+                .list(&vec!["snippet".to_string(), "contentDetails".to_string()])
+                .playlist_id(playlist_id)
+                .max_results(limit)
+                .doit()
+                .await
+        }).await?;
 
         let mut videos = Vec::new();
         if let Some(items) = playlist_res.items {
@@ -356,7 +433,7 @@ impl YoutubeClient {
     }
 
     /// Subscribe to a channel.
-    pub async fn subscribe_to_channel(&self, channel_id: &str) -> anyhow::Result<()> {
+    pub async fn subscribe_to_channel(&self, channel_id: &str) -> Result<()> {
         use google_youtube3::api::{Subscription as YtSub, SubscriptionSnippet, ResourceId};
         let snippet = SubscriptionSnippet {
             resource_id: Some(ResourceId {
@@ -370,18 +447,22 @@ impl YoutubeClient {
             snippet: Some(snippet),
             ..Default::default()
         };
-        self.hub.subscriptions().insert(sub).doit().await?;
+        retry_api_call(|| async {
+            self.hub.subscriptions().insert(sub.clone()).doit().await
+        }).await?;
         Ok(())
     }
 
     /// Unsubscribe from a channel using its subscription ID.
-    pub async fn unsubscribe_from_channel(&self, subscription_id: &str) -> anyhow::Result<()> {
-        self.hub.subscriptions().delete(subscription_id).doit().await?;
+    pub async fn unsubscribe_from_channel(&self, subscription_id: &str) -> Result<()> {
+        retry_api_call(|| async {
+            self.hub.subscriptions().delete(subscription_id).doit().await
+        }).await?;
         Ok(())
     }
 
     /// Create a new playlist.
-    pub async fn create_playlist(&self, title: &str, description: Option<&str>) -> anyhow::Result<Playlist> {
+    pub async fn create_playlist(&self, title: &str, description: Option<&str>) -> Result<Playlist> {
         use google_youtube3::api::{Playlist as YtPlaylist, PlaylistSnippet};
         let snippet = PlaylistSnippet {
             title: Some(title.to_string()),
@@ -392,7 +473,9 @@ impl YoutubeClient {
             snippet: Some(snippet),
             ..Default::default()
         };
-        let (_resp, playlist_res) = self.hub.playlists().insert(pl).doit().await?;
+        let (_resp, playlist_res) = retry_api_call(|| async {
+            self.hub.playlists().insert(pl.clone()).doit().await
+        }).await?;
         let id = playlist_res.id.unwrap_or_default();
         let title = playlist_res.snippet.as_ref().and_then(|s| s.title.clone()).unwrap_or_default();
         let description = playlist_res.snippet.as_ref().and_then(|s| s.description.clone()).unwrap_or_default();
@@ -409,7 +492,7 @@ impl YoutubeClient {
     }
 
     /// Add a video to a playlist.
-    pub async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> anyhow::Result<()> {
+    pub async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> Result<()> {
         use google_youtube3::api::{PlaylistItem, PlaylistItemSnippet, ResourceId};
         let snippet = PlaylistItemSnippet {
             playlist_id: Some(playlist_id.to_string()),
@@ -424,30 +507,38 @@ impl YoutubeClient {
             snippet: Some(snippet),
             ..Default::default()
         };
-        self.hub.playlist_items().insert(item).doit().await?;
+        retry_api_call(|| async {
+            self.hub.playlist_items().insert(item.clone()).doit().await
+        }).await?;
         Ok(())
     }
 
     /// Remove a video from a playlist using its playlist item ID.
-    pub async fn remove_from_playlist(&self, playlist_item_id: &str) -> anyhow::Result<()> {
-        self.hub.playlist_items().delete(playlist_item_id).doit().await?;
+    pub async fn remove_from_playlist(&self, playlist_item_id: &str) -> Result<()> {
+        retry_api_call(|| async {
+            self.hub.playlist_items().delete(playlist_item_id).doit().await
+        }).await?;
         Ok(())
     }
 
     /// Rate a video ("like", "dislike", or "none").
-    pub async fn rate_video(&self, video_id: &str, rating: &str) -> anyhow::Result<()> {
-        self.hub.videos().rate(video_id, rating).doit().await?;
+    pub async fn rate_video(&self, video_id: &str, rating: &str) -> Result<()> {
+        retry_api_call(|| async {
+            self.hub.videos().rate(video_id, rating).doit().await
+        }).await?;
         Ok(())
     }
 
     /// Fetch top comment threads for a video.
-    pub async fn fetch_comments(&self, video_id: &str) -> anyhow::Result<Vec<Comment>> {
-        let (_resp, comment_res) = self.hub.comment_threads()
-            .list(&vec!["snippet".to_string()])
-            .video_id(video_id)
-            .max_results(20)
-            .doit()
-            .await?;
+    pub async fn fetch_comments(&self, video_id: &str) -> Result<Vec<Comment>> {
+        let (_resp, comment_res) = retry_api_call(|| async {
+            self.hub.comment_threads()
+                .list(&vec!["snippet".to_string()])
+                .video_id(video_id)
+                .max_results(20)
+                .doit()
+                .await
+        }).await?;
 
         let mut comments = Vec::new();
         if let Some(items) = comment_res.items {
@@ -472,12 +563,9 @@ impl YoutubeClient {
         Ok(comments)
     }
 
-
-
-
     /// Download a YouTube video by ID to the target path.
     #[cfg(feature = "download")]
-    pub async fn download_video<F>(&self, video_id: &str, output_path: &Path, on_progress: F) -> anyhow::Result<()>
+    pub async fn download_video<F>(&self, video_id: &str, output_path: &Path, on_progress: F) -> Result<()>
     where
         F: Fn(&str) + Send + Sync + 'static,
     {
@@ -487,7 +575,7 @@ impl YoutubeClient {
 
 /// Download a YouTube video directly by ID using yt-dlp.
 #[cfg(feature = "download")]
-pub async fn download_video_direct<F>(video_id: &str, output_path: &Path, on_progress: F) -> anyhow::Result<()>
+pub async fn download_video_direct<F>(video_id: &str, output_path: &Path, on_progress: F) -> Result<()>
 where
     F: Fn(&str) + Send + Sync + 'static,
 {
@@ -516,13 +604,20 @@ where
             .arg(&url);
     }
 
-    let mut child = cmd
+    let mut child = match cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .spawn()?;
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(YoutubeError::YtDlpMissing(e.to_string()));
+        }
+        Err(e) => return Err(YoutubeError::Io(e)),
+    };
 
-    let mut stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("Failed to capture stdout"))?;
-    let mut stderr = child.stderr.take().ok_or_else(|| anyhow::anyhow!("Failed to capture stderr"))?;
+    let mut stdout = child.stdout.take().ok_or_else(|| YoutubeError::Download("Failed to capture stdout".to_string()))?;
+    let mut stderr = child.stderr.take().ok_or_else(|| YoutubeError::Download("Failed to capture stderr".to_string()))?;
     
     let stderr_handle = tokio::spawn(async move {
         let mut err_buf = Vec::new();
@@ -580,44 +675,46 @@ where
     let status = child.wait().await?;
     let stderr_output = stderr_handle.await.unwrap_or_default();
     if !status.success() {
-        anyhow::bail!("yt-dlp download failed: {}", stderr_output.trim());
+        return Err(YoutubeError::Download(format!("yt-dlp download failed: {}", stderr_output.trim())));
     }
     Ok(())
 }
 
 impl YoutubeClient {
 
-
-
     /// Play the audio of the downloaded video file using Rodio.
     #[cfg(feature = "audio")]
-    pub fn play_audio_rodio(file_path: &Path) -> anyhow::Result<()> {
-        use std::fs::File;
-        use std::io::BufReader;
-        use rodio::{Decoder, DeviceSinkBuilder, Player};
+    pub async fn play_audio_rodio(file_path: std::path::PathBuf) -> Result<()> {
+        tokio::task::spawn_blocking(move || {
+            use std::fs::File;
+            use std::io::BufReader;
+            use rodio::{Decoder, DeviceSinkBuilder, Player};
 
-        let handle = DeviceSinkBuilder::open_default_sink()
-            .map_err(|e| anyhow::anyhow!("Failed to open default audio stream: {:?}", e))?;
-        let player = Player::connect_new(&handle.mixer());
+            let handle = DeviceSinkBuilder::open_default_sink()
+                .map_err(|e| YoutubeError::Media(format!("Failed to open default audio stream: {:?}", e)))?;
+            let player = Player::connect_new(&handle.mixer());
 
-        let file = File::open(file_path)?;
-        let reader = BufReader::new(file);
-        let source = Decoder::new(reader)
-            .map_err(|e| anyhow::anyhow!("Failed to decode audio: {}", e))?;
+            let file = File::open(file_path)?;
+            let reader = BufReader::new(file);
+            let source = Decoder::new(reader)
+                .map_err(|e| YoutubeError::Media(format!("Failed to decode audio: {}", e)))?;
 
-        player.append(source);
-        player.sleep_until_end();
-        Ok(())
+            player.append(source);
+            player.sleep_until_end();
+            Ok(())
+        })
+        .await
+        .map_err(|e| YoutubeError::Other(format!("Audio thread panicked: {}", e)))?
     }
 
     /// Play the video using the system's default media player.
-    pub fn play_video_system(&self, file_path: &Path) -> anyhow::Result<()> {
-        open::that(file_path)?;
+    pub fn play_video_system(&self, file_path: &Path) -> Result<()> {
+        open::that(file_path).map_err(|e| YoutubeError::Media(e.to_string()))?;
         Ok(())
     }
 
     /// Test the connection to YouTube by trying to list a single subscription.
-    pub async fn test_connection(&self) -> anyhow::Result<()> {
+    pub async fn test_connection(&self) -> Result<()> {
         let _ = self.list_subscriptions(1).await?;
         Ok(())
     }
@@ -746,6 +843,25 @@ mod tests {
         let _ = cfg2.is_valid();
 
         let _ = std::fs::remove_file(&custom_config_path);
+    }
+
+    #[tokio::test]
+    async fn test_retry_api_call_non_retryable() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let res: std::result::Result<(), google_youtube3::Error> = retry_api_call(|| {
+            let counter_clone = counter.clone();
+            async move {
+                counter_clone.fetch_add(1, Ordering::SeqCst);
+                Err(google_youtube3::Error::MissingAPIKey)
+            }
+        }).await;
+
+        assert!(res.is_err());
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
 }
 

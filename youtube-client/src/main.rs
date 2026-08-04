@@ -144,7 +144,7 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 println!("Decoding and playing audio from {:?} via Rodio...", file);
                 println!("Press Ctrl+C to stop playback.");
-                YoutubeClient::play_audio_rodio(&file)?;
+                YoutubeClient::play_audio_rodio(file.clone()).await?;
             }
             println!("Playback finished.");
         }

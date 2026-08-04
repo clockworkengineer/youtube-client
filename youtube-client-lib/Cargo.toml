@@ -9,6 +9,7 @@ google-youtube3.workspace = true
 open.workspace = true
 rodio = { workspace = true, optional = true }
 rusty_ytdl = { workspace = true, optional = true }
+thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync"] }
 yup-oauth2.workspace = true
 serde = { workspace = true, features = ["derive"] }

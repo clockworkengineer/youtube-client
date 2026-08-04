@@ -85,7 +85,7 @@ pub fn resolve_credentials(
     opt_client_id: Option<String>,
     opt_client_secret: Option<String>,
     config_path: &Path,
-) -> anyhow::Result<(String, String)> {
+) -> std::result::Result<(String, String), crate::YoutubeError> {
     let mut cid = opt_client_id.or_else(|| std::env::var("GOOGLE_CLIENT_ID").ok());
     let mut csec = opt_client_secret.or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").ok());
 
@@ -109,10 +109,10 @@ pub fn resolve_credentials(
     if temp_config.is_valid() {
         Ok((temp_config.client_id.unwrap(), temp_config.client_secret.unwrap()))
     } else {
-        Err(anyhow::anyhow!(
-            "Error: Google Client ID and Client Secret must be provided!\n\n{}",
+        Err(crate::YoutubeError::Credentials(format!(
+            "Google Client ID and Client Secret must be provided!\n\n{}",
             GOOGLE_SETUP_INSTRUCTIONS
-        ))
+        )))
     }
 }
 

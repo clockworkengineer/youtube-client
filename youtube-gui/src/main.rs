@@ -1,100 +1,17 @@
+mod actions;
+mod types;
+
+use actions::*;
+use types::*;
+
+use eframe::egui;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use eframe::egui;
-use youtube_client_lib::{Subscription, YoutubeClient};
 use youtube_client_lib::utils::{
-    get_download_path, launch_external_player, load_string_set_from_file,
-    save_string_set_to_file, scan_downloads_dir, DownloadStatus,
+    launch_external_player, load_string_set_from_file, save_string_set_to_file, scan_downloads_dir,
+    DownloadStatus,
 };
-
-
-
-
-#[derive(Clone)]
-struct Thumbnail {
-    texture: Option<egui::TextureHandle>,
-    loading: bool,
-}
-
-#[derive(Clone)]
-enum View {
-    Login,
-    Subscriptions,
-    NewVideos,
-    ChannelVideos {
-        channel_id: String,
-        channel_title: String,
-        channel_description: String,
-        videos: Option<Result<Vec<youtube_client_lib::Video>, String>>,
-    },
-    SearchResults {
-        query: String,
-        videos: Option<Result<Vec<youtube_client_lib::Video>, String>>,
-    },
-    Playlists {
-        playlists: Option<Result<Vec<youtube_client_lib::Playlist>, String>>,
-    },
-    PlaylistVideos {
-        playlist_id: String,
-        playlist_title: String,
-        videos: Option<Result<Vec<youtube_client_lib::Video>, String>>,
-    },
-    VideoDetails {
-        video: youtube_client_lib::Video,
-        comments: Option<Result<Vec<youtube_client_lib::Comment>, String>>,
-    },
-}
-
-#[derive(Clone, Debug)]
-struct PlayerState {
-    current_title: String,
-    playing: bool,
-}
-
-enum PlayerCommand {
-    Play(PathBuf, String),
-    Pause,
-    Resume,
-    Stop,
-}
-
-struct AppState {
-    subscriptions: Option<Result<Vec<Subscription>, String>>,
-    new_videos: Option<Result<Vec<youtube_client_lib::Video>, String>>,
-    cleared_video_ids: std::collections::HashSet<String>,
-    thumbnails: HashMap<String, Thumbnail>,
-    current_view: View,
-    view_history: Vec<View>,
-    logging_in: bool,
-    login_error: Option<String>,
-    downloads: HashMap<String, DownloadStatus>,
-    player_state: PlayerState,
-    playlists: Option<Result<Vec<youtube_client_lib::Playlist>, String>>,
-    playlist_action_status: Option<Result<String, String>>,
-    downloads_dir: PathBuf,
-}
-
-impl AppState {
-    fn navigate_to(&mut self, new_view: View) {
-        self.view_history.push(self.current_view.clone());
-        self.current_view = new_view;
-    }
-
-    fn navigate_clear_history(&mut self, new_view: View) {
-        self.view_history.clear();
-        self.current_view = new_view;
-    }
-
-    fn go_back(&mut self) {
-        if let Some(prev) = self.view_history.pop() {
-            self.current_view = prev;
-        } else {
-            self.current_view = View::Subscriptions;
-        }
-    }
-}
-
 
 struct YoutubeGuiApp {
     state: Arc<Mutex<AppState>>,
@@ -235,7 +152,7 @@ impl YoutubeGuiApp {
         });
 
         // Initialize YoutubeClient and fetch subscriptions asynchronously
-        Self::spawn_fetch_subscriptions(state.clone(), cc.egui_ctx.clone());
+        spawn_fetch_subscriptions(state.clone(), cc.egui_ctx.clone());
 
         Self {
             state,
@@ -307,7 +224,7 @@ impl YoutubeGuiApp {
         };
 
         if start_fetch {
-            Self::fetch_thumbnail(
+            fetch_thumbnail(
                 ctx.clone(),
                 self.state.clone(),
                 self.http_client.clone(),
@@ -316,550 +233,6 @@ impl YoutubeGuiApp {
             );
         }
         texture
-    }
-
-    fn draw_video_card_with_dismiss(
-        &self,
-        ui: &mut egui::Ui,
-        ctx: &egui::Context,
-        video: &youtube_client_lib::Video,
-        action: &mut PendingAction,
-        can_dismiss: bool,
-    ) {
-        ui.push_id(&video.id, |ui| {
-            let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
-            let (download_status, player_state) = {
-                let s_lock = self.state.lock().unwrap();
-                (
-                    s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted),
-                    s_lock.player_state.clone(),
-                )
-            };
-            let mut card_clicked = false;
-
-            let _response = ui.group(|ui| {
-                ui.horizontal(|ui| {
-                    let left_response = ui.horizontal(|ui| {
-                        if let Some(tex) = &texture {
-                            ui.add(egui::Image::from_texture(tex).max_width(100.0).max_height(100.0));
-                        } else {
-                            let (rect, _response) = ui.allocate_exact_size(
-                                egui::vec2(100.0, 100.0),
-                                egui::Sense::hover(),
-                            );
-                            ui.painter().rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
-                            ui.painter().text(
-                                rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                "🎬",
-                                egui::FontId::proportional(40.0),
-                                egui::Color32::LIGHT_GRAY,
-                            );
-                        }
-
-                        ui.add_space(15.0);
-
-                        ui.vertical(|ui| {
-                            ui.label(
-                                egui::RichText::new(&video.title)
-                                    .size(15.0)
-                                    .strong()
-                                    .color(egui::Color32::WHITE),
-                            );
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                let date = if video.published_at.len() >= 10 {
-                                    &video.published_at[..10]
-                                } else {
-                                    &video.published_at
-                                };
-                                ui.label(
-                                    egui::RichText::new(format!("Published: {}", date))
-                                        .size(11.0)
-                                        .color(egui::Color32::from_rgb(140, 140, 150)),
-                                );
-                                ui.add_space(20.0);
-                                ui.label(
-                                    egui::RichText::new(format!("ID: {}", video.id))
-                                        .size(11.0)
-                                        .color(egui::Color32::from_rgb(140, 140, 150)),
-                                );
-                            });
-                        });
-                    });
-
-                    let left_interact = ui.interact(
-                        left_response.response.rect,
-                        left_response.response.id.with("click"),
-                        egui::Sense::click(),
-                    );
-                    if left_interact.clicked() {
-                        card_clicked = true;
-                    }
-                    if left_interact.hovered() {
-                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if can_dismiss {
-                            if ui.button("❌ Clear").on_hover_text("Remove from New Videos feed").clicked() {
-                                *action = PendingAction::DismissNewVideo { video_id: video.id.clone() };
-                            }
-                        }
-                        match &download_status {
-                            DownloadStatus::NotStarted => {
-                                if ui.button("📥 Download Video").clicked() {
-                                    *action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
-                                }
-                            }
-                            DownloadStatus::Downloading { progress } => {
-                                ui.spinner();
-                                ui.label(progress);
-                            }
-                            DownloadStatus::Finished(_) => {
-                                let path_opt = match &download_status {
-                                    DownloadStatus::Finished(path) => Some(path),
-                                    _ => None,
-                                };
-                                let is_mp3 = path_opt.map(|p| p.extension().map(|ext| ext == "mp3").unwrap_or(false)).unwrap_or(false);
-                                
-                                if is_mp3 {
-                                    let is_playing = player_state.playing && player_state.current_title == video.title;
-                                    if is_playing {
-                                        if ui.button(egui::RichText::new("⏹ Stop").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
-                                            let _ = self.audio_tx.send(PlayerCommand::Stop);
-                                        }
-                                    } else {
-                                        if ui.button("▶ Play Local").clicked() {
-                                            if let Some(path) = path_opt {
-                                                *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    if ui.button("▶ Play Local Video").clicked() {
-                                        if let Some(path) = path_opt {
-                                            *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
-                                        }
-                                    }
-                                }
-                            }
-                            DownloadStatus::Failed(err) => {
-                                if ui.button("❌ Retry").clicked() {
-                                    *action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
-                                }
-                                ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
-                            }
-                        }
-                    });
-                });
-            });
-
-            if card_clicked && matches!(action, PendingAction::None) {
-                *action = PendingAction::LoadVideoDetails { video: video.clone() };
-            }
-        });
-    }
-
-    fn draw_video_card(
-        &self,
-        ui: &mut egui::Ui,
-        ctx: &egui::Context,
-        video: &youtube_client_lib::Video,
-        action: &mut PendingAction,
-    ) {
-        self.draw_video_card_with_dismiss(ui, ctx, video, action, false);
-    }
-
-    fn spawn_fetch_new_videos(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "fetch_new_videos",
-            |client| async move {
-                let subs = client.list_subscriptions(10).await
-                    .map_err(|e| format!("Failed to fetch subscriptions for new videos feed: {}", e))?;
-                
-                let mut all_videos = Vec::new();
-                for sub in subs.iter().take(5) {
-                    if let Ok(vids) = client.list_videos(&sub.channel_id, 5).await {
-                        all_videos.extend(vids);
-                    }
-                }
-                all_videos.sort_by(|a, b| b.published_at.cmp(&a.published_at));
-                Ok(all_videos)
-            },
-            |res, s, ctx| {
-                match res {
-                    Ok(mut vids) => {
-                        vids.retain(|v| !s.cleared_video_ids.contains(&v.id));
-                        s.new_videos = Some(Ok(vids));
-                    }
-                    Err(e) => {
-                        s.new_videos = Some(Err(e));
-                    }
-                }
-                ctx.request_repaint();
-            },
-        );
-    }
-
-
-    fn spawn_fetch_subscriptions(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "fetch_subscriptions",
-            |client| async move {
-                client.list_subscriptions(50).await
-                    .map_err(|e| format!("Failed to fetch subscriptions: {}", e))
-            },
-            |res, s, ctx| {
-                match res {
-                    Ok(subs) => {
-                        s.subscriptions = Some(Ok(subs));
-                    }
-                    Err(e) => {
-                        s.subscriptions = Some(Err(e));
-                        s.current_view = View::Login;
-                    }
-                }
-                ctx.request_repaint();
-            },
-        );
-    }
-
-    fn spawn_login_and_auth(state: Arc<Mutex<AppState>>, ctx: egui::Context, id: String, secret: String) {
-        {
-            let mut s = state.lock().unwrap();
-            s.logging_in = true;
-            s.login_error = None;
-        }
-        let state_clone = state.clone();
-        let ctx_clone = ctx.clone();
-        tokio::spawn(async move {
-            let res = async {
-                #[derive(serde::Serialize)]
-                struct ConfigSave {
-                    client_id: String,
-                    client_secret: String,
-                }
-                let config_data = ConfigSave {
-                    client_id: id.clone(),
-                    client_secret: secret.clone(),
-                };
-                let content = serde_json::to_string_pretty(&config_data).map_err(|e| e.to_string())?;
-                std::fs::write("private_config.json", content).map_err(|e| e.to_string())?;
-
-                let token_cache_path = PathBuf::from("tokencache.json");
-                let client = YoutubeClient::new_oauth_with_scopes(
-                    &id,
-                    &secret,
-                    &token_cache_path,
-                    youtube_client_lib::YOUTUBE_SCOPES,
-                ).await
-                .map_err(|e| format!("OAuth initialization failed: {}", e))?;
-                client.test_connection().await
-                    .map_err(|e| format!("YouTube connection failed: {}", e))?;
-                Ok(())
-            }.await;
-
-            let mut s = state_clone.lock().unwrap();
-            s.logging_in = false;
-            match res {
-                Ok(_) => {
-                    s.current_view = View::Subscriptions;
-                    s.subscriptions = None;
-                    drop(s);
-                    Self::spawn_fetch_subscriptions(state_clone, ctx_clone);
-                }
-                Err(e) => {
-                    s.login_error = Some(e);
-                    ctx_clone.request_repaint();
-                }
-            }
-        });
-    }
-
-    fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: youtube_client_lib::Video, is_audio: bool) {
-        let video_id = video.id.clone();
-        {
-            let mut s = state.lock().unwrap();
-            s.downloads.insert(video_id.clone(), DownloadStatus::Downloading { progress: "Starting...".to_string() });
-        }
-        let state_clone = state.clone();
-        let ctx_clone = ctx.clone();
-        tokio::spawn(async move {
-            let res = async {
-                let downloads_base = {
-                    let s = state_clone.lock().unwrap();
-                    s.downloads_dir.clone()
-                };
-
-                let output_path = get_download_path(&downloads_base, &video.channel_title, &video.title, &video.id, is_audio);
-
-                if let Some(parent) = output_path.parent() {
-                    if !parent.exists() {
-                        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                    }
-                }
-
-                let client = Self::get_client_async().await.map_err(|e| e.to_string())?;
-                
-                let state_inner = state_clone.clone();
-                let ctx_inner = ctx_clone.clone();
-                let vid_id = video_id.clone();
-                client.download_video(&video_id, &output_path, move |prog| {
-                    if let Ok(mut s) = state_inner.lock() {
-                        s.downloads.insert(vid_id.clone(), DownloadStatus::Downloading { progress: prog.to_string() });
-                    }
-                    ctx_inner.request_repaint();
-                }).await.map_err(|e| e.to_string())?;
-                
-                Ok(output_path)
-            }.await;
-
-            let mut s = state_clone.lock().unwrap();
-            match res {
-                Ok(path) => {
-                    s.downloads.insert(video_id, DownloadStatus::Finished(path));
-                }
-                Err(e) => {
-                    s.downloads.insert(video_id, DownloadStatus::Failed(e));
-                }
-            }
-            ctx_clone.request_repaint();
-        });
-    }
-
-    fn fetch_videos(
-        ctx: egui::Context,
-        state: Arc<Mutex<AppState>>,
-        channel_id: String,
-        _channel_title: String,
-    ) {
-        let channel_id_clone = channel_id.clone();
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "fetch_videos",
-            move |client| async move {
-                client.list_videos(&channel_id, 20).await
-                    .map_err(|e| format!("Failed to fetch videos: {}", e))
-            },
-            move |res, s, ctx| {
-                if let View::ChannelVideos { channel_id: current_id, channel_title: current_title, channel_description: current_desc, videos: _ } = &s.current_view {
-                    if current_id == &channel_id_clone {
-                        s.current_view = View::ChannelVideos {
-                            channel_id: channel_id_clone,
-                            channel_title: current_title.clone(),
-                            channel_description: current_desc.clone(),
-                            videos: Some(res),
-                        };
-                    }
-                }
-                ctx.request_repaint();
-            },
-        );
-    }
-
-    fn fetch_search_results(
-        ctx: egui::Context,
-        state: Arc<Mutex<AppState>>,
-        query: String,
-    ) {
-        let query_clone = query.clone();
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "fetch_search_results",
-            move |client| async move {
-                client.search_videos(&query, 20).await
-                    .map_err(|e| format!("Failed to search videos: {}", e))
-            },
-            move |res, s, ctx| {
-                if let View::SearchResults { query: current_q, videos: _ } = &s.current_view {
-                    if current_q == &query_clone {
-                        s.current_view = View::SearchResults {
-                            query: query_clone,
-                            videos: Some(res),
-                        };
-                    }
-                }
-                ctx.request_repaint();
-            },
-        );
-    }
-
-    fn spawn_fetch_playlists(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "fetch_playlists",
-            |client| async move {
-                client.list_playlists(50).await
-                    .map_err(|e| format!("Failed to fetch playlists: {}", e))
-            },
-            |res, s, ctx| {
-                s.playlists = Some(res.clone());
-                if let View::Playlists { playlists: _ } = &s.current_view {
-                    s.current_view = View::Playlists { playlists: Some(res) };
-                }
-                ctx.request_repaint();
-            },
-        );
-    }
-
-    fn fetch_playlist_videos(
-        ctx: egui::Context,
-        state: Arc<Mutex<AppState>>,
-        playlist_id: String,
-        _playlist_title: String,
-    ) {
-        let playlist_id_clone = playlist_id.clone();
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "fetch_playlist_videos",
-            move |client| async move {
-                client.list_playlist_videos(&playlist_id, 50).await
-                    .map_err(|e| format!("Failed to fetch playlist videos: {}", e))
-            },
-            move |res, s, ctx| {
-                if let View::PlaylistVideos { playlist_id: current_id, playlist_title: current_title, videos: _ } = &s.current_view {
-                    if current_id == &playlist_id_clone {
-                        s.current_view = View::PlaylistVideos {
-                            playlist_id: playlist_id_clone,
-                            playlist_title: current_title.clone(),
-                            videos: Some(res),
-                        };
-                    }
-                }
-                ctx.request_repaint();
-            },
-        );
-    }
-
-    fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: youtube_client_lib::Video) {
-        let video_clone = video.clone();
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "fetch_comments",
-            move |client| async move {
-                client.fetch_comments(&video.id).await
-                    .map_err(|e| format!("Failed to fetch comments: {}", e))
-            },
-            move |res, s, ctx| {
-                if let View::VideoDetails { video: current_video, comments: _ } = &s.current_view {
-                    if current_video.id == video_clone.id {
-                        s.current_view = View::VideoDetails {
-                            video: video_clone,
-                            comments: Some(res),
-                        };
-                    }
-                }
-                ctx.request_repaint();
-            },
-        );
-    }
-
-    fn spawn_client_action<F, Fut, T>(
-        state: Arc<Mutex<AppState>>,
-        ctx: egui::Context,
-        action_name: &'static str,
-        f: F,
-        on_complete: impl FnOnce(Result<T, String>, &mut AppState, &egui::Context) + Send + 'static,
-    )
-    where
-        F: FnOnce(YoutubeClient) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = Result<T, String>> + Send + 'static,
-        T: Send + 'static,
-    {
-        let state_clone = state.clone();
-        tokio::spawn(async move {
-            let res = async {
-                let client = Self::get_client_async().await?;
-                f(client).await
-            }.await;
-
-            if let Err(e) = &res {
-                println!("Error during {}: {}", action_name, e);
-            }
-            let mut s = state_clone.lock().unwrap();
-            on_complete(res, &mut *s, &ctx);
-        });
-    }
-
-    fn spawn_subscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, channel_id: String) {
-        let state_clone = state.clone();
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "subscribe",
-            move |client| async move {
-                client.subscribe_to_channel(&channel_id).await
-                    .map_err(|e| format!("Failed to subscribe: {}", e))
-            },
-            move |res, _, ctx| {
-                if res.is_ok() {
-                    Self::spawn_fetch_subscriptions(state_clone, ctx.clone());
-                }
-            },
-        );
-    }
-
-    fn spawn_unsubscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, subscription_id: String) {
-        let state_clone = state.clone();
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "unsubscribe",
-            move |client| async move {
-                client.unsubscribe_from_channel(&subscription_id).await
-                    .map_err(|e| format!("Failed to unsubscribe: {}", e))
-            },
-            move |res, _, ctx| {
-                if res.is_ok() {
-                    Self::spawn_fetch_subscriptions(state_clone, ctx.clone());
-                }
-            },
-        );
-    }
-
-    fn spawn_rate_video(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_id: String, rating: String) {
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "rate_video",
-            move |client| async move {
-                client.rate_video(&video_id, &rating).await
-                    .map_err(|e| format!("Failed to rate: {}", e))?;
-                Ok((video_id, rating))
-            },
-            move |res, _, _| {
-                if let Ok((vid, rat)) = res {
-                    println!("Successfully rated video {} as {}", vid, rat);
-                }
-            },
-        );
-    }
-
-    fn spawn_add_to_playlist(state: Arc<Mutex<AppState>>, ctx: egui::Context, playlist_id: String, playlist_title: String, video_id: String) {
-        Self::spawn_client_action(
-            state,
-            ctx,
-            "add_to_playlist",
-            move |client| async move {
-                client.add_to_playlist(&playlist_id, &video_id).await
-                    .map_err(|e| format!("Failed to add to playlist: {}", e))?;
-                Ok(format!("Added to '{}'", playlist_title))
-            },
-            move |res, s, ctx| {
-                s.playlist_action_status = Some(res);
-                ctx.request_repaint();
-            },
-        );
     }
 
 
@@ -1790,14 +1163,14 @@ impl eframe::App for YoutubeGuiApp {
         match action {
             PendingAction::None => {}
             PendingAction::SpawnLogin { id, secret } => {
-                Self::spawn_login_and_auth(self.state.clone(), ctx.clone(), id, secret);
+                spawn_login_and_auth(self.state.clone(), ctx.clone(), id, secret);
             }
             PendingAction::RetrySubscriptions => {
                 {
                     let mut s_lock = self.state.lock().unwrap();
                     s_lock.subscriptions = None;
                 }
-                Self::spawn_fetch_subscriptions(self.state.clone(), ctx.clone());
+                spawn_fetch_subscriptions(self.state.clone(), ctx.clone());
             }
             PendingAction::GoToSubscriptions => {
                 let mut s_lock = self.state.lock().unwrap();
@@ -1810,7 +1183,7 @@ impl eframe::App for YoutubeGuiApp {
                     s_lock.new_videos.is_some()
                 };
                 if !has_cache {
-                    Self::spawn_fetch_new_videos(self.state.clone(), ctx.clone());
+                    spawn_fetch_new_videos(self.state.clone(), ctx.clone());
                 }
             }
             PendingAction::LoadNewVideos => {
@@ -1819,7 +1192,7 @@ impl eframe::App for YoutubeGuiApp {
                     s_lock.new_videos = None;
                     s_lock.current_view = View::NewVideos;
                 }
-                Self::spawn_fetch_new_videos(self.state.clone(), ctx.clone());
+                spawn_fetch_new_videos(self.state.clone(), ctx.clone());
             }
             PendingAction::ClearAllNewVideos => {
                 let mut s_lock = self.state.lock().unwrap();
@@ -1848,7 +1221,7 @@ impl eframe::App for YoutubeGuiApp {
                     let _ = save_string_set_to_file(std::path::Path::new("cleared_videos.json"), &s_lock.cleared_video_ids);
                     s_lock.new_videos = None;
                 }
-                Self::spawn_fetch_new_videos(self.state.clone(), ctx.clone());
+                spawn_fetch_new_videos(self.state.clone(), ctx.clone());
             }
             PendingAction::LoadChannel { id, title, description } => {
                 {
@@ -1860,7 +1233,7 @@ impl eframe::App for YoutubeGuiApp {
                         videos: None,
                     });
                 }
-                Self::fetch_videos(ctx.clone(), self.state.clone(), id, title);
+                fetch_videos(ctx.clone(), self.state.clone(), id, title);
             }
             PendingAction::GoBack => {
                 let mut s_lock = self.state.lock().unwrap();
@@ -1876,10 +1249,10 @@ impl eframe::App for YoutubeGuiApp {
                         videos: None,
                     };
                 }
-                Self::fetch_videos(ctx.clone(), self.state.clone(), id, title);
+                fetch_videos(ctx.clone(), self.state.clone(), id, title);
             }
             PendingAction::SpawnDownload { video, is_audio } => {
-                Self::spawn_download(self.state.clone(), ctx.clone(), video, is_audio);
+                spawn_download(self.state.clone(), ctx.clone(), video, is_audio);
             }
             PendingAction::PlayLocal { path, title } => {
                 let is_mp3 = path.extension().map(|e| e == "mp3").unwrap_or(false);
@@ -1912,7 +1285,7 @@ impl eframe::App for YoutubeGuiApp {
                         videos: None,
                     });
                 }
-                Self::fetch_search_results(ctx.clone(), self.state.clone(), query);
+                fetch_search_results(ctx.clone(), self.state.clone(), query);
             }
             PendingAction::RetrySearch { query } => {
                 {
@@ -1922,7 +1295,7 @@ impl eframe::App for YoutubeGuiApp {
                         videos: None,
                     };
                 }
-                Self::fetch_search_results(ctx.clone(), self.state.clone(), query);
+                fetch_search_results(ctx.clone(), self.state.clone(), query);
             }
             PendingAction::LoadPlaylists => {
                 let cache = {
@@ -1932,7 +1305,7 @@ impl eframe::App for YoutubeGuiApp {
                     cached
                 };
                 if cache.is_none() {
-                    Self::spawn_fetch_playlists(self.state.clone(), ctx.clone());
+                    spawn_fetch_playlists(self.state.clone(), ctx.clone());
                 }
             }
             PendingAction::RetryPlaylists => {
@@ -1941,7 +1314,7 @@ impl eframe::App for YoutubeGuiApp {
                     s_lock.playlists = None;
                     s_lock.current_view = View::Playlists { playlists: None };
                 }
-                Self::spawn_fetch_playlists(self.state.clone(), ctx.clone());
+                spawn_fetch_playlists(self.state.clone(), ctx.clone());
             }
             PendingAction::LoadPlaylistVideos { id, title } => {
                 {
@@ -1952,7 +1325,7 @@ impl eframe::App for YoutubeGuiApp {
                         videos: None,
                     });
                 }
-                Self::fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
+                fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
             }
             PendingAction::RetryPlaylistVideos { id, title } => {
                 {
@@ -1963,7 +1336,7 @@ impl eframe::App for YoutubeGuiApp {
                         videos: None,
                     };
                 }
-                Self::fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
+                fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
             }
             PendingAction::LoadVideoDetails { video } => {
                 let cache = {
@@ -1975,9 +1348,9 @@ impl eframe::App for YoutubeGuiApp {
                     });
                     s_lock.playlists.clone()
                 };
-                Self::spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
+                spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
                 if cache.is_none() {
-                    Self::spawn_fetch_playlists(self.state.clone(), ctx.clone());
+                    spawn_fetch_playlists(self.state.clone(), ctx.clone());
                 }
             }
             PendingAction::RetryVideoDetails { video } => {
@@ -1990,22 +1363,22 @@ impl eframe::App for YoutubeGuiApp {
                     };
                     s_lock.playlists.clone()
                 };
-                Self::spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
+                spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
                 if cache.is_none() {
-                    Self::spawn_fetch_playlists(self.state.clone(), ctx.clone());
+                    spawn_fetch_playlists(self.state.clone(), ctx.clone());
                 }
             }
             PendingAction::Subscribe { channel_id } => {
-                Self::spawn_subscribe(self.state.clone(), ctx.clone(), channel_id);
+                spawn_subscribe(self.state.clone(), ctx.clone(), channel_id);
             }
             PendingAction::Unsubscribe { subscription_id } => {
-                Self::spawn_unsubscribe(self.state.clone(), ctx.clone(), subscription_id);
+                spawn_unsubscribe(self.state.clone(), ctx.clone(), subscription_id);
             }
             PendingAction::RateVideo { video_id, rating } => {
-                Self::spawn_rate_video(self.state.clone(), ctx.clone(), video_id, rating);
+                spawn_rate_video(self.state.clone(), ctx.clone(), video_id, rating);
             }
             PendingAction::AddToPlaylist { playlist_id, playlist_title, video_id } => {
-                Self::spawn_add_to_playlist(self.state.clone(), ctx.clone(), playlist_id, playlist_title, video_id);
+                spawn_add_to_playlist(self.state.clone(), ctx.clone(), playlist_id, playlist_title, video_id);
             }
         }
     }

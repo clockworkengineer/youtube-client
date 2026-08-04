@@ -1,4 +1,7 @@
-// Utility functions shared across crates
+//! # Shared Utilities & Helper Primitives
+//!
+//! Provides filename sanitization, video ID extraction from paths, string set persistence,
+//! table printing, external player invocation, and media download status tracking.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

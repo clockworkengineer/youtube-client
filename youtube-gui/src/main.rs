@@ -1,3 +1,8 @@
+//! # YouTube GUI Application Entry Point
+//!
+//! Initializes the eframe window, manages application lifecycle state, audio worker spawning,
+//! and event dispatching.
+
 mod actions;
 mod player;
 mod types;
@@ -41,11 +46,13 @@ impl YoutubeGuiApp {
         let client_secret_input = config.client_secret.unwrap_or_default();
         let downloads_dir = PathBuf::from(config.downloads_dir.unwrap_or_else(|| "downloads".to_string()));
 
+        // Scan downloads directory for pre-existing media files
         let mut downloads = HashMap::new();
         if downloads_dir.exists() {
             scan_downloads_dir(&downloads_dir, &mut downloads);
         }
 
+        // Restore dismissed video IDs from persistent JSON storage
         let cleared_video_ids = load_string_set_from_file(std::path::Path::new("cleared_videos.json"));
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
@@ -68,10 +75,11 @@ impl YoutubeGuiApp {
 
         let http_client = reqwest::Client::new();
 
+        // Spawn Rodio background audio thread and channel listener
         let (audio_tx, audio_rx) = std::sync::mpsc::channel::<PlayerCommand>();
         player::spawn_audio_worker(state.clone(), audio_rx, cc.egui_ctx.clone());
 
-        // Initialize YoutubeClient and fetch subscriptions asynchronously
+        // Trigger background initial fetch of user's subscriptions
         spawn_fetch_subscriptions(state.clone(), cc.egui_ctx.clone());
 
         Self {

@@ -1,14 +1,25 @@
+//! # Configuration & Credentials Management
+//!
+//! Handles loading client secrets, environment variables, config JSON files,
+//! and verifying Google OAuth2 scope caches.
+
 use std::path::Path;
 
+/// Application configuration settings loaded from `private_config.json` or `config.json`.
 #[derive(serde::Deserialize, Clone, Debug, Default)]
 pub struct Config {
+    /// Google OAuth2 Client ID
     pub client_id: Option<String>,
+    /// Google OAuth2 Client Secret
     pub client_secret: Option<String>,
+    /// Path to preferred external media player
     pub player_path: Option<String>,
+    /// Path to downloads directory
     pub downloads_dir: Option<String>,
 }
 
 impl Config {
+    /// Check whether client credentials are non-empty and non-placeholder.
     pub fn is_valid(&self) -> bool {
         let invalid_id = |id: &str| id.is_empty() || id == "ENTER_YOUR_CLIENT_ID_HERE";
         let invalid_secret = |sec: &str| sec.is_empty() || sec == "ENTER_YOUR_CLIENT_SECRET_HERE";

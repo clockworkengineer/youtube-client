@@ -1,7 +1,13 @@
+//! # Background Audio Playback Worker
+//!
+//! Manages the Rodio audio mixer thread loop, device output initialization,
+//! playback control commands, and UI repaint triggers upon track completion.
+
 use std::sync::{Arc, Mutex};
 use eframe::egui;
 use crate::types::{AppState, PlayerCommand};
 
+/// Spawn the background Rodio audio thread for local audio decoding and playback.
 pub fn spawn_audio_worker(
     state: Arc<Mutex<AppState>>,
     audio_rx: std::sync::mpsc::Receiver<PlayerCommand>,

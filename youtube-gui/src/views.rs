@@ -1,3 +1,8 @@
+//! # egui UI View & Video Card Renderers
+//!
+//! Provides egui view layout components, thumbnail texture caching, video cards,
+//! and dismissible feed cards.
+
 use eframe::egui;
 use youtube_client_lib::utils::DownloadStatus;
 use youtube_client_lib::Video;
@@ -5,6 +10,7 @@ use youtube_client_lib::Video;
 use crate::actions::fetch_thumbnail;
 use crate::types::{AppState, PendingAction, PlayerCommand, Thumbnail};
 
+/// Render a single video card with optional dismiss button ("Clear").
 pub fn draw_video_card_with_dismiss(
     state: &std::sync::Arc<std::sync::Mutex<AppState>>,
     http_client: &reqwest::Client,

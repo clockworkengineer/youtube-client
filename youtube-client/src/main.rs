@@ -1,3 +1,8 @@
+//! # YouTube CLI Command-Line Application
+//!
+//! Command-line client interface supporting OAuth login, listing subscriptions/videos,
+//! downloading media streams, and local audio playback.
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use youtube_client_lib::utils::{print_table, truncate};

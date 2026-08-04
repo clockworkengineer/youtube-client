@@ -32,10 +32,12 @@ pub async fn init_client(
 
 
 fn extract_thumbnail_url(thumbnails: Option<google_youtube3::api::ThumbnailDetails>) -> String {
-    thumbnails
-        .and_then(|t| t.default)
-        .and_then(|t| t.url)
-        .unwrap_or_default()
+    if let Some(t) = thumbnails {
+        if let Some(url) = t.high.and_then(|t| t.url).or_else(|| t.medium.and_then(|t| t.url)).or_else(|| t.default.and_then(|t| t.url)).or_else(|| t.standard.and_then(|t| t.url)).or_else(|| t.maxres.and_then(|t| t.url)) {
+            return url;
+        }
+    }
+    String::new()
 }
 
 #[derive(Clone, Debug)]

@@ -164,49 +164,6 @@ impl YoutubeGuiApp {
         }
     }
 
-    async fn get_client_async() -> Result<YoutubeClient, String> {
-        let config = youtube_client_lib::load_config();
-
-        if !config.is_valid() {
-            return Err(format!(
-                "Google Client Credentials are not configured.\n\n{}",
-                youtube_client_lib::GOOGLE_SETUP_INSTRUCTIONS
-            ));
-        }
-
-        let client_id = config.client_id.unwrap();
-        let client_secret = config.client_secret.unwrap();
-
-        let token_cache_path = PathBuf::from("tokencache.json");
-        if !token_cache_path.exists() {
-            return Err("Token cache (tokencache.json) is missing. Please run the CLI login flow first: `cargo run --bin youtube-client -- login`".to_string());
-        }
-
-        // Verify if the cache contains the full youtube or force-ssl scope to prevent GUI hanging
-        let has_full_scope = youtube_client_lib::check_token_cache_scopes(
-            &token_cache_path,
-            &[
-                "https://www.googleapis.com/auth/youtube",
-                "https://www.googleapis.com/auth/youtube.force-ssl",
-            ],
-        );
-
-        if !has_full_scope {
-            return Err("Token cache does not have full write permissions.\n\nPlease log in again via the terminal:\n`cargo run --bin youtube-client -- login`".to_string());
-        }
-
-        // 2. Initialize OAuth client
-        let client = YoutubeClient::new_oauth_with_scopes(
-            &client_id,
-            &client_secret,
-            &token_cache_path,
-            youtube_client_lib::YOUTUBE_SCOPES,
-        ).await
-        .map_err(|e| format!("Authentication failed: {}", e))?;
-
-        Ok(client)
-    }
-
     fn get_or_fetch_thumbnail(&self, ctx: &egui::Context, id: &str, url: &str) -> Option<egui::TextureHandle> {
         let mut start_fetch = false;
         let texture = {
@@ -235,50 +192,157 @@ impl YoutubeGuiApp {
         texture
     }
 
-
-
-
-    fn fetch_thumbnail(
-        ctx: egui::Context,
-        state: Arc<Mutex<AppState>>,
-        http_client: reqwest::Client,
-        channel_id: String,
-        url: String,
+    fn draw_video_card_with_dismiss(
+        &self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        video: &youtube_client_lib::Video,
+        action: &mut PendingAction,
+        can_dismiss: bool,
     ) {
-        tokio::spawn(async move {
-            let success = async {
-                let response = http_client.get(&url).send().await.ok()?;
-                let bytes = response.bytes().await.ok()?;
-                let img = image::load_from_memory(&bytes).ok()?;
-                let size = [img.width() as _, img.height() as _];
-                let rgba = img.to_rgba8();
-                let pixels = rgba.into_raw();
-                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+        ui.push_id(&video.id, |ui| {
+            let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
+            let (download_status, player_state) = {
+                let s_lock = self.state.lock().unwrap();
+                (
+                    s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted),
+                    s_lock.player_state.clone(),
+                )
+            };
+            let mut card_clicked = false;
 
-                // Load texture back on the GUI main context
-                let texture = ctx.load_texture(
-                    format!("thumb_{}", channel_id),
-                    color_image,
-                    Default::default(),
-                );
+            let _response = ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    let left_response = ui.horizontal(|ui| {
+                        if let Some(tex) = &texture {
+                            ui.add(egui::Image::from_texture(tex).max_width(100.0).max_height(100.0));
+                        } else {
+                            let (rect, _response) = ui.allocate_exact_size(
+                                egui::vec2(100.0, 100.0),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "🎬",
+                                egui::FontId::proportional(40.0),
+                                egui::Color32::LIGHT_GRAY,
+                            );
+                        }
 
-                let mut s = state.lock().unwrap();
-                if let Some(t) = s.thumbnails.get_mut(&channel_id) {
-                    t.texture = Some(texture);
-                    t.loading = false;
-                }
-                ctx.request_repaint();
-                Some(())
-            }.await;
+                        ui.add_space(15.0);
 
-            if success.is_none() {
-                // Mark loading as failed/finished so we don't try again
-                let mut s = state.lock().unwrap();
-                if let Some(t) = s.thumbnails.get_mut(&channel_id) {
-                    t.loading = false;
-                }
+                        ui.vertical(|ui| {
+                            ui.label(
+                                egui::RichText::new(&video.title)
+                                    .size(15.0)
+                                    .strong()
+                                    .color(egui::Color32::WHITE),
+                            );
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                let date = if video.published_at.len() >= 10 {
+                                    &video.published_at[..10]
+                                } else {
+                                    &video.published_at
+                                };
+                                ui.label(
+                                    egui::RichText::new(format!("Published: {}", date))
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(140, 140, 150)),
+                                );
+                                ui.add_space(20.0);
+                                ui.label(
+                                    egui::RichText::new(format!("ID: {}", video.id))
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(140, 140, 150)),
+                                );
+                            });
+                        });
+                    });
+
+                    let left_interact = ui.interact(
+                        left_response.response.rect,
+                        left_response.response.id.with("click"),
+                        egui::Sense::click(),
+                    );
+                    if left_interact.clicked() {
+                        card_clicked = true;
+                    }
+                    if left_interact.hovered() {
+                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if can_dismiss {
+                            if ui.button("❌ Clear").on_hover_text("Remove from New Videos feed").clicked() {
+                                *action = PendingAction::DismissNewVideo { video_id: video.id.clone() };
+                            }
+                        }
+                        match &download_status {
+                            DownloadStatus::NotStarted => {
+                                if ui.button("📥 Download Video").clicked() {
+                                    *action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
+                                }
+                            }
+                            DownloadStatus::Downloading { progress } => {
+                                ui.spinner();
+                                ui.label(progress);
+                            }
+                            DownloadStatus::Finished(_) => {
+                                let path_opt = match &download_status {
+                                    DownloadStatus::Finished(path) => Some(path),
+                                    _ => None,
+                                };
+                                let is_mp3 = path_opt.map(|p| p.extension().map(|ext| ext == "mp3").unwrap_or(false)).unwrap_or(false);
+                                
+                                if is_mp3 {
+                                    let is_playing = player_state.playing && player_state.current_title == video.title;
+                                    if is_playing {
+                                        if ui.button(egui::RichText::new("⏹ Stop").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
+                                            let _ = self.audio_tx.send(PlayerCommand::Stop);
+                                        }
+                                    } else {
+                                        if ui.button("▶ Play Local").clicked() {
+                                            if let Some(path) = path_opt {
+                                                *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    if ui.button("▶ Play Local Video").clicked() {
+                                        if let Some(path) = path_opt {
+                                            *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
+                                        }
+                                    }
+                                }
+                            }
+                            DownloadStatus::Failed(err) => {
+                                if ui.button("❌ Retry").clicked() {
+                                    *action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
+                                }
+                                ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
+                            }
+                        }
+                    });
+                });
+            });
+
+            if card_clicked && matches!(action, PendingAction::None) {
+                *action = PendingAction::LoadVideoDetails { video: video.clone() };
             }
         });
+    }
+
+    fn draw_video_card(
+        &self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        video: &youtube_client_lib::Video,
+        action: &mut PendingAction,
+    ) {
+        self.draw_video_card_with_dismiss(ui, ctx, video, action, false);
     }
 }
 

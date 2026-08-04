@@ -4,7 +4,7 @@ use eframe::egui;
 use youtube_client_lib::utils::{get_download_path, DownloadStatus};
 use youtube_client_lib::{Video, YoutubeClient};
 
-use crate::types::{AppState, Thumbnail, View};
+use crate::types::{AppState, View};
 
 pub async fn get_client_async() -> Result<YoutubeClient, String> {
     let config = youtube_client_lib::load_config();

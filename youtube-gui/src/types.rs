@@ -88,6 +88,7 @@ impl AppState {
     }
 }
 
+#[allow(dead_code)]
 pub enum PendingAction {
     None,
     SpawnLogin { id: String, secret: String },

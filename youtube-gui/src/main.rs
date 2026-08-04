@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
 use youtube_client_lib::{YoutubeClient, Subscription};
-use youtube_client_lib::utils::{extract_video_id_from_path, sanitize_filename, scan_downloads_dir, DownloadStatus};
+use youtube_client_lib::utils::{sanitize_filename, scan_downloads_dir, DownloadStatus};
 
 
 

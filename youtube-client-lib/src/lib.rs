@@ -59,6 +59,59 @@ pub fn load_config_from_file_or_default(path: &Path) -> Config {
     load_config()
 }
 
+/// Resolve YouTube API credentials from explicit options, environment variables, or configuration files.
+pub fn resolve_credentials(
+    opt_client_id: Option<String>,
+    opt_client_secret: Option<String>,
+    config_path: &Path,
+) -> anyhow::Result<(String, String)> {
+    let mut cid = opt_client_id.or_else(|| std::env::var("GOOGLE_CLIENT_ID").ok());
+    let mut csec = opt_client_secret.or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").ok());
+
+    if cid.is_none() || csec.is_none() {
+        let config = load_config_from_file_or_default(config_path);
+        if cid.is_none() {
+            cid = config.client_id;
+        }
+        if csec.is_none() {
+            csec = config.client_secret;
+        }
+    }
+
+    let temp_config = Config {
+        client_id: cid,
+        client_secret: csec,
+        player_path: None,
+        downloads_dir: None,
+    };
+
+    if temp_config.is_valid() {
+        Ok((temp_config.client_id.unwrap(), temp_config.client_secret.unwrap()))
+    } else {
+        Err(anyhow::anyhow!(
+            "Error: Google Client ID and Client Secret must be provided!\n\n{}",
+            GOOGLE_SETUP_INSTRUCTIONS
+        ))
+    }
+}
+
+/// Initialize a `YoutubeClient` with resolved credentials and standard YouTube scopes.
+pub async fn init_client(
+    opt_client_id: Option<String>,
+    opt_client_secret: Option<String>,
+    config_path: &Path,
+    token_cache_path: &Path,
+) -> anyhow::Result<YoutubeClient> {
+    let (client_id, client_secret) = resolve_credentials(opt_client_id, opt_client_secret, config_path)?;
+    YoutubeClient::new_oauth_with_scopes(
+        &client_id,
+        &client_secret,
+        token_cache_path,
+        YOUTUBE_SCOPES,
+    )
+    .await
+}
+
 
 pub fn load_config_from_dir(dir: &Path) -> Config {
     let private_config = dir.join("private_config.json");

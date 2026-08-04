@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use youtube_client_lib::YoutubeClient;
+use youtube_client_lib::utils::{print_table, truncate};
+use youtube_client_lib::{init_client, YoutubeClient};
 
 #[derive(Parser)]
 #[command(name = "youtube-client")]
@@ -69,47 +70,14 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-
-    let get_credentials = || -> anyhow::Result<(String, String)> {
-        let mut cid = cli.client_id.clone().or_else(|| std::env::var("GOOGLE_CLIENT_ID").ok());
-        let mut csec = cli.client_secret.clone().or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").ok());
-
-        // If credentials are still missing, try loading from the config file
-        if cid.is_none() || csec.is_none() {
-            let config = youtube_client_lib::load_config_from_file_or_default(&cli.config);
-
-            if cid.is_none() {
-                cid = config.client_id;
-            }
-            if csec.is_none() {
-                csec = config.client_secret;
-            }
-        }
-
-        let temp_config = youtube_client_lib::Config {
-            client_id: cid,
-            client_secret: csec,
-            player_path: None,
-            downloads_dir: None,
-        };
-
-        if temp_config.is_valid() {
-            Ok((temp_config.client_id.unwrap(), temp_config.client_secret.unwrap()))
-        } else {
-            Err(anyhow::anyhow!(
-                "Error: Google Client ID and Client Secret must be provided!\n\n{}",
-                youtube_client_lib::GOOGLE_SETUP_INSTRUCTIONS
-            ))
-        }
-    };
     let get_client = || async {
-        let (client_id, client_secret) = get_credentials()?;
-        YoutubeClient::new_oauth_with_scopes(
-            &client_id,
-            &client_secret,
+        init_client(
+            cli.client_id.clone(),
+            cli.client_secret.clone(),
+            &cli.config,
             &cli.token_cache,
-            youtube_client_lib::YOUTUBE_SCOPES,
-        ).await
+        )
+        .await
     };
 
     match cli.command {
@@ -180,40 +148,3 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn truncate(s: &str, max_chars: usize) -> String {
-    if s.chars().count() > max_chars {
-        let mut truncated: String = s.chars().take(max_chars - 3).collect();
-        truncated.push_str("...");
-        truncated
-    } else {
-        s.to_string()
-    }
-}
-
-fn print_table<T>(
-    headers: &[&str],
-    widths: &[usize],
-    items: &[T],
-    row_formatter: impl Fn(&T, usize) -> Vec<String>,
-) {
-    if items.is_empty() {
-        println!("No items found.");
-        return;
-    }
-
-    for (i, header) in headers.iter().enumerate() {
-        print!("{:<width$} ", header, width = widths[i]);
-    }
-    println!();
-
-    let total_width: usize = widths.iter().sum::<usize>() + widths.len() - 1;
-    println!("{}", "-".repeat(total_width));
-
-    for (idx, item) in items.iter().enumerate() {
-        let cols = row_formatter(item, idx);
-        for (i, col) in cols.iter().enumerate() {
-            print!("{:<width$} ", col, width = widths[i]);
-        }
-        println!();
-    }
-}

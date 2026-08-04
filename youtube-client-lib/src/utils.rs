@@ -72,3 +72,44 @@ pub fn scan_downloads_dir(dir: &Path, downloads: &mut HashMap<String, DownloadSt
         }
     }
 }
+
+/// Truncate a string to max_chars, adding an ellipsis if truncated.
+pub fn truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() > max_chars {
+        let mut truncated: String = s.chars().take(max_chars - 3).collect();
+        truncated.push_str("...");
+        truncated
+    } else {
+        s.to_string()
+    }
+}
+
+/// Format and print tabular data to stdout.
+pub fn print_table<T>(
+    headers: &[&str],
+    widths: &[usize],
+    items: &[T],
+    row_formatter: impl Fn(&T, usize) -> Vec<String>,
+) {
+    if items.is_empty() {
+        println!("No items found.");
+        return;
+    }
+
+    for (i, header) in headers.iter().enumerate() {
+        print!("{:<width$} ", header, width = widths[i]);
+    }
+    println!();
+
+    let total_width: usize = widths.iter().sum::<usize>() + widths.len() - 1;
+    println!("{}", "-".repeat(total_width));
+
+    for (idx, item) in items.iter().enumerate() {
+        let cols = row_formatter(item, idx);
+        for (i, col) in cols.iter().enumerate() {
+            print!("{:<width$} ", col, width = widths[i]);
+        }
+        println!();
+    }
+}
+

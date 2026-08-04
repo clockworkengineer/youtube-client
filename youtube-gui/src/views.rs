@@ -172,10 +172,16 @@ pub fn get_or_fetch_thumbnail(
     let mut start_fetch = false;
     let texture = {
         let mut s = state.lock().unwrap();
-        let thumbnail_entry = s.thumbnails.entry(id.to_string()).or_insert_with(|| Thumbnail {
-            texture: None,
-            loading: false,
-        });
+        if !s.thumbnails.contains_key(id) {
+            s.insert_thumbnail(
+                id.to_string(),
+                Thumbnail {
+                    texture: None,
+                    loading: false,
+                },
+            );
+        }
+        let thumbnail_entry = s.thumbnails.get_mut(id).unwrap();
 
         if thumbnail_entry.texture.is_none() && !thumbnail_entry.loading && !url.is_empty() {
             thumbnail_entry.loading = true;

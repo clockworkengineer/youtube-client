@@ -94,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
                 &["Index", "Title", "Channel ID"],
                 &[5, 30, 30],
                 &subs,
-                |sub, idx| vec![(idx + 1).to_string(), truncate(&sub.title, 28), sub.channel_id.clone()],
+                |sub, idx| vec![(idx + 1).to_string(), truncate(&sub.title, 28).into_owned(), sub.channel_id.clone()],
             );
         }
         Commands::Videos { channel_id, limit } => {
@@ -107,9 +107,9 @@ async fn main() -> anyhow::Result<()> {
                 &videos,
                 |vid, idx| vec![
                     (idx + 1).to_string(),
-                    truncate(&vid.title, 38),
+                    truncate(&vid.title, 38).into_owned(),
                     vid.id.clone(),
-                    truncate(&vid.published_at, 10),
+                    truncate(&vid.published_at, 10).into_owned(),
                 ],
             );
         }

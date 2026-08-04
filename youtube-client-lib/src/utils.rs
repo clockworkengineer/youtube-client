@@ -73,14 +73,16 @@ pub fn scan_downloads_dir(dir: &Path, downloads: &mut HashMap<String, DownloadSt
     }
 }
 
-/// Truncate a string to max_chars, adding an ellipsis if truncated.
-pub fn truncate(s: &str, max_chars: usize) -> String {
+use std::borrow::Cow;
+
+/// Truncate a string to max_chars, adding an ellipsis if truncated. Returns a zero-copy reference when not truncated.
+pub fn truncate(s: &str, max_chars: usize) -> Cow<'_, str> {
     if s.chars().count() > max_chars {
-        let mut truncated: String = s.chars().take(max_chars - 3).collect();
+        let mut truncated: String = s.chars().take(max_chars.saturating_sub(3)).collect();
         truncated.push_str("...");
-        truncated
+        Cow::Owned(truncated)
     } else {
-        s.to_string()
+        Cow::Borrowed(s)
     }
 }
 

@@ -69,6 +69,17 @@ pub struct AppState {
 }
 
 impl AppState {
+    pub const MAX_THUMBNAILS: usize = 150;
+
+    pub fn insert_thumbnail(&mut self, key: String, thumbnail: Thumbnail) {
+        if self.thumbnails.len() >= Self::MAX_THUMBNAILS && !self.thumbnails.contains_key(&key) {
+            if let Some(evict_key) = self.thumbnails.keys().next().cloned() {
+                self.thumbnails.remove(&evict_key);
+            }
+        }
+        self.thumbnails.insert(key, thumbnail);
+    }
+
     pub fn navigate_to(&mut self, new_view: View) {
         self.view_history.push(self.current_view.clone());
         self.current_view = new_view;

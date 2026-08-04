@@ -18,6 +18,7 @@ struct Thumbnail {
 enum View {
     Login,
     Subscriptions,
+    NewVideos,
     ChannelVideos {
         channel_id: String,
         channel_title: String,
@@ -57,6 +58,8 @@ enum PlayerCommand {
 
 struct AppState {
     subscriptions: Option<Result<Vec<Subscription>, String>>,
+    new_videos: Option<Result<Vec<youtube_client_lib::Video>, String>>,
+    cleared_video_ids: std::collections::HashSet<String>,
     thumbnails: HashMap<String, Thumbnail>,
     current_view: View,
     view_history: Vec<View>,
@@ -120,8 +123,11 @@ impl YoutubeGuiApp {
             scan_downloads_dir(&downloads_dir, &mut downloads);
         }
 
+        let cleared_video_ids = load_cleared_video_ids();
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
+            new_videos: None,
+            cleared_video_ids,
             thumbnails: HashMap::new(),
             current_view: View::Subscriptions,
             view_history: Vec::new(),
@@ -352,12 +358,13 @@ impl YoutubeGuiApp {
         texture
     }
 
-    fn draw_video_card(
+    fn draw_video_card_with_dismiss(
         &self,
         ui: &mut egui::Ui,
         ctx: &egui::Context,
         video: &youtube_client_lib::Video,
         action: &mut PendingAction,
+        can_dismiss: bool,
     ) {
         ui.push_id(&video.id, |ui| {
             let texture = self.get_or_fetch_thumbnail(ctx, &video.id, &video.thumbnail_url);
@@ -434,6 +441,11 @@ impl YoutubeGuiApp {
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if can_dismiss {
+                            if ui.button("❌ Clear").on_hover_text("Remove from New Videos feed").clicked() {
+                                *action = PendingAction::DismissNewVideo { video_id: video.id.clone() };
+                            }
+                        }
                         match &download_status {
                             DownloadStatus::NotStarted => {
                                 if ui.button("📥 Download Video").clicked() {
@@ -488,6 +500,50 @@ impl YoutubeGuiApp {
             }
         });
     }
+
+    fn draw_video_card(
+        &self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        video: &youtube_client_lib::Video,
+        action: &mut PendingAction,
+    ) {
+        self.draw_video_card_with_dismiss(ui, ctx, video, action, false);
+    }
+
+    fn spawn_fetch_new_videos(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
+        Self::spawn_client_action(
+            state,
+            ctx,
+            "fetch_new_videos",
+            |client| async move {
+                let subs = client.list_subscriptions(10).await
+                    .map_err(|e| format!("Failed to fetch subscriptions for new videos feed: {}", e))?;
+                
+                let mut all_videos = Vec::new();
+                for sub in subs.iter().take(5) {
+                    if let Ok(vids) = client.list_videos(&sub.channel_id, 5).await {
+                        all_videos.extend(vids);
+                    }
+                }
+                all_videos.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+                Ok(all_videos)
+            },
+            |res, s, ctx| {
+                match res {
+                    Ok(mut vids) => {
+                        vids.retain(|v| !s.cleared_video_ids.contains(&v.id));
+                        s.new_videos = Some(Ok(vids));
+                    }
+                    Err(e) => {
+                        s.new_videos = Some(Err(e));
+                    }
+                }
+                ctx.request_repaint();
+            },
+        );
+    }
+
 
     fn spawn_fetch_subscriptions(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
         Self::spawn_client_action(
@@ -898,6 +954,11 @@ enum PendingAction {
     SpawnLogin { id: String, secret: String },
     RetrySubscriptions,
     GoToSubscriptions,
+    GoToNewVideos,
+    LoadNewVideos,
+    ClearAllNewVideos,
+    DismissNewVideo { video_id: String },
+    ResetClearedVideos,
     LoadChannel { id: String, title: String, description: String },
     GoBack,
     RetryVideos { id: String, title: String, description: String },
@@ -920,7 +981,7 @@ enum PendingAction {
 
 impl eframe::App for YoutubeGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let (current_view, subscriptions, logging_in, login_error, player_state, playlists, playlist_action_status) = {
+        let (current_view, subscriptions, logging_in, login_error, player_state, playlists, playlist_action_status, new_videos, cleared_video_count) = {
             let s = self.state.lock().unwrap();
             (
                 s.current_view.clone(),
@@ -930,6 +991,8 @@ impl eframe::App for YoutubeGuiApp {
                 s.player_state.clone(),
                 s.playlists.clone(),
                 s.playlist_action_status.clone(),
+                s.new_videos.clone(),
+                s.cleared_video_ids.len(),
             )
         };
         let mut action = PendingAction::None;
@@ -978,6 +1041,11 @@ impl eframe::App for YoutubeGuiApp {
                     let on_subs = matches!(current_view, View::Subscriptions | View::ChannelVideos { .. });
                     if ui.selectable_label(on_subs, "📺 Subscriptions").clicked() {
                         action = PendingAction::GoToSubscriptions;
+                    }
+                    ui.add_space(10.0);
+                    let on_new = matches!(current_view, View::NewVideos);
+                    if ui.selectable_label(on_new, "🆕 New Videos").clicked() {
+                        action = PendingAction::GoToNewVideos;
                     }
                     ui.add_space(10.0);
                     let on_playlists = matches!(current_view, View::Playlists { .. } | View::PlaylistVideos { .. });
@@ -1167,6 +1235,75 @@ impl eframe::App for YoutubeGuiApp {
 
                                                 ui.add_space(8.0);
                                             });
+                                        }
+                                    });
+                            }
+                        }
+                    }
+                }
+                View::NewVideos => {
+                    ui.horizontal(|ui| {
+                        ui.heading(
+                            egui::RichText::new("🆕 New Videos Feed")
+                                .size(22.0)
+                                .strong()
+                                .color(egui::Color32::WHITE),
+                        );
+                        ui.add_space(20.0);
+                        if ui.button("🔄 Refresh").clicked() {
+                            action = PendingAction::LoadNewVideos;
+                        }
+                        ui.add_space(10.0);
+                        if ui.button("🗑️ Clear All").on_hover_text("Clear all videos from New Videos feed").clicked() {
+                            action = PendingAction::ClearAllNewVideos;
+                        }
+                        if cleared_video_count > 0 {
+                            ui.add_space(10.0);
+                            if ui.button(format!("↺ Reset Cleared ({})", cleared_video_count))
+                                .on_hover_text("Restore all cleared/dismissed videos")
+                                .clicked()
+                            {
+                                action = PendingAction::ResetClearedVideos;
+                            }
+                        }
+                    });
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+
+                    match &new_videos {
+                        None => {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(100.0);
+                                ui.spinner();
+                                ui.add_space(10.0);
+                                ui.label("Loading latest videos from your subscriptions...");
+                            });
+                        }
+                        Some(Err(err_msg)) => {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(50.0);
+                                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Failed to load new videos");
+                                ui.add_space(10.0);
+                                ui.label(err_msg);
+                                ui.add_space(20.0);
+                                if ui.button("Retry").clicked() {
+                                    action = PendingAction::LoadNewVideos;
+                                }
+                            });
+                        }
+                        Some(Ok(vids)) => {
+                            if vids.is_empty() {
+                                ui.vertical_centered(|ui| {
+                                    ui.add_space(50.0);
+                                    ui.label("No new videos available.");
+                                });
+                            } else {
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        for video in vids {
+                                            self.draw_video_card_with_dismiss(ui, ctx, video, &mut action, true);
                                         }
                                     });
                             }
@@ -1702,6 +1839,57 @@ impl eframe::App for YoutubeGuiApp {
                 }
                 Self::spawn_fetch_subscriptions(self.state.clone(), ctx.clone());
             }
+            PendingAction::GoToSubscriptions => {
+                let mut s_lock = self.state.lock().unwrap();
+                s_lock.navigate_clear_history(View::Subscriptions);
+            }
+            PendingAction::GoToNewVideos => {
+                let has_cache = {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.navigate_clear_history(View::NewVideos);
+                    s_lock.new_videos.is_some()
+                };
+                if !has_cache {
+                    Self::spawn_fetch_new_videos(self.state.clone(), ctx.clone());
+                }
+            }
+            PendingAction::LoadNewVideos => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.new_videos = None;
+                    s_lock.current_view = View::NewVideos;
+                }
+                Self::spawn_fetch_new_videos(self.state.clone(), ctx.clone());
+            }
+            PendingAction::ClearAllNewVideos => {
+                let mut s_lock = self.state.lock().unwrap();
+                let ids_to_clear: Vec<String> = match &s_lock.new_videos {
+                    Some(Ok(vids)) => vids.iter().map(|v| v.id.clone()).collect(),
+                    _ => Vec::new(),
+                };
+                for id in ids_to_clear {
+                    s_lock.cleared_video_ids.insert(id);
+                }
+                save_cleared_video_ids(&s_lock.cleared_video_ids);
+                s_lock.new_videos = Some(Ok(Vec::new()));
+            }
+            PendingAction::DismissNewVideo { video_id } => {
+                let mut s_lock = self.state.lock().unwrap();
+                s_lock.cleared_video_ids.insert(video_id.clone());
+                save_cleared_video_ids(&s_lock.cleared_video_ids);
+                if let Some(Ok(ref mut vids)) = s_lock.new_videos {
+                    vids.retain(|v| v.id != video_id);
+                }
+            }
+            PendingAction::ResetClearedVideos => {
+                {
+                    let mut s_lock = self.state.lock().unwrap();
+                    s_lock.cleared_video_ids.clear();
+                    save_cleared_video_ids(&s_lock.cleared_video_ids);
+                    s_lock.new_videos = None;
+                }
+                Self::spawn_fetch_new_videos(self.state.clone(), ctx.clone());
+            }
             PendingAction::LoadChannel { id, title, description } => {
                 {
                     let mut s_lock = self.state.lock().unwrap();
@@ -1717,10 +1905,6 @@ impl eframe::App for YoutubeGuiApp {
             PendingAction::GoBack => {
                 let mut s_lock = self.state.lock().unwrap();
                 s_lock.go_back();
-            }
-            PendingAction::GoToSubscriptions => {
-                let mut s_lock = self.state.lock().unwrap();
-                s_lock.navigate_clear_history(View::Subscriptions);
             }
             PendingAction::RetryVideos { id, title, description } => {
                 {
@@ -1879,6 +2063,25 @@ fn get_download_path(downloads_base: &std::path::Path, channel_title: &str, vide
     downloads_base.join(channel_dir_name).join(file_name)
 }
 
+fn load_cleared_video_ids() -> std::collections::HashSet<String> {
+    let path = std::path::Path::new("cleared_videos.json");
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(ids) = serde_json::from_str::<Vec<String>>(&content) {
+                return ids.into_iter().collect();
+            }
+        }
+    }
+    std::collections::HashSet::new()
+}
+
+fn save_cleared_video_ids(ids: &std::collections::HashSet<String>) {
+    let list: Vec<&String> = ids.iter().collect();
+    if let Ok(content) = serde_json::to_string_pretty(&list) {
+        let _ = std::fs::write("cleared_videos.json", content);
+    }
+}
+
 // sanitize_filename moved to youtube_client_lib::utils
 
 // extract_video_id_from_path moved to youtube_client_lib::utils
@@ -1907,6 +2110,7 @@ async fn main() -> eframe::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use youtube_client_lib::utils::extract_video_id_from_path;
 
     #[test]
     fn test_sanitize_filename() {

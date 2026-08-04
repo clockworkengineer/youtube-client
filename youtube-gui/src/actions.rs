@@ -112,9 +112,18 @@ pub fn spawn_fetch_new_videos(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
                 .await
                 .map_err(|e| format!("Failed to fetch subscriptions for new videos feed: {}", e))?;
 
+            let client_arc = Arc::new(client);
+            let mut handles = Vec::new();
+            for sub in subs.into_iter().take(5) {
+                let client_ref = client_arc.clone();
+                handles.push(tokio::spawn(async move {
+                    client_ref.list_videos(&sub.channel_id, 5).await.ok()
+                }));
+            }
+
             let mut all_videos = Vec::new();
-            for sub in subs.iter().take(5) {
-                if let Ok(vids) = client.list_videos(&sub.channel_id, 5).await {
+            for handle in handles {
+                if let Ok(Some(vids)) = handle.await {
                     all_videos.extend(vids);
                 }
             }

@@ -2,7 +2,8 @@
 members = [
     "youtube-client",
     "youtube-client-lib",
-    "youtube-gui"
+    "youtube-gui",
+    "youtube-installer"
 ]
 resolver = "2"
 

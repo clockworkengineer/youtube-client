@@ -6883,6 +6883,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "youtube-installer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "youtube-client-lib",
+]
+
+[[package]]
 name = "yup-oauth2"
 version = "12.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

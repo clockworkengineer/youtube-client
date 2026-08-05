@@ -45,8 +45,44 @@ To get Google API Client credentials:\n\
 4. Click \"Create Credentials\" > \"OAuth client ID\". Choose \"Desktop app\".\n\
 5. Retrieve your Client ID and Client Secret.";
 
+pub fn get_global_config_dir() -> Option<std::path::PathBuf> {
+    if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA").map(|appdata| std::path::PathBuf::from(appdata).join("youtube-client"))
+    } else {
+        std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config").join("youtube-client"))
+    }
+}
+
 pub fn load_config() -> Config {
-    load_config_from_dir(Path::new("."))
+    let local = load_config_from_dir(Path::new("."));
+    let mut merged = local.clone();
+    
+    if !local.is_valid() {
+        if let Some(global_dir) = get_global_config_dir() {
+            let global = load_config_from_dir(&global_dir);
+            if merged.client_id.is_none() {
+                merged.client_id = global.client_id;
+            }
+            if merged.client_secret.is_none() {
+                merged.client_secret = global.client_secret;
+            }
+            if merged.player_path.is_none() {
+                merged.player_path = global.player_path;
+            }
+            if merged.downloads_dir.is_none() {
+                merged.downloads_dir = global.downloads_dir;
+            }
+        }
+    } else if let Some(global_dir) = get_global_config_dir() {
+        let global = load_config_from_dir(&global_dir);
+        if merged.player_path.is_none() {
+            merged.player_path = global.player_path;
+        }
+        if merged.downloads_dir.is_none() {
+            merged.downloads_dir = global.downloads_dir;
+        }
+    }
+    merged
 }
 
 pub fn load_config_from_dir(dir: &Path) -> Config {

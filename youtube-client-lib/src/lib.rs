@@ -109,10 +109,22 @@ pub async fn init_client(
     token_cache_path: &Path,
 ) -> Result<YoutubeClient> {
     let (client_id, client_secret) = resolve_credentials(opt_client_id, opt_client_secret, config_path)?;
+    
+    let resolved_token_cache = if token_cache_path == Path::new("tokencache.json") && !token_cache_path.exists() {
+        if let Some(global_dir) = crate::config::get_global_config_dir() {
+            let _ = std::fs::create_dir_all(&global_dir);
+            global_dir.join("tokencache.json")
+        } else {
+            token_cache_path.to_path_buf()
+        }
+    } else {
+        token_cache_path.to_path_buf()
+    };
+
     YoutubeClient::new_oauth_with_scopes(
         &client_id,
         &client_secret,
-        token_cache_path,
+        &resolved_token_cache,
         YOUTUBE_SCOPES,
     )
     .await

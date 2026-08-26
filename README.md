@@ -56,7 +56,7 @@ cargo run --bin youtube-client -- subscriptions
 
 If you find this project useful and want to support its ongoing development, consider buying me a coffee!
 
-[!["Buy Me A Coffee"](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com)
+[!["Buy Me A Coffee"](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
 
-[☕ Support on Buy Me a Coffee](https://www.buymeacoffee.com)
+[☕ Support on Buy Me a Coffee](https://buymeacoffee.com/roberttizz1)
 

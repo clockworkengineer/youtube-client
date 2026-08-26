@@ -984,7 +984,7 @@ impl eframe::App for YoutubeGuiApp {
 
                             ui.horizontal(|ui| {
                                 if ui.button("☕ Support on Buy Me a Coffee").clicked() {
-                                    let _ = open::that("https://www.buymeacoffee.com");
+                                    let _ = open::that("https://buymeacoffee.com/roberttizz1");
                                 }
                                 ui.add_space(15.0);
                                 if ui.button("🌐 Google Developer Console").clicked() {

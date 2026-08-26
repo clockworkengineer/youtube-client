@@ -156,8 +156,16 @@ pub fn launch_external_player(target: &std::ffi::OsStr) -> Result<(), String> {
         "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
     ]);
 
+    let target_str = target.to_string_lossy();
+    let is_url = target_str.starts_with("http://") || target_str.starts_with("https://");
+
     for player in players {
-        if std::process::Command::new(&player).arg(target).spawn().is_ok() {
+        let mut cmd = std::process::Command::new(&player);
+        if is_url && player.to_lowercase().contains("mpv") {
+            cmd.arg("--ytdl-raw-options=extractor-args=youtube:player_client=mweb");
+        }
+        cmd.arg(target);
+        if cmd.spawn().is_ok() {
             return Ok(());
         }
     }

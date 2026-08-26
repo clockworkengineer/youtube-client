@@ -63,6 +63,11 @@ Add the `player_path` property pointing to your media player executable:
 * Check that your `player_path` in `private_config.json` is correct and uses double backslashes.
 * If relying on the system `PATH`, make sure you can run the player (e.g., `mpv` or `vlc`) from a terminal.
 
-### Player Opens but Fails to Load/Play the Video
-* **For MPV**: Ensure `yt-dlp.exe` is in your system `PATH` or the MPV directory, and that it is up-to-date (`yt-dlp -U`).
+### Player Opens but Fails to Load/Play the Video (HTTP 403 Forbidden)
+* **For MPV**:
+  * Ensure `yt-dlp.exe` is in your system `PATH` or the MPV directory, and that it is up-to-date (`yt-dlp -U`).
+  * If YouTube returns `HTTP error 403 Forbidden`, YouTube may be blocking the default `ANDROID_VR` client format requested by `yt-dlp`. The application automatically passes `--ytdl-raw-options=extractor-args=youtube:player_client=mweb` when launching MPV. If running MPV manually from command line, run:
+    ```bash
+    mpv "https://www.youtube.com/watch?v=..." --ytdl-raw-options=extractor-args=youtube:player_client=mweb
+    ```
 * **For VLC**: Update your `youtube.luac` file as described in Step 1.

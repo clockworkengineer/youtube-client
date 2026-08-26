@@ -658,7 +658,9 @@ where
 
     let mut cmd = tokio::process::Command::new("yt-dlp");
     cmd.arg("--newline")
-       .arg("--no-keep-video");
+       .arg("--no-keep-video")
+       .arg("--extractor-args")
+       .arg("youtube:player_client=mweb");
     if is_mp3 {
         cmd.arg("-x")
             .arg("--audio-format")
@@ -668,7 +670,7 @@ where
             .arg(&url);
     } else {
         cmd.arg("-f")
-            .arg("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]")
+            .arg("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b")
             .arg("-o")
             .arg(output_path)
             .arg(&url);

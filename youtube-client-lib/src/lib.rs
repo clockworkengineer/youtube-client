@@ -2,10 +2,16 @@ use std::path::Path;
 use google_youtube3::{YouTube, hyper_rustls, hyper_util};
 use yup_oauth2::{InstalledFlowAuthenticator, InstalledFlowReturnMethod, ApplicationSecret};
 
+pub mod auth;
 pub mod config;
+pub mod models;
+pub mod traits;
 pub mod utils;
 
+pub use auth::*;
 pub use config::*;
+pub use models::*;
+pub use traits::*;
 
 #[derive(thiserror::Error, Debug)]
 pub enum YoutubeError {
@@ -140,44 +146,6 @@ fn extract_thumbnail_url(thumbnails: Option<google_youtube3::api::ThumbnailDetai
     String::new()
 }
 
-#[derive(Clone, Debug)]
-pub struct Subscription {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub channel_id: String,
-    pub thumbnail_url: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct Video {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub published_at: String,
-    pub thumbnail_url: String,
-    pub channel_title: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct Playlist {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub thumbnail_url: String,
-    pub video_count: u32,
-}
-
-#[derive(Clone, Debug)]
-pub struct Comment {
-    pub author_name: String,
-    pub author_thumbnail: String,
-    pub text_display: String,
-    pub published_at: String,
-    pub like_count: u32,
-}
-
-
 pub struct YoutubeClient {
     hub: YouTube<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>,
 }
@@ -196,26 +164,6 @@ impl YoutubeClient {
             token_cache_path,
             &["https://www.googleapis.com/auth/youtube.readonly"],
         ).await
-    }
-}
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct OpenBrowserFlowDelegate;
-
-impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for OpenBrowserFlowDelegate {
-    fn present_user_url(
-        &self,
-        url: &str,
-        _need_code: bool,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::result::Result<String, String>> + Send>> {
-        let url_str = url.to_string();
-        Box::pin(async move {
-            println!("Opening browser for OAuth authentication: {}", url_str);
-            if let Err(e) = open::that(&url_str) {
-                eprintln!("Failed to open browser automatically: {}", e);
-            }
-            Ok(String::new())
-        })
     }
 }
 
@@ -840,6 +788,59 @@ impl YoutubeClient {
     pub async fn test_connection(&self) -> Result<()> {
         let _ = self.list_subscriptions(1).await?;
         Ok(())
+    }
+}
+
+impl SubscriptionService for YoutubeClient {
+    async fn list_subscriptions(&self, max_results: u32) -> Result<Vec<Subscription>> {
+        self.list_subscriptions(max_results).await
+    }
+    async fn subscribe_to_channel(&self, channel_id: &str) -> Result<()> {
+        self.subscribe_to_channel(channel_id).await
+    }
+    async fn unsubscribe_from_channel(&self, subscription_id: &str) -> Result<()> {
+        self.unsubscribe_from_channel(subscription_id).await
+    }
+}
+
+impl VideoService for YoutubeClient {
+    async fn list_videos(&self, channel_id: &str, max_results: u32) -> Result<Vec<Video>> {
+        self.list_videos(channel_id, max_results).await
+    }
+    async fn search_videos(&self, query: &str, max_results: u32) -> Result<Vec<Video>> {
+        self.search_videos(query, max_results).await
+    }
+    async fn rate_video(&self, video_id: &str, rating: &str) -> Result<()> {
+        self.rate_video(video_id, rating).await
+    }
+}
+
+impl PlaylistService for YoutubeClient {
+    async fn list_playlists(&self, max_results: u32) -> Result<Vec<Playlist>> {
+        self.list_playlists(max_results).await
+    }
+    async fn list_playlist_videos(&self, playlist_id: &str, max_results: u32) -> Result<Vec<Video>> {
+        self.list_playlist_videos(playlist_id, max_results).await
+    }
+    async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> Result<()> {
+        self.add_to_playlist(playlist_id, video_id).await
+    }
+}
+
+impl CommentService for YoutubeClient {
+    async fn fetch_comments(&self, video_id: &str) -> Result<Vec<Comment>> {
+        self.fetch_comments(video_id).await
+    }
+}
+
+impl MediaDownloader for YoutubeClient {
+    async fn download_media(
+        &self,
+        video_id: &str,
+        output_path: &Path,
+        progress_cb: Box<dyn Fn(&str) + Send + Sync>,
+    ) -> Result<()> {
+        self.download_video(video_id, output_path, progress_cb).await
     }
 }
 

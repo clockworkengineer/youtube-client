@@ -3,6 +3,14 @@
 //! Provides egui view layout components, thumbnail texture caching, video cards,
 //! and dismissible feed cards.
 
+pub mod about_view;
+pub mod login_view;
+pub mod traits;
+
+pub use about_view::*;
+pub use login_view::*;
+pub use traits::*;
+
 use eframe::egui;
 use youtube_client_lib::utils::DownloadStatus;
 use youtube_client_lib::Video;

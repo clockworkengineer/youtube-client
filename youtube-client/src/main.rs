@@ -5,8 +5,6 @@
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use youtube_client_lib::utils::{print_table, truncate};
-use youtube_client_lib::{init_client, YoutubeClient};
 
 #[derive(Parser)]
 #[command(name = "youtube-client")]
@@ -71,85 +69,30 @@ enum Commands {
     },
 }
 
+mod commands;
+
+use commands::*;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let get_client = || async {
-        init_client(
-            cli.client_id.clone(),
-            cli.client_secret.clone(),
-            &cli.config,
-            &cli.token_cache,
-        )
-        .await
-    };
-
     match cli.command {
         Commands::Login => {
-            println!("Starting OAuth2 Login flow with full YouTube permissions...");
-            let _client = get_client().await?;
-            println!("Login successful! Token saved to {:?}", cli.token_cache);
+            execute_login(cli.client_id, cli.client_secret, &cli.config, &cli.token_cache).await
         }
         Commands::Subscriptions { limit } => {
-            let client = get_client().await?;
-            println!("Fetching subscriptions...");
-            let subs = client.list_subscriptions(limit).await?;
-            print_table(
-                &["Index", "Title", "Channel ID"],
-                &[5, 30, 30],
-                &subs,
-                |sub, idx| vec![(idx + 1).to_string(), truncate(&sub.title, 28).into_owned(), sub.channel_id.clone()],
-            );
+            execute_subscriptions(cli.client_id, cli.client_secret, &cli.config, &cli.token_cache, limit).await
         }
         Commands::Videos { channel_id, limit } => {
-            let client = get_client().await?;
-            println!("Fetching videos for channel {}...", channel_id);
-            let videos = client.list_videos(&channel_id, limit).await?;
-            print_table(
-                &["Index", "Title", "Video ID", "Published At"],
-                &[5, 40, 15, 15],
-                &videos,
-                |vid, idx| vec![
-                    (idx + 1).to_string(),
-                    truncate(&vid.title, 38).into_owned(),
-                    vid.id.clone(),
-                    truncate(&vid.published_at, 10).into_owned(),
-                ],
-            );
+            execute_videos(cli.client_id, cli.client_secret, &cli.config, &cli.token_cache, channel_id, limit).await
         }
         Commands::Download { video_id, output } => {
-            println!("Starting download for video {}...", video_id);
-            let client_res = get_client().await;
-            if client_res.is_err() {
-                println!("No OAuth credentials provided (optional for download). Using direct downloader...");
-            } else {
-                println!("Downloading via client...");
-            }
-
-            youtube_client_lib::download_video_direct(&video_id, &output, |prog| {
-                print!("\r{}", prog);
-                use std::io::Write;
-                let _ = std::io::stdout().flush();
-            }).await?;
-            println!("\nDownload complete! Saved to {:?}", output);
+            execute_download(cli.client_id, cli.client_secret, &cli.config, &cli.token_cache, video_id, output).await
         }
         Commands::Play { file, system } => {
-            if !file.exists() {
-                return Err(anyhow::anyhow!("Error: File {:?} does not exist!", file));
-            }
-            if system {
-                println!("Opening {:?} in system media player...", file);
-                open::that(&file)?;
-            } else {
-                println!("Decoding and playing audio from {:?} via Rodio...", file);
-                println!("Press Ctrl+C to stop playback.");
-                YoutubeClient::play_audio_rodio(file.clone()).await?;
-            }
-            println!("Playback finished.");
+            execute_play(file, system).await
         }
     }
-
-    Ok(())
 }
 

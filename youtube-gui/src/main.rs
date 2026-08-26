@@ -95,7 +95,7 @@ impl YoutubeGuiApp {
 
 impl eframe::App for YoutubeGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let (current_view, subscriptions, logging_in, login_error, player_state, playlists, playlist_action_status, new_videos, cleared_video_count) = {
+        let (current_view, subscriptions, _logging_in, _login_error, player_state, playlists, playlist_action_status, new_videos, cleared_video_count) = {
             let s = self.state.lock().unwrap();
             (
                 s.current_view.clone(),
@@ -180,58 +180,10 @@ impl eframe::App for YoutubeGuiApp {
 
             match current_view {
                 View::Login => {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(20.0);
-                        ui.heading(
-                            egui::RichText::new("🔐 YouTube OAuth Authentication")
-                                .size(24.0)
-                                .strong()
-                                .color(egui::Color32::from_rgb(255, 60, 60)),
-                        );
-                        ui.add_space(10.0);
-                        ui.label("Please configure your Google OAuth2 credentials to authenticate the client.");
-                        ui.add_space(20.0);
-                    });
-
-                    ui.group(|ui| {
-                        ui.vertical(|ui| {
-                            ui.label("Google Client ID:");
-                            ui.text_edit_singleline(&mut self.client_id_input);
-                            ui.add_space(10.0);
-
-                            ui.label("Google Client Secret:");
-                            ui.text_edit_singleline(&mut self.client_secret_input);
-                            ui.add_space(15.0);
-
-                            if logging_in {
-                                ui.horizontal(|ui| {
-                                    ui.spinner();
-                                    ui.label("Attempting authentication & launching browser flow...");
-                                });
-                            } else {
-                                if ui.button("Save & Login").clicked() {
-                                    let id = self.client_id_input.trim().to_string();
-                                    let secret = self.client_secret_input.trim().to_string();
-                                    if !id.is_empty() && !secret.is_empty() {
-                                        action = PendingAction::SpawnLogin { id, secret };
-                                    }
-                                }
-                            }
-
-                            let display_error = login_error.as_ref().or_else(|| {
-                                if let Some(Err(err)) = &subscriptions {
-                                    Some(err)
-                                } else {
-                                    None
-                                }
-                            });
-
-                            if let Some(err) = display_error {
-                                ui.add_space(10.0);
-                                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠️ Error: {}", err));
-                            }
-                        });
-                    });
+                    let s_lock = self.state.lock().unwrap();
+                    if let Some(act) = render_login_view(ui, &mut self.client_id_input, &mut self.client_secret_input, &s_lock) {
+                        action = act;
+                    }
                 }
                 View::Subscriptions => {
                     // Title Header
@@ -943,56 +895,7 @@ impl eframe::App for YoutubeGuiApp {
                     }
                 }
                 View::About => {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(20.0);
-                        ui.heading(
-                            egui::RichText::new("📺 YouTube Client Workspace")
-                                .size(24.0)
-                                .strong()
-                                .color(egui::Color32::from_rgb(255, 60, 60)),
-                        );
-                        ui.add_space(5.0);
-                        ui.label(
-                            egui::RichText::new("Version 0.1.1 — Portable Native Desktop Client")
-                                .size(14.0)
-                                .color(egui::Color32::from_rgb(180, 180, 190)),
-                        );
-                        ui.add_space(20.0);
-                    });
-
-                    ui.group(|ui| {
-                        ui.vertical(|ui| {
-                            ui.label(
-                                egui::RichText::new("A modular, high-performance native desktop client for YouTube built with Rust, egui, and eframe.")
-                                    .size(14.0),
-                            );
-                            ui.add_space(15.0);
-                            ui.separator();
-                            ui.add_space(15.0);
-
-                            ui.label(egui::RichText::new("✨ Key Features:").strong().size(15.0));
-                            ui.add_space(8.0);
-                            ui.label("• 🔐 Desktop OAuth2 authentication with automatic token caching & scope validation");
-                            ui.label("• 📺 Concurrent subscriptions fetching & upload feeds");
-                            ui.label("• 🆕 Persistent New Videos Feed with clear/dismiss support across sessions");
-                            ui.label("• 🎵 Background audio playback worker utilizing Rodio");
-                            ui.label("• 📥 Media Downloading for video & audio streams");
-                            ui.label("• 📂 Playlist management and video comment browsing");
-                            ui.add_space(20.0);
-                            ui.separator();
-                            ui.add_space(15.0);
-
-                            ui.horizontal(|ui| {
-                                if ui.button("☕ Support on Buy Me a Coffee").clicked() {
-                                    let _ = open::that("https://buymeacoffee.com/roberttizz1");
-                                }
-                                ui.add_space(15.0);
-                                if ui.button("🌐 Google Developer Console").clicked() {
-                                    let _ = open::that("https://console.cloud.google.com/");
-                                }
-                            });
-                        });
-                    });
+                    render_about_view(ui);
                 }
             }
         });

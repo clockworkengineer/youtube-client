@@ -37,6 +37,7 @@ pub enum View {
         video: Video,
         comments: Option<Result<Vec<Comment>, String>>,
     },
+    About,
 }
 
 #[derive(Clone, Debug)]
@@ -128,4 +129,5 @@ pub enum PendingAction {
     Unsubscribe { subscription_id: String },
     RateVideo { video_id: String, rating: String },
     AddToPlaylist { playlist_id: String, playlist_title: String, video_id: String },
+    GoToAbout,
 }

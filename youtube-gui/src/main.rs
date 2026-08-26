@@ -166,6 +166,11 @@ impl eframe::App for YoutubeGuiApp {
                     if ui.selectable_label(on_playlists, "📂 Playlists").clicked() {
                         action = PendingAction::LoadPlaylists;
                     }
+                    ui.add_space(10.0);
+                    let on_about = matches!(current_view, View::About);
+                    if ui.selectable_label(on_about, "ℹ️ About").clicked() {
+                        action = PendingAction::GoToAbout;
+                    }
                 });
                 ui.add_space(5.0);
                 ui.separator();
@@ -937,6 +942,58 @@ impl eframe::App for YoutubeGuiApp {
                         }
                     }
                 }
+                View::About => {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(20.0);
+                        ui.heading(
+                            egui::RichText::new("📺 YouTube Client Workspace")
+                                .size(24.0)
+                                .strong()
+                                .color(egui::Color32::from_rgb(255, 60, 60)),
+                        );
+                        ui.add_space(5.0);
+                        ui.label(
+                            egui::RichText::new("Version 0.1.1 — Portable Native Desktop Client")
+                                .size(14.0)
+                                .color(egui::Color32::from_rgb(180, 180, 190)),
+                        );
+                        ui.add_space(20.0);
+                    });
+
+                    ui.group(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label(
+                                egui::RichText::new("A modular, high-performance native desktop client for YouTube built with Rust, egui, and eframe.")
+                                    .size(14.0),
+                            );
+                            ui.add_space(15.0);
+                            ui.separator();
+                            ui.add_space(15.0);
+
+                            ui.label(egui::RichText::new("✨ Key Features:").strong().size(15.0));
+                            ui.add_space(8.0);
+                            ui.label("• 🔐 Desktop OAuth2 authentication with automatic token caching & scope validation");
+                            ui.label("• 📺 Concurrent subscriptions fetching & upload feeds");
+                            ui.label("• 🆕 Persistent New Videos Feed with clear/dismiss support across sessions");
+                            ui.label("• 🎵 Background audio playback worker utilizing Rodio");
+                            ui.label("• 📥 Media Downloading for video & audio streams");
+                            ui.label("• 📂 Playlist management and video comment browsing");
+                            ui.add_space(20.0);
+                            ui.separator();
+                            ui.add_space(15.0);
+
+                            ui.horizontal(|ui| {
+                                if ui.button("☕ Support on Buy Me a Coffee").clicked() {
+                                    let _ = open::that("https://www.buymeacoffee.com");
+                                }
+                                ui.add_space(15.0);
+                                if ui.button("🌐 Google Developer Console").clicked() {
+                                    let _ = open::that("https://console.cloud.google.com/");
+                                }
+                            });
+                        });
+                    });
+                }
             }
         });
 
@@ -1160,6 +1217,10 @@ impl eframe::App for YoutubeGuiApp {
             }
             PendingAction::AddToPlaylist { playlist_id, playlist_title, video_id } => {
                 spawn_add_to_playlist(self.state.clone(), ctx.clone(), playlist_id, playlist_title, video_id);
+            }
+            PendingAction::GoToAbout => {
+                let mut s_lock = self.state.lock().unwrap();
+                s_lock.navigate_clear_history(View::About);
             }
         }
     }

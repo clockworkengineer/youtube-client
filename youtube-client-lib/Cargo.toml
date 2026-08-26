@@ -2,6 +2,10 @@
 name = "youtube-client-lib"
 version = "0.1.1"
 edition = "2024"
+description = "A Rust library for interacting with YouTube API v3, managing subscriptions, playlists, and downloading/streaming videos."
+license = "MIT"
+repository = "https://github.com/clockworkengineer/youtube-client"
+readme = "../README.md"
 
 [dependencies]
 anyhow.workspace = true

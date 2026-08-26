@@ -2,6 +2,10 @@
 name = "youtube-gui"
 version = "0.1.1"
 edition = "2024"
+description = "Graphical user interface (egui) for YouTube client, supporting subscription browsing, video streaming, and background downloads."
+license = "MIT"
+repository = "https://github.com/clockworkengineer/youtube-client"
+readme = "../README.md"
 
 [dependencies]
 eframe.workspace = true

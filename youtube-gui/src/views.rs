@@ -4,11 +4,25 @@
 //! and dismissible feed cards.
 
 pub mod about_view;
+pub mod channel_view;
+pub mod details_view;
 pub mod login_view;
+pub mod new_videos_view;
+pub mod playlist_videos_view;
+pub mod playlists_view;
+pub mod search_view;
+pub mod subscriptions_view;
 pub mod traits;
 
 pub use about_view::*;
+pub use channel_view::*;
+pub use details_view::*;
 pub use login_view::*;
+pub use new_videos_view::*;
+pub use playlist_videos_view::*;
+pub use playlists_view::*;
+pub use search_view::*;
+pub use subscriptions_view::*;
 pub use traits::*;
 
 use eframe::egui;

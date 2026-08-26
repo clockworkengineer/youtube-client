@@ -1,38 +1,14 @@
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 
-fn prompt(message: &str, default: &str) -> String {
-    print!("{} [{}]: ", message, default);
-    let _ = io::stdout().flush();
-    let mut input = String::new();
-    if io::stdin().read_line(&mut input).is_ok() {
-        let trimmed = input.trim();
-        if trimmed.is_empty() {
-            default.to_string()
-        } else {
-            trimmed.to_string()
-        }
-    } else {
-        default.to_string()
-    }
-}
+mod builder;
+mod config_writer;
+mod platform;
+mod prompt;
 
-fn get_default_install_dir() -> PathBuf {
-    if cfg!(target_os = "windows") {
-        if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
-            PathBuf::from(local_appdata).join("Programs").join("youtube-client")
-        } else {
-            PathBuf::from("C:\\Program Files\\youtube-client")
-        }
-    } else {
-        if let Some(home) = std::env::var_os("HOME") {
-            PathBuf::from(home).join(".local").join("bin")
-        } else {
-            PathBuf::from("/usr/local/bin")
-        }
-    }
-}
+use builder::build_release_binaries;
+use config_writer::setup_global_config;
+use platform::configure_platform_environment;
+use prompt::{get_default_install_dir, prompt};
 
 fn main() -> anyhow::Result<()> {
     println!("====================================================");
@@ -56,42 +32,7 @@ fn main() -> anyhow::Result<()> {
     let install_gui = component_choice == "1" || component_choice == "3";
 
     // 3. Build Binaries
-    println!("\nBuilding release binaries...");
-    let mut cargo_cmd = Command::new("cargo");
-    cargo_cmd.arg("build").arg("--release");
-    if install_cli && !install_gui {
-        cargo_cmd.arg("--package").arg("youtube-client");
-    } else if install_gui && !install_cli {
-        cargo_cmd.arg("--package").arg("youtube-gui");
-    } else {
-        cargo_cmd.arg("--workspace");
-    }
-
-    let status = cargo_cmd.status();
-    match status {
-        Ok(s) if s.success() => {
-            println!("✓ Successfully built release binaries!");
-        }
-        _ => {
-            println!("⚠️ Cargo build failed or not found. Looking for existing pre-built release binaries...");
-        }
-    }
-
-    // Determine binary files
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let target_dir = workspace_root.join("target").join("release");
-
-    let cli_src = if cfg!(target_os = "windows") {
-        target_dir.join("youtube-client.exe")
-    } else {
-        target_dir.join("youtube-client")
-    };
-
-    let gui_src = if cfg!(target_os = "windows") {
-        target_dir.join("youtube-gui.exe")
-    } else {
-        target_dir.join("youtube-gui")
-    };
+    let (cli_src, gui_src) = build_release_binaries(install_cli, install_gui);
 
     // Ensure installation folder exists
     std::fs::create_dir_all(&install_dir)?;
@@ -118,121 +59,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     // 5. Initialize Configuration
-    if let Some(config_dir) = youtube_client_lib::get_global_config_dir() {
-        std::fs::create_dir_all(&config_dir)?;
-        let config_file = config_dir.join("config.json");
-        if !config_file.exists() {
-            let default_config = serde_json::json!({
-                "client_id": "ENTER_YOUR_CLIENT_ID_HERE",
-                "client_secret": "ENTER_YOUR_CLIENT_SECRET_HERE",
-                "player_path": null,
-                "downloads_dir": null
-            });
-            std::fs::write(&config_file, serde_json::to_string_pretty(&default_config)?)?;
-            println!("✓ Created global config template at: {}", config_file.display());
-        } else {
-            println!("✓ Global config file already exists at: {}", config_file.display());
-        }
-    }
+    setup_global_config()?;
 
     // 6. Platform specific integrations (PATH & Shortcuts)
-    if cfg!(target_os = "windows") {
-        // Update user PATH
-        println!("\nSetting up environment PATH variable...");
-        let install_path_str = install_dir.to_string_lossy().to_string();
-        let add_path_script = format!(
-            "$oldPath = [Environment]::GetEnvironmentVariable('Path', 'User'); \
-             if ($oldPath -notlike '*{}*') {{ \
-                 [Environment]::SetEnvironmentVariable('Path', $oldPath + ';{}', 'User'); \
-                 Write-Host '✓ Added to user PATH' \
-             }} else {{ \
-                 Write-Host '✓ PATH already configured' \
-             }}",
-            install_path_str.replace("\\", "\\\\"),
-            install_path_str.replace("\\", "\\\\")
-        );
-        let _ = Command::new("powershell")
-            .arg("-Command")
-            .arg(&add_path_script)
-            .status();
-
-        // Create Start Menu Shortcut
-        if install_gui {
-            if let Some(home) = std::env::var_os("USERPROFILE") {
-                let start_menu = PathBuf::from(home)
-                    .join("AppData")
-                    .join("Roaming")
-                    .join("Microsoft")
-                    .join("Windows")
-                    .join("Start Menu")
-                    .join("Programs");
-                if start_menu.exists() {
-                    let shortcut_path = start_menu.join("YouTube Client GUI.lnk");
-                    let gui_exe_path = install_dir.join("youtube-gui.exe");
-                    println!("Creating Start Menu shortcut...");
-                    let shortcut_script = format!(
-                        "$WshShell = New-Object -ComObject WScript.Shell; \
-                         $Shortcut = $WshShell.CreateShortcut('{}'); \
-                         $Shortcut.TargetPath = '{}'; \
-                         $Shortcut.WorkingDirectory = '{}'; \
-                         $Shortcut.Save()",
-                        shortcut_path.to_string_lossy().replace("\\", "\\\\"),
-                        gui_exe_path.to_string_lossy().replace("\\", "\\\\"),
-                        install_dir.to_string_lossy().replace("\\", "\\\\")
-                    );
-                    let shortcut_status = Command::new("powershell")
-                        .arg("-Command")
-                        .arg(&shortcut_script)
-                        .status();
-                    if shortcut_status.map_or(false, |s| s.success()) {
-                        println!("✓ Created Start Menu shortcut!");
-                    }
-                }
-            }
-        }
-    } else if cfg!(target_os = "linux") {
-        // Create Desktop file
-        if install_gui {
-            if let Some(home) = std::env::var_os("HOME") {
-                let apps_dir = PathBuf::from(home).join(".local").join("share").join("applications");
-                if apps_dir.exists() {
-                    let desktop_file_path = apps_dir.join("youtube-gui.desktop");
-                    let gui_path = install_dir.join("youtube-gui");
-                    let desktop_content = format!(
-                        "[Desktop Entry]\n\
-                         Type=Application\n\
-                         Name=YouTube Client GUI\n\
-                         Comment=Native YouTube Desktop client\n\
-                         Exec={}\n\
-                         Icon=video-television\n\
-                         Terminal=false\n\
-                         Categories=Utility;AudioVideo;\n",
-                        gui_path.display()
-                    );
-                    if std::fs::write(&desktop_file_path, desktop_content).is_ok() {
-                        println!("✓ Created desktop entry in {}", desktop_file_path.display());
-                    }
-                }
-            }
-        }
-
-        // Print PATH warning
-        let path_var = std::env::var("PATH").unwrap_or_default();
-        let install_path_str = install_dir.to_string_lossy();
-        if !path_var.contains(&*install_path_str) {
-            println!("\n⚠️  Please make sure '{}' is added to your PATH.", install_path_str);
-            println!("   You can do this by adding the following line to your ~/.bashrc or ~/.zshrc:");
-            println!("   export PATH=\"$PATH:{}\"", install_path_str);
-        }
-    } else if cfg!(target_os = "macos") {
-        // macOS instructions
-        let path_var = std::env::var("PATH").unwrap_or_default();
-        let install_path_str = install_dir.to_string_lossy();
-        if !path_var.contains(&*install_path_str) {
-            println!("\n⚠️  Please make sure '{}' is added to your PATH.", install_path_str);
-            println!("   export PATH=\"$PATH:{}\"", install_path_str);
-        }
-    }
+    configure_platform_environment(&install_dir, install_gui);
 
     println!("\n====================================================");
     println!("🎉 Installation completed successfully!");

@@ -197,12 +197,34 @@ impl YoutubeClient {
             &["https://www.googleapis.com/auth/youtube.readonly"],
         ).await
     }
+}
 
+#[derive(Copy, Clone, Debug, Default)]
+pub struct OpenBrowserFlowDelegate;
+
+impl yup_oauth2::authenticator_delegate::InstalledFlowDelegate for OpenBrowserFlowDelegate {
+    fn present_user_url(
+        &self,
+        url: &str,
+        _need_code: bool,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::result::Result<String, String>> + Send>> {
+        let url_str = url.to_string();
+        Box::pin(async move {
+            println!("Opening browser for OAuth authentication: {}", url_str);
+            if let Err(e) = open::that(&url_str) {
+                eprintln!("Failed to open browser automatically: {}", e);
+            }
+            Ok(String::new())
+        })
+    }
+}
+
+impl YoutubeClient {
     pub async fn new_oauth_with_scopes(
         client_id: &str,
         client_secret: &str,
         token_cache_path: &Path,
-        scopes: &[&str],
+        _scopes: &[&str],
     ) -> Result<Self> {
         let secret = ApplicationSecret {
             client_id: client_id.to_string(),
@@ -217,12 +239,10 @@ impl YoutubeClient {
             secret,
             InstalledFlowReturnMethod::HTTPRedirect,
         )
+        .flow_delegate(Box::new(OpenBrowserFlowDelegate))
         .persist_tokens_to_disk(token_cache_path)
         .build()
         .await?;
-
-        // Warm up / ensure the token is retrieved/cached
-        let _token = auth.token(scopes).await?;
 
         let connector = hyper_rustls::HttpsConnectorBuilder::new()
             .with_native_roots()?

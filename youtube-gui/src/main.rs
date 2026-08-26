@@ -1166,8 +1166,10 @@ impl eframe::App for YoutubeGuiApp {
 }
 
 
-#[tokio::main]
-async fn main() -> eframe::Result<()> {
+fn main() -> eframe::Result<()> {
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    let _guard = rt.enter();
+
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([700.0, 700.0])

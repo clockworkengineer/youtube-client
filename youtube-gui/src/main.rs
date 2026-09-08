@@ -46,12 +46,8 @@ impl YoutubeGuiApp {
         let downloads_dir = PathBuf::from(config.downloads_dir.unwrap_or_else(|| "downloads".to_string()));
 
         // Scan downloads directory for pre-existing media files
-        let mut downloads = HashMap::new();
-        if downloads_dir.exists() {
-            scan_downloads_dir(&downloads_dir, &mut downloads);
-        }
-
-        // Restore dismissed video IDs from persistent JSON storage
+        let downloads = HashMap::new();
+        // Initial empty downloads map; directory scanned asynchronously in background
         let cleared_video_ids = load_string_set_from_file(std::path::Path::new("cleared_videos.json"));
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
@@ -70,7 +66,7 @@ impl YoutubeGuiApp {
             },
             playlists: None,
             playlist_action_status: None,
-            downloads_dir,
+            downloads_dir: downloads_dir.clone(),
         }));
 
         let http_client = reqwest::Client::new();
@@ -81,6 +77,20 @@ impl YoutubeGuiApp {
 
         // Trigger background initial fetch of user's subscriptions
         spawn_fetch_subscriptions(state.clone(), cc.egui_ctx.clone());
+
+        // Background scan of downloads directory to keep startup latency sub-16ms
+        let bg_state = state.clone();
+        let bg_ctx = cc.egui_ctx.clone();
+        let bg_downloads_dir = downloads_dir.clone();
+        tokio::spawn(async move {
+            if bg_downloads_dir.exists() {
+                let mut scanned = HashMap::new();
+                scan_downloads_dir(&bg_downloads_dir, &mut scanned);
+                let mut s = lock_state(&bg_state);
+                s.downloads.extend(scanned);
+                bg_ctx.request_repaint();
+            }
+        });
 
         Self {
             state,

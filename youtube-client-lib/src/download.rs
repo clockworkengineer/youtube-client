@@ -34,6 +34,30 @@ impl Default for DownloadOptions {
     }
 }
 
+impl DownloadOptions {
+    /// Create options with a specific format.
+    pub fn new(format: DownloadFormat) -> Self {
+        Self {
+            format,
+            ..Default::default()
+        }
+    }
+
+    /// Add a quality constraint (e.g. "1080p", "720p").
+    pub fn with_quality(mut self, quality: impl Into<String>) -> Self {
+        let q = quality.into();
+        self.additional_args.push("-S".to_string());
+        self.additional_args.push(format!("res:{}", q.trim_end_matches('p')));
+        self
+    }
+
+    /// Add an additional argument for yt-dlp.
+    pub fn with_arg(mut self, arg: impl Into<String>) -> Self {
+        self.additional_args.push(arg.into());
+        self
+    }
+}
+
 /// Download a YouTube video directly by ID using `yt-dlp`.
 ///
 /// Features:

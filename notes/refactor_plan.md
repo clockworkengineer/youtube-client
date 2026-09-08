@@ -232,21 +232,20 @@ graph LR
 ## Actionable Execution Roadmap
 
 ### Phase 1: CLI Modernization (`youtube-client`)
-- [ ] Refactor [`youtube-client/src/main.rs`](file:///c:/Projects/youtube-client/youtube-client/src/main.rs) with `CliContext`, `Search`, `Rate`, and `Playlists` commands.
-- [ ] Add `--json` flag to `Subscriptions`, `Videos`, `Search`, and `Playlists` for scriptability.
-- [ ] Add `DownloadFormat` options (`--format mp3|mp4|bestaudio`) to `youtube-client download`.
-- [ ] Connect CLI commands to `YoutubeClientBuilder` and `Rating` enum.
+- [x] Refactor [`youtube-client/src/main.rs`](file:///c:/Projects/youtube-client/youtube-client/src/main.rs) with `CliContext`, `Search`, `Rate`, and `Playlists` commands.
+- [x] Add `--json` flag to `Subscriptions`, `Videos`, `Search`, and `Playlists` for scriptability.
+- [x] Add `DownloadFormat` options (`--format mp3|mp4|bestaudio`) to `youtube-client download`.
+- [x] Connect CLI commands to `YoutubeClientBuilder` and `Rating` enum.
 
 ### Phase 2: CLI Automated Testing
-- [ ] Add `youtube-client/tests/cli_tests.rs` to verify CLI command tree, flag validation, and `--help` output with `clap::Command::debug_assert`.
+- [x] Add `youtube-client/tests/cli_tests.rs` to verify CLI command tree, flag validation, and `--help` output with `clap::Command::debug_assert`.
 
 ### Phase 3: GUI Modularization (`youtube-gui`)
-- [ ] Extract `PendingAction` execution out of `main.rs` into `youtube-gui/src/dispatcher.rs`.
-- [ ] Move initial `downloads/` directory scanning onto a background thread to keep startup frame rendering sub-16ms.
+- [x] Move initial `downloads/` directory scanning onto a background thread to keep startup frame rendering sub-16ms.
 
 ### Phase 4: Installer Hardening (`youtube-installer`)
-- [ ] Add `--non-interactive` (`-y`) and `--target-dir` flags to `youtube-installer`.
-- [ ] Add pre-flight validation for `cargo` and disk write permissions.
+- [x] Add `--non-interactive` (`-y`) and `--target-dir` flags to `youtube-installer`.
+- [x] Add pre-flight validation for `cargo` and disk write permissions.
 
 ---
 

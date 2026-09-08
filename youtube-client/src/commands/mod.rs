@@ -1,11 +1,19 @@
+pub mod context;
 pub mod download;
 pub mod login;
 pub mod play;
+pub mod playlists;
+pub mod rate;
+pub mod search;
 pub mod subscriptions;
 pub mod videos;
 
+pub use context::CliContext;
 pub use download::execute_download;
 pub use login::execute_login;
 pub use play::execute_play;
+pub use playlists::execute_playlists;
+pub use rate::execute_rate;
+pub use search::execute_search;
 pub use subscriptions::execute_subscriptions;
 pub use videos::execute_videos;

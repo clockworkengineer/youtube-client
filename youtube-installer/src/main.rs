@@ -15,21 +15,39 @@ fn main() -> anyhow::Result<()> {
     println!("   Welcome to the YouTube Client & GUI Installer!   ");
     println!("====================================================\n");
 
+    let args: Vec<String> = std::env::args().collect();
+    let unattended = args.iter().any(|a| a == "-y" || a == "--yes");
+    let target_dir_arg = args.windows(2).find(|w| w[0] == "--target-dir").map(|w| PathBuf::from(&w[1]));
+
     // 1. Get Installation Directory
-    let default_dir = get_default_install_dir();
-    let default_dir_str = default_dir.to_string_lossy();
-    let install_dir_input = prompt("Enter installation directory", &default_dir_str);
-    let install_dir = PathBuf::from(install_dir_input);
+    let install_dir = if let Some(dir) = target_dir_arg {
+        println!("Using specified target directory: {}", dir.display());
+        dir
+    } else if unattended {
+        let dir = get_default_install_dir();
+        println!("Unattended mode: using default directory: {}", dir.display());
+        dir
+    } else {
+        let default_dir = get_default_install_dir();
+        let default_dir_str = default_dir.to_string_lossy();
+        let install_dir_input = prompt("Enter installation directory", &default_dir_str);
+        PathBuf::from(install_dir_input)
+    };
 
     // 2. Select Components
-    println!("\nSelect components to install:");
-    println!("  1. Both CLI Client and GUI Application (Recommended)");
-    println!("  2. CLI Client Only");
-    println!("  3. GUI Application Only");
-    let component_choice = prompt("Select option (1-3)", "1");
-
-    let install_cli = component_choice == "1" || component_choice == "2";
-    let install_gui = component_choice == "1" || component_choice == "3";
+    let (install_cli, install_gui) = if unattended {
+        println!("Unattended mode: installing both CLI and GUI components.");
+        (true, true)
+    } else {
+        println!("\nSelect components to install:");
+        println!("  1. Both CLI Client and GUI Application (Recommended)");
+        println!("  2. CLI Client Only");
+        println!("  3. GUI Application Only");
+        let component_choice = prompt("Select option (1-3)", "1");
+        let cli = component_choice == "1" || component_choice == "2";
+        let gui = component_choice == "1" || component_choice == "3";
+        (cli, gui)
+    };
 
     // 3. Build Binaries
     let (cli_src, gui_src) = build_release_binaries(install_cli, install_gui);

@@ -30,6 +30,12 @@ impl std::fmt::Display for Rating {
     }
 }
 
+impl AsRef<str> for Rating {
+    fn as_ref(&self) -> &str {
+        self.as_api_str()
+    }
+}
+
 impl FromStr for Rating {
     type Err = String;
 

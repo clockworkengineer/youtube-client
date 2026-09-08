@@ -11,6 +11,7 @@ use yup_oauth2::InstalledFlowReturnMethod;
 pub struct YoutubeClientBuilder {
     client_id: Option<String>,
     client_secret: Option<String>,
+    config_path: Option<PathBuf>,
     token_cache_path: PathBuf,
     scopes: Vec<String>,
     return_method: InstalledFlowReturnMethod,
@@ -22,6 +23,7 @@ impl Default for YoutubeClientBuilder {
         Self {
             client_id: None,
             client_secret: None,
+            config_path: None,
             token_cache_path: PathBuf::from("tokencache.json"),
             scopes: YOUTUBE_SCOPES.iter().map(|s| s.to_string()).collect(),
             return_method: InstalledFlowReturnMethod::HTTPRedirect,
@@ -67,21 +69,40 @@ impl YoutubeClientBuilder {
         self
     }
 
+    /// Set the path to the configuration file for credential resolution.
+    pub fn with_config_path(mut self, path: impl AsRef<Path>) -> Self {
+        self.config_path = Some(path.as_ref().to_path_buf());
+        self
+    }
+
     /// Build and authenticate the [`YoutubeClient`].
     pub async fn build(self) -> Result<YoutubeClient> {
-        let client_id = self.client_id.ok_or_else(|| {
-            crate::error::YoutubeError::Credentials("Client ID must be specified".to_string())
-        })?;
-        let client_secret = self.client_secret.ok_or_else(|| {
-            crate::error::YoutubeError::Credentials("Client Secret must be specified".to_string())
-        })?;
+        let (client_id, client_secret) = match (self.client_id, self.client_secret) {
+            (Some(id), Some(sec)) => (id, sec),
+            (opt_id, opt_sec) => {
+                let default_cfg = PathBuf::from("config.json");
+                let cfg_path = self.config_path.as_ref().unwrap_or(&default_cfg);
+                crate::config::resolve_credentials(opt_id, opt_sec, cfg_path)?
+            }
+        };
+
+        let resolved_token_cache = if self.token_cache_path == Path::new("tokencache.json") && !self.token_cache_path.exists() {
+            if let Some(global_dir) = crate::config::get_global_config_dir() {
+                let _ = std::fs::create_dir_all(&global_dir);
+                global_dir.join("tokencache.json")
+            } else {
+                self.token_cache_path
+            }
+        } else {
+            self.token_cache_path
+        };
 
         let delegate = self.flow_delegate.unwrap_or_else(|| Box::new(OpenBrowserFlowDelegate));
 
         YoutubeClient::construct_with_params(
             &client_id,
             &client_secret,
-            &self.token_cache_path,
+            &resolved_token_cache,
             &self.scopes.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
             self.return_method,
             delegate,

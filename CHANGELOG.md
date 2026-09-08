@@ -26,8 +26,16 @@ This milestone refactored the entire workspace to implement the **10 Attributes 
 - **Performance & UI Responsiveness (`youtube-gui`)**:
   - Texture LRU cache with eviction tracking (`VecDeque`) to prevent unbounded VRAM growth.
   - Eliminated unconditional 60 FPS state vector clones in `eframe::update()`, replacing with on-demand view state extraction and poisoned lock recovery.
-
-### Changed
+- **CLI Client Overhaul (`youtube-client`)**:
+  - Expanded command suite with `search`, `rate`, and `playlists` subcommands.
+  - Added `--json` flag to `subscriptions`, `videos`, `search`, and `playlists` for shell piping and scripting.
+  - Added `--all` exhaustive pagination and `--page-token` resumption tokens.
+  - Added `DownloadFormat` options (`--format mp3|mp4|bestaudio`), quality constraints, and custom yt-dlp arguments.
+  - Encapsulated command arguments into `CliContext` with `YoutubeClientBuilder` integration.
+  - Added automated CLI integration test suite (`tests/cli_tests.rs`) with `clap::Command::debug_assert`.
+- **GUI & Installer Improvements**:
+  - Moved media downloads scanning in `youtube-gui` to a background task, ensuring sub-16ms startup latency.
+  - Hardened `youtube-installer` with pre-flight `cargo` detection and unattended mode (`--yes` / `-y` and `--target-dir`).
 - **Modular Library Architecture**:
   - Decomposed the 994-line monolithic `youtube-client-lib/src/lib.rs` into focused modules: `client`, `builder`, `download`, `audio`, `retry`, `error`, `models`, `traits`, `utils`, `config`, and `testing`.
   - Converted `youtube-client-lib` default features to `[]` (opt-in), reducing compile times and unnecessary dependencies for headless consumers.

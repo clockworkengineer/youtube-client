@@ -226,7 +226,7 @@ pub fn launch_external_player(target: &std::ffi::OsStr) -> Result<(), String> {
     for player in players {
         let mut cmd = std::process::Command::new(&player);
         if is_url && player.to_lowercase().contains("mpv") {
-            cmd.arg("--ytdl-raw-options=extractor-args=youtube:player_client=mweb");
+            cmd.arg("--ytdl-raw-options=extractor-args=youtube:player_client=android");
         }
         cmd.arg(target);
         if cmd.spawn().is_ok() {

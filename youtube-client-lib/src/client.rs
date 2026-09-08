@@ -9,7 +9,9 @@ use crate::auth::delegate::OpenBrowserFlowDelegate;
 use crate::builder::YoutubeClientBuilder;
 use crate::config::resolve_credentials;
 use crate::error::{Result, YoutubeError};
-use crate::models::{Comment, Page, Playlist, Rating, Subscription, Video};
+use crate::models::{
+    ChannelDetails, Comment, Page, Playlist, Rating, Subscription, Video, VideoDetails,
+};
 use crate::retry::retry_api_call;
 use crate::traits::{
     CommentService, MediaDownloader, PlaylistService, SubscriptionService, VideoService,
@@ -317,6 +319,108 @@ impl YoutubeClient {
         Ok(page.items)
     }
 
+    /// Fetch comprehensive video details including engagement metrics, duration, and tags.
+    pub async fn fetch_video_details(&self, video_id: &str) -> Result<VideoDetails> {
+        let (_resp, video_res) = retry_api_call(|| async {
+            self.hub
+                .videos()
+                .list(&vec![
+                    "snippet".to_string(),
+                    "statistics".to_string(),
+                    "contentDetails".to_string(),
+                ])
+                .add_id(video_id)
+                .doit()
+                .await
+        })
+        .await?;
+
+        let item = video_res
+            .items
+            .and_then(|items| items.into_iter().next())
+            .ok_or_else(|| YoutubeError::Other(format!("Video '{}' not found", video_id)))?;
+
+        let snippet = item.snippet.unwrap_or_default();
+        let stats = item.statistics.unwrap_or_default();
+        let content_details = item.content_details.unwrap_or_default();
+
+        let title = snippet.title.unwrap_or_default();
+        let description = snippet.description.unwrap_or_default();
+        let published_at = snippet.published_at.map(|dt| dt.to_string()).unwrap_or_default();
+        let channel_id = snippet.channel_id.unwrap_or_default();
+        let channel_title = snippet.channel_title.unwrap_or_default();
+        let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
+        let tags = snippet.tags.unwrap_or_default();
+
+        let view_count = stats.view_count.unwrap_or(0);
+        let like_count = stats.like_count.unwrap_or(0);
+        let comment_count = stats.comment_count.unwrap_or(0);
+
+        let duration_iso = content_details.duration.unwrap_or_default();
+        let duration_seconds = VideoDetails::parse_iso8601_duration(&duration_iso);
+        let duration_formatted = VideoDetails::format_duration(duration_seconds);
+
+        Ok(VideoDetails {
+            id: video_id.to_string(),
+            title,
+            description,
+            published_at,
+            channel_id,
+            channel_title,
+            thumbnail_url,
+            view_count,
+            like_count,
+            comment_count,
+            duration_seconds,
+            duration_formatted,
+            tags,
+        })
+    }
+
+    /// Fetch channel statistics and profile metadata.
+    pub async fn get_channel_details(&self, channel_id: &str) -> Result<ChannelDetails> {
+        let (_resp, channel_res) = retry_api_call(|| async {
+            self.hub
+                .channels()
+                .list(&vec![
+                    "snippet".to_string(),
+                    "statistics".to_string(),
+                ])
+                .add_id(channel_id)
+                .doit()
+                .await
+        })
+        .await?;
+
+        let item = channel_res
+            .items
+            .and_then(|items| items.into_iter().next())
+            .ok_or_else(|| YoutubeError::Other(format!("Channel '{}' not found", channel_id)))?;
+
+        let snippet = item.snippet.unwrap_or_default();
+        let stats = item.statistics.unwrap_or_default();
+
+        let title = snippet.title.unwrap_or_default();
+        let description = snippet.description.unwrap_or_default();
+        let custom_url = snippet.custom_url;
+        let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
+
+        let subscriber_count = stats.subscriber_count.unwrap_or(0);
+        let video_count = stats.video_count.unwrap_or(0);
+        let view_count = stats.view_count.unwrap_or(0);
+
+        Ok(ChannelDetails {
+            id: channel_id.to_string(),
+            title,
+            description,
+            custom_url,
+            thumbnail_url,
+            subscriber_count,
+            video_count,
+            view_count,
+        })
+    }
+
     /// List the authenticated user's playlists with pagination.
     pub async fn list_playlists_page(
         &self,
@@ -519,6 +623,15 @@ impl YoutubeClient {
         })
     }
 
+    /// Delete a playlist owned by the authenticated user.
+    pub async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
+        retry_api_call(|| async {
+            self.hub.playlists().delete(playlist_id).doit().await
+        })
+        .await?;
+        Ok(())
+    }
+
     /// Add a video to a playlist.
     pub async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> Result<()> {
         use google_youtube3::api::{PlaylistItem, PlaylistItemSnippet, ResourceId};
@@ -606,6 +719,56 @@ impl YoutubeClient {
         Ok(comments)
     }
 
+    /// Post a new top-level comment on a video.
+    pub async fn post_comment(&self, video_id: &str, text: &str) -> Result<Comment> {
+        use google_youtube3::api::{
+            Comment as YtComment, CommentSnippet as YtCommentSnippet,
+            CommentThread, CommentThreadSnippet,
+        };
+
+        let comment_snippet = YtCommentSnippet {
+            text_original: Some(text.to_string()),
+            ..Default::default()
+        };
+        let top_level = YtComment {
+            snippet: Some(comment_snippet),
+            ..Default::default()
+        };
+        let thread_snippet = CommentThreadSnippet {
+            video_id: Some(video_id.to_string()),
+            top_level_comment: Some(top_level),
+            ..Default::default()
+        };
+        let thread = CommentThread {
+            snippet: Some(thread_snippet),
+            ..Default::default()
+        };
+
+        let (_resp, created_thread) = retry_api_call(|| async {
+            self.hub
+                .comment_threads()
+                .insert(thread.clone())
+                .add_part("snippet")
+                .doit()
+                .await
+        })
+        .await?;
+
+        let snippet = created_thread
+            .snippet
+            .and_then(|s| s.top_level_comment)
+            .and_then(|c| c.snippet)
+            .unwrap_or_default();
+
+        Ok(Comment {
+            author_name: snippet.author_display_name.unwrap_or_else(|| "You".to_string()),
+            author_thumbnail: snippet.author_profile_image_url.unwrap_or_default(),
+            text_display: snippet.text_display.unwrap_or_else(|| text.to_string()),
+            published_at: snippet.published_at.map(|dt| dt.to_string()).unwrap_or_else(|| "Just now".to_string()),
+            like_count: 0,
+        })
+    }
+
     /// Download a YouTube video by ID to the target path.
     pub async fn download_video<F>(&self, video_id: &str, output_path: &Path, on_progress: F) -> Result<()>
     where
@@ -654,6 +817,9 @@ impl VideoService for YoutubeClient {
     async fn rate_video(&self, video_id: &str, rating: &str) -> Result<()> {
         self.rate_video(video_id, rating).await
     }
+    async fn fetch_video_details(&self, video_id: &str) -> Result<VideoDetails> {
+        self.fetch_video_details(video_id).await
+    }
 }
 
 impl PlaylistService for YoutubeClient {
@@ -666,11 +832,20 @@ impl PlaylistService for YoutubeClient {
     async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> Result<()> {
         self.add_to_playlist(playlist_id, video_id).await
     }
+    async fn create_playlist(&self, title: &str, description: Option<&str>) -> Result<Playlist> {
+        self.create_playlist(title, description).await
+    }
+    async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
+        self.delete_playlist(playlist_id).await
+    }
 }
 
 impl CommentService for YoutubeClient {
     async fn fetch_comments(&self, video_id: &str) -> Result<Vec<Comment>> {
         self.fetch_comments(video_id).await
+    }
+    async fn post_comment(&self, video_id: &str, text: &str) -> Result<Comment> {
+        self.post_comment(video_id, text).await
     }
 }
 

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, mpsc::Sender};
 use eframe::egui;
 use youtube_client_lib::utils::DownloadStatus;
-use youtube_client_lib::{Comment, Playlist, Video};
+use youtube_client_lib::{Comment, Playlist, Video, VideoDetails};
 
 use crate::types::{AppState, PendingAction, PlayerCommand, PlayerState};
 use crate::views::get_or_fetch_thumbnail;
@@ -13,10 +13,12 @@ pub fn render_details_view(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
     video: &Video,
+    details: &Option<Result<VideoDetails, String>>,
     comments: &Option<Result<Vec<Comment>, String>>,
     player_state: &PlayerState,
     playlists: &Option<Result<Vec<Playlist>, String>>,
     playlist_action_status: &Option<Result<String, String>>,
+    comment_input: &mut String,
 ) -> Option<PendingAction> {
     let mut action = None;
 
@@ -58,16 +60,68 @@ pub fn render_details_view(
                     .color(egui::Color32::WHITE),
             );
             ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new(format!("Published: {}", video.published_at))
-                    .size(12.0)
-                    .color(egui::Color32::from_rgb(160, 160, 170)),
-            );
+
+            // Channel link and published timestamp
+            ui.horizontal(|ui| {
+                if let Some(Ok(d)) = details {
+                    if ui.link(egui::RichText::new(format!("👤 {}", d.channel_title)).strong().color(egui::Color32::from_rgb(120, 180, 255))).clicked() {
+                        action = Some(PendingAction::LoadChannel {
+                            id: d.channel_id.clone(),
+                            title: d.channel_title.clone(),
+                            description: String::new(),
+                        });
+                    }
+                    ui.separator();
+                } else if !video.channel_title.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!("👤 {}", video.channel_title))
+                            .color(egui::Color32::from_rgb(180, 180, 190)),
+                    );
+                    ui.separator();
+                }
+
+                ui.label(
+                    egui::RichText::new(format!("Published: {}", video.published_at))
+                        .size(12.0)
+                        .color(egui::Color32::from_rgb(160, 160, 170)),
+                );
+            });
+
+            // Statistics badges if details are loaded
+            if let Some(Ok(d)) = details {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("👁 {} views", d.view_count))
+                            .size(12.0)
+                            .color(egui::Color32::from_rgb(200, 200, 210)),
+                    );
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new(format!("👍 {} likes", d.like_count))
+                            .size(12.0)
+                            .color(egui::Color32::from_rgb(200, 200, 210)),
+                    );
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new(format!("⏱ {}", d.duration_formatted))
+                            .size(12.0)
+                            .color(egui::Color32::from_rgb(200, 200, 210)),
+                    );
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new(format!("💬 {} comments", d.comment_count))
+                            .size(12.0)
+                            .color(egui::Color32::from_rgb(200, 200, 210)),
+                    );
+                });
+            }
+
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(format!("Video ID: {}", video.id))
-                    .size(12.0)
-                    .color(egui::Color32::from_rgb(160, 160, 170)),
+                    .size(11.0)
+                    .color(egui::Color32::from_rgb(130, 130, 140)),
             );
 
             ui.add_space(12.0);
@@ -199,6 +253,25 @@ pub fn render_details_view(
     ui.heading("💬 Comments");
     ui.add_space(5.0);
 
+    // Comment submission form
+    ui.horizontal(|ui| {
+        ui.label("Write a comment:");
+        let response = ui.text_edit_singleline(comment_input);
+        let submit = ui.button("💬 Post Comment").clicked()
+            || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+        if submit {
+            let text = comment_input.trim().to_string();
+            if !text.is_empty() {
+                action = Some(PendingAction::PostComment {
+                    video_id: video.id.clone(),
+                    text,
+                });
+                comment_input.clear();
+            }
+        }
+    });
+    ui.add_space(10.0);
+
     match comments {
         None => {
             ui.vertical_centered(|ui| {
@@ -246,11 +319,11 @@ pub fn render_details_view(
                                         ui.add_space(4.0);
                                         ui.label(&comment.text_display);
                                     });
-                                });
+                                ui.add_space(5.0);
                             });
-                            ui.add_space(5.0);
-                        }
-                    });
+                        });
+                    }
+                });
             }
         }
     }

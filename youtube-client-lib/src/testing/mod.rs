@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use crate::error::Result;
-use crate::models::{Comment, Playlist, Subscription, Video};
+use crate::models::{Comment, Playlist, Subscription, Video, VideoDetails};
 use crate::traits::{
     CommentService, MediaDownloader, PlaylistService, SubscriptionService, VideoService,
 };
@@ -81,6 +81,24 @@ impl VideoService for MockYoutubeClient {
         ratings.insert(video_id.to_string(), rating.to_string());
         Ok(())
     }
+
+    async fn fetch_video_details(&self, video_id: &str) -> Result<VideoDetails> {
+        Ok(VideoDetails {
+            id: video_id.to_string(),
+            title: format!("Mock Video {}", video_id),
+            description: "Mock video description".to_string(),
+            published_at: "2026-01-01T00:00:00Z".to_string(),
+            channel_id: "mock_channel".to_string(),
+            channel_title: "Mock Channel".to_string(),
+            thumbnail_url: String::new(),
+            view_count: 12345,
+            like_count: 678,
+            comment_count: 90,
+            duration_seconds: 300,
+            duration_formatted: "5:00".to_string(),
+            tags: vec!["mock".to_string(), "video".to_string()],
+        })
+    }
 }
 
 impl PlaylistService for MockYoutubeClient {
@@ -108,12 +126,45 @@ impl PlaylistService for MockYoutubeClient {
         });
         Ok(())
     }
+
+    async fn create_playlist(&self, title: &str, description: Option<&str>) -> Result<Playlist> {
+        let mut pls = self.playlists.lock().unwrap();
+        let pl = Playlist {
+            id: format!("pl_{}", pls.len() + 1),
+            title: title.to_string(),
+            description: description.unwrap_or_default().to_string(),
+            thumbnail_url: String::new(),
+            video_count: 0,
+        };
+        pls.push(pl.clone());
+        Ok(pl)
+    }
+
+    async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
+        let mut pls = self.playlists.lock().unwrap();
+        pls.retain(|p| p.id != playlist_id);
+        Ok(())
+    }
 }
 
 impl CommentService for MockYoutubeClient {
     async fn fetch_comments(&self, video_id: &str) -> Result<Vec<Comment>> {
         let map = self.comments_by_video.lock().unwrap();
         Ok(map.get(video_id).cloned().unwrap_or_default())
+    }
+
+    async fn post_comment(&self, video_id: &str, text: &str) -> Result<Comment> {
+        let mut map = self.comments_by_video.lock().unwrap();
+        let list = map.entry(video_id.to_string()).or_default();
+        let comment = Comment {
+            author_name: "Mock User".to_string(),
+            author_thumbnail: String::new(),
+            text_display: text.to_string(),
+            published_at: "Just now".to_string(),
+            like_count: 0,
+        };
+        list.push(comment.clone());
+        Ok(comment)
     }
 }
 

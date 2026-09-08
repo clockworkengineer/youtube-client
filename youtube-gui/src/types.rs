@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use eframe::egui;
 use youtube_client_lib::utils::DownloadStatus;
-use youtube_client_lib::{Subscription, Video, Playlist, Comment};
+use youtube_client_lib::{Comment, Playlist, Subscription, Video, VideoDetails};
 
 #[derive(Clone)]
 pub struct Thumbnail {
@@ -36,6 +36,7 @@ pub enum View {
     },
     VideoDetails {
         video: Video,
+        details: Option<Result<VideoDetails, String>>,
         comments: Option<Result<Vec<Comment>, String>>,
     },
     About,
@@ -45,6 +46,17 @@ pub enum View {
 pub struct PlayerState {
     pub current_title: String,
     pub playing: bool,
+    pub volume: f32,
+}
+
+impl Default for PlayerState {
+    fn default() -> Self {
+        Self {
+            current_title: String::new(),
+            playing: false,
+            volume: 1.0,
+        }
+    }
 }
 
 pub enum PlayerCommand {
@@ -52,6 +64,7 @@ pub enum PlayerCommand {
     Pause,
     Resume,
     Stop,
+    SetVolume(f32),
 }
 
 pub struct AppState {
@@ -139,5 +152,8 @@ pub enum PendingAction {
     Unsubscribe { subscription_id: String },
     RateVideo { video_id: String, rating: String },
     AddToPlaylist { playlist_id: String, playlist_title: String, video_id: String },
+    PostComment { video_id: String, text: String },
+    CreatePlaylist { title: String, description: Option<String> },
+    DeletePlaylist { playlist_id: String },
     GoToAbout,
 }

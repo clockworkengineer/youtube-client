@@ -7,17 +7,119 @@ mod prompt;
 
 use builder::build_release_binaries;
 use config_writer::setup_global_config;
-use platform::configure_platform_environment;
+use platform::{configure_platform_environment, remove_platform_environment};
 use prompt::{get_default_install_dir, prompt};
 
 fn main() -> anyhow::Result<()> {
-    println!("====================================================");
-    println!("   Welcome to the YouTube Client & GUI Installer!   ");
-    println!("====================================================\n");
-
     let args: Vec<String> = std::env::args().collect();
     let unattended = args.iter().any(|a| a == "-y" || a == "--yes");
     let target_dir_arg = args.windows(2).find(|w| w[0] == "--target-dir").map(|w| PathBuf::from(&w[1]));
+
+    // Handle --uninstall mode
+    if args.iter().any(|a| a == "--uninstall") {
+        println!("====================================================");
+        println!("         YouTube Client & GUI Uninstaller           ");
+        println!("====================================================\n");
+
+        let install_dir = if let Some(dir) = target_dir_arg {
+            dir
+        } else {
+            get_default_install_dir()
+        };
+
+        println!("Target installation directory: {}", install_dir.display());
+
+        let cli_bin_name = if cfg!(target_os = "windows") { "youtube-client.exe" } else { "youtube-client" };
+        let gui_bin_name = if cfg!(target_os = "windows") { "youtube-gui.exe" } else { "youtube-gui" };
+
+        let cli_file = install_dir.join(cli_bin_name);
+        if cli_file.exists() {
+            if std::fs::remove_file(&cli_file).is_ok() {
+                println!("✓ Removed {}", cli_file.display());
+            }
+        }
+
+        let gui_file = install_dir.join(gui_bin_name);
+        if gui_file.exists() {
+            if std::fs::remove_file(&gui_file).is_ok() {
+                println!("✓ Removed {}", gui_file.display());
+            }
+        }
+
+        remove_platform_environment(&install_dir);
+
+        if install_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&install_dir) {
+                if entries.count() == 0 {
+                    let _ = std::fs::remove_dir(&install_dir);
+                    println!("✓ Removed empty installation directory: {}", install_dir.display());
+                }
+            }
+        }
+
+        println!("\n====================================================");
+        println!("🎉 Uninstallation completed successfully!");
+        println!("====================================================");
+        return Ok(());
+    }
+
+    // Handle --verify mode
+    if args.iter().any(|a| a == "--verify") {
+        println!("====================================================");
+        println!("         YouTube Client & GUI Verification          ");
+        println!("====================================================\n");
+
+        let install_dir = if let Some(dir) = target_dir_arg {
+            dir
+        } else {
+            get_default_install_dir()
+        };
+
+        println!("Checking installation directory: {}\n", install_dir.display());
+
+        let cli_bin_name = if cfg!(target_os = "windows") { "youtube-client.exe" } else { "youtube-client" };
+        let gui_bin_name = if cfg!(target_os = "windows") { "youtube-gui.exe" } else { "youtube-gui" };
+
+        let cli_file = install_dir.join(cli_bin_name);
+        if cli_file.exists() {
+            println!("✓ CLI binary found: {}", cli_file.display());
+            let status = std::process::Command::new(&cli_file)
+                .arg("--help")
+                .output();
+            match status {
+                Ok(out) if out.status.success() => println!("  ✓ CLI binary executes successfully (--help tested)"),
+                Ok(out) => println!("  ⚠️ CLI binary returned non-zero code: {:?}", out.status),
+                Err(e) => println!("  ❌ Failed to execute CLI binary: {}", e),
+            }
+        } else {
+            println!("❌ CLI binary NOT found: {}", cli_file.display());
+        }
+
+        let gui_file = install_dir.join(gui_bin_name);
+        if gui_file.exists() {
+            println!("✓ GUI binary found: {}", gui_file.display());
+        } else {
+            println!("❌ GUI binary NOT found: {}", gui_file.display());
+        }
+
+        if let Some(config_dir) = youtube_client_lib::get_global_config_dir() {
+            let config_file = config_dir.join("config.json");
+            if config_file.exists() {
+                println!("✓ Global configuration found: {}", config_file.display());
+            } else {
+                println!("ℹ️ Global configuration not initialized at {}", config_file.display());
+            }
+        }
+
+        println!("\n====================================================");
+        println!("✓ Verification complete!");
+        println!("====================================================");
+        return Ok(());
+    }
+
+    println!("====================================================");
+    println!("   Welcome to the YouTube Client & GUI Installer!   ");
+    println!("====================================================\n");
 
     // 1. Get Installation Directory
     let install_dir = if let Some(dir) = target_dir_arg {

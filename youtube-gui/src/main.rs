@@ -26,6 +26,12 @@ struct YoutubeGuiApp {
     client_id_input: String,
     client_secret_input: String,
     search_input: String,
+    comment_input: String,
+    playlist_title_input: String,
+    playlist_desc_input: String,
+    subscription_filter: String,
+    volume: f32,
+    muted: bool,
     audio_tx: std::sync::mpsc::Sender<PlayerCommand>,
 }
 
@@ -63,6 +69,7 @@ impl YoutubeGuiApp {
             player_state: PlayerState {
                 current_title: String::new(),
                 playing: false,
+                volume: 1.0,
             },
             playlists: None,
             playlist_action_status: None,
@@ -98,6 +105,12 @@ impl YoutubeGuiApp {
             client_id_input,
             client_secret_input,
             search_input: String::new(),
+            comment_input: String::new(),
+            playlist_title_input: String::new(),
+            playlist_desc_input: String::new(),
+            subscription_filter: String::new(),
+            volume: 1.0,
+            muted: false,
             audio_tx,
         }
     }
@@ -136,6 +149,21 @@ impl eframe::App for YoutubeGuiApp {
 
                     if ui.button("⏹ Stop").clicked() {
                         let _ = self.audio_tx.send(PlayerCommand::Stop);
+                    }
+
+                    ui.add_space(20.0);
+                    ui.label("🔊");
+                    let mut vol = self.volume;
+                    if ui.add(egui::Slider::new(&mut vol, 0.0..=1.0).show_value(false)).changed() {
+                        self.volume = vol;
+                        self.muted = false;
+                        let _ = self.audio_tx.send(PlayerCommand::SetVolume(vol));
+                    }
+                    let mute_text = if self.muted { "🔇 Unmute" } else { "🔈 Mute" };
+                    if ui.button(mute_text).clicked() {
+                        self.muted = !self.muted;
+                        let target_vol = if self.muted { 0.0 } else { self.volume };
+                        let _ = self.audio_tx.send(PlayerCommand::SetVolume(target_vol));
                     }
                 });
             });
@@ -195,7 +223,7 @@ impl eframe::App for YoutubeGuiApp {
                         let s = lock_state(&self.state);
                         s.subscriptions.clone()
                     };
-                    if let Some(act) = render_subscriptions_view(&self.state, &self.http_client, ui, ctx, &subs) {
+                    if let Some(act) = render_subscriptions_view(&self.state, &self.http_client, ui, ctx, &subs, &mut self.subscription_filter) {
                         action = act;
                     }
                 }
@@ -223,7 +251,7 @@ impl eframe::App for YoutubeGuiApp {
                     }
                 }
                 View::Playlists { playlists } => {
-                    if let Some(act) = render_playlists_view(&self.state, &self.http_client, ui, ctx, &playlists) {
+                    if let Some(act) = render_playlists_view(&self.state, &self.http_client, ui, ctx, &playlists, &mut self.playlist_title_input, &mut self.playlist_desc_input) {
                         action = act;
                     }
                 }
@@ -232,12 +260,12 @@ impl eframe::App for YoutubeGuiApp {
                         action = act;
                     }
                 }
-                View::VideoDetails { video, comments } => {
+                View::VideoDetails { video, details, comments } => {
                     let (p_state, pls, status) = {
                         let s = lock_state(&self.state);
                         (s.player_state.clone(), s.playlists.clone(), s.playlist_action_status.clone())
                     };
-                    if let Some(act) = render_details_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &video, &comments, &p_state, &pls, &status) {
+                    if let Some(act) = render_details_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &video, &details, &comments, &p_state, &pls, &status, &mut self.comment_input) {
                         action = act;
                     }
                 }
@@ -432,6 +460,7 @@ impl eframe::App for YoutubeGuiApp {
                     s_lock.playlist_action_status = None;
                     s_lock.navigate_to(View::VideoDetails {
                         video: video.clone(),
+                        details: None,
                         comments: None,
                     });
                     s_lock.playlists.clone()
@@ -447,6 +476,7 @@ impl eframe::App for YoutubeGuiApp {
                     s_lock.playlist_action_status = None;
                     s_lock.current_view = View::VideoDetails {
                         video: video.clone(),
+                        details: None,
                         comments: None,
                     };
                     s_lock.playlists.clone()
@@ -455,6 +485,15 @@ impl eframe::App for YoutubeGuiApp {
                 if cache.is_none() {
                     spawn_fetch_playlists(self.state.clone(), ctx.clone());
                 }
+            }
+            PendingAction::PostComment { video_id, text } => {
+                spawn_post_comment(self.state.clone(), ctx.clone(), video_id, text);
+            }
+            PendingAction::CreatePlaylist { title, description } => {
+                spawn_create_playlist(self.state.clone(), ctx.clone(), title, description);
+            }
+            PendingAction::DeletePlaylist { playlist_id } => {
+                spawn_delete_playlist(self.state.clone(), ctx.clone(), playlist_id);
             }
             PendingAction::Subscribe { channel_id } => {
                 spawn_subscribe(self.state.clone(), ctx.clone(), channel_id);

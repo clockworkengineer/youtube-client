@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
 use youtube_client_lib::utils::{get_download_path, DownloadStatus};
-use youtube_client_lib::{Video, YoutubeClient};
+use youtube_client_lib::{Comment, Video, VideoDetails, YoutubeClient};
 
 use crate::types::{AppState, View};
 
@@ -391,27 +391,112 @@ pub fn fetch_playlist_videos(
 
 pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: Video) {
     let video_clone = video.clone();
+    let vid_id = video.id.clone();
     spawn_client_action(
         state,
         ctx,
-        "fetch_comments",
+        "fetch_video_details_and_comments",
+        move |client| async move {
+            let details_res = client.fetch_video_details(&vid_id).await.map_err(|e| e.to_string());
+            let comments_res = client.fetch_comments(&vid_id).await.map_err(|e| e.to_string());
+            Ok((details_res, comments_res))
+        },
+        move |res: Result<(Result<VideoDetails, String>, Result<Vec<Comment>, String>), String>, s, ctx| {
+            if let View::VideoDetails {
+                video: current_video,
+                ..
+            } = &s.current_view
+            {
+                if current_video.id == video_clone.id {
+                    let (details, comments) = match res {
+                        Ok((d, c)) => (Some(d), Some(c)),
+                        Err(e) => (Some(Err(e.clone())), Some(Err(e))),
+                    };
+                    s.current_view = View::VideoDetails {
+                        video: video_clone,
+                        details,
+                        comments,
+                    };
+                }
+            }
+            ctx.request_repaint();
+        },
+    );
+}
+
+pub fn spawn_post_comment(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_id: String, text: String) {
+    let video_id_clone = video_id.clone();
+    spawn_client_action(
+        state,
+        ctx,
+        "post_comment",
         move |client| async move {
             client
-                .fetch_comments(&video.id)
+                .post_comment(&video_id, &text)
                 .await
-                .map_err(|e| format!("Failed to fetch comments: {}", e))
+                .map_err(|e| format!("Failed to post comment: {}", e))
         },
         move |res, s, ctx| {
             if let View::VideoDetails {
                 video: current_video,
-                comments: _,
-            } = &s.current_view
+                comments: Some(Ok(list)),
+                ..
+            } = &mut s.current_view
             {
-                if current_video.id == video_clone.id {
-                    s.current_view = View::VideoDetails {
-                        video: video_clone,
-                        comments: Some(res),
-                    };
+                if current_video.id == video_id_clone {
+                    if let Ok(new_comment) = res {
+                        list.insert(0, new_comment);
+                    }
+                }
+            }
+            ctx.request_repaint();
+        },
+    );
+}
+
+pub fn spawn_create_playlist(
+    state: Arc<Mutex<AppState>>,
+    ctx: egui::Context,
+    title: String,
+    description: Option<String>,
+) {
+    spawn_client_action(
+        state.clone(),
+        ctx.clone(),
+        "create_playlist",
+        move |client| async move {
+            client
+                .create_playlist(&title, description.as_deref())
+                .await
+                .map_err(|e| format!("Failed to create playlist: {}", e))
+        },
+        move |res, s, ctx| {
+            if let Ok(new_pl) = res {
+                if let Some(Ok(list)) = &mut s.playlists {
+                    list.insert(0, new_pl);
+                }
+            }
+            ctx.request_repaint();
+        },
+    );
+}
+
+pub fn spawn_delete_playlist(state: Arc<Mutex<AppState>>, ctx: egui::Context, playlist_id: String) {
+    let pid_clone = playlist_id.clone();
+    spawn_client_action(
+        state,
+        ctx,
+        "delete_playlist",
+        move |client| async move {
+            client
+                .delete_playlist(&playlist_id)
+                .await
+                .map_err(|e| format!("Failed to delete playlist: {}", e))
+        },
+        move |res, s, ctx| {
+            if res.is_ok() {
+                if let Some(Ok(list)) = &mut s.playlists {
+                    list.retain(|p| p.id != pid_clone);
                 }
             }
             ctx.request_repaint();

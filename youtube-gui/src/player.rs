@@ -36,9 +36,10 @@ pub fn spawn_audio_worker(
                             if let Some(sink) = &sink_opt {
                                 if let Ok(file) = std::fs::File::open(&path) {
                                     if let Ok(source) = rodio::Decoder::new(std::io::BufReader::new(file)) {
+                                        let mut s = state.lock().unwrap();
+                                        sink.set_volume(s.player_state.volume);
                                         sink.append(source);
                                         sink.play();
-                                        let mut s = state.lock().unwrap();
                                         s.player_state.current_title = title;
                                         s.player_state.playing = true;
                                     }
@@ -66,6 +67,13 @@ pub fn spawn_audio_worker(
                                 s.player_state.playing = false;
                                 s.player_state.current_title = String::new();
                             }
+                        }
+                        PlayerCommand::SetVolume(vol) => {
+                            if let Some(sink) = &sink_opt {
+                                sink.set_volume(vol);
+                            }
+                            let mut s = state.lock().unwrap();
+                            s.player_state.volume = vol;
                         }
                     }
                     ctx.request_repaint();

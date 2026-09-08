@@ -156,6 +156,86 @@ pub enum Commands {
         #[arg(short, long)]
         system: bool,
     },
+
+    /// Fetch rich video details (views, likes, comments, duration, tags)
+    Details {
+        /// The YouTube Video ID
+        #[arg(short, long)]
+        video_id: String,
+
+        /// Output results as formatted JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Fetch channel profile and statistics (subscribers, views, video counts)
+    Channel {
+        /// The YouTube Channel ID
+        #[arg(short, long)]
+        channel_id: String,
+
+        /// Output results as formatted JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// List top comment threads on a video
+    Comments {
+        /// The YouTube Video ID
+        #[arg(short, long)]
+        video_id: String,
+
+        /// Maximum comments to list
+        #[arg(short, long, default_value_t = 20)]
+        limit: u32,
+
+        /// Output results as formatted JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// Post a new comment to a YouTube video
+    CommentPost {
+        /// The YouTube Video ID
+        #[arg(short, long)]
+        video_id: String,
+
+        /// The text of the comment to post
+        #[arg(short, long)]
+        text: String,
+    },
+
+    /// Subscribe to a YouTube channel
+    Subscribe {
+        /// The YouTube Channel ID to subscribe to
+        #[arg(short, long)]
+        channel_id: String,
+    },
+
+    /// Unsubscribe from a YouTube channel
+    Unsubscribe {
+        /// The subscription ID to remove
+        #[arg(short, long)]
+        subscription_id: String,
+    },
+
+    /// Create a new playlist
+    PlaylistCreate {
+        /// Title of the new playlist
+        #[arg(short, long)]
+        title: String,
+
+        /// Optional description for the playlist
+        #[arg(short, long)]
+        description: Option<String>,
+    },
+
+    /// Delete a playlist owned by your account
+    PlaylistDelete {
+        /// The playlist ID to delete
+        #[arg(short, long)]
+        playlist_id: String,
+    },
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -205,5 +285,29 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             execute_download(video_id, output, format, quality, additional_args).await
         }
         Commands::Play { file, system } => execute_play(file, system).await,
+        Commands::Details { video_id, json } => {
+            execute_details(&ctx, video_id, json).await
+        }
+        Commands::Channel { channel_id, json } => {
+            execute_channel(&ctx, channel_id, json).await
+        }
+        Commands::Comments { video_id, limit, json } => {
+            execute_comments(&ctx, video_id, limit, json).await
+        }
+        Commands::CommentPost { video_id, text } => {
+            execute_comment_post(&ctx, video_id, text).await
+        }
+        Commands::Subscribe { channel_id } => {
+            execute_subscribe(&ctx, channel_id).await
+        }
+        Commands::Unsubscribe { subscription_id } => {
+            execute_unsubscribe(&ctx, subscription_id).await
+        }
+        Commands::PlaylistCreate { title, description } => {
+            execute_playlist_create(&ctx, title, description).await
+        }
+        Commands::PlaylistDelete { playlist_id } => {
+            execute_playlist_delete(&ctx, playlist_id).await
+        }
     }
 }

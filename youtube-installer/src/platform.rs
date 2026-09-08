@@ -78,7 +78,7 @@ pub fn configure_platform_environment(install_dir: &Path, install_gui: bool) {
                 }
             }
         }
-
+    } else if cfg!(target_os = "macos") {
         let path_var = std::env::var("PATH").unwrap_or_default();
         let install_path_str = install_dir.to_string_lossy();
         if !path_var.contains(&*install_path_str) {
@@ -86,12 +86,55 @@ pub fn configure_platform_environment(install_dir: &Path, install_gui: bool) {
             println!("   You can do this by adding the following line to your ~/.bashrc or ~/.zshrc:");
             println!("   export PATH=\"$PATH:{}\"", install_path_str);
         }
-    } else if cfg!(target_os = "macos") {
-        let path_var = std::env::var("PATH").unwrap_or_default();
-        let install_path_str = install_dir.to_string_lossy();
-        if !path_var.contains(&*install_path_str) {
-            println!("\n⚠️  Please make sure '{}' is added to your PATH.", install_path_str);
-            println!("   export PATH=\"$PATH:{}\"", install_path_str);
+    }
+}
+
+pub fn remove_platform_environment(install_dir: &Path) {
+    if cfg!(target_os = "windows") {
+        println!("Removing environment PATH entry...");
+        let install_path_str = install_dir.to_string_lossy().to_string();
+        let remove_path_script = format!(
+            "$path = [Environment]::GetEnvironmentVariable('Path', 'User'); \
+             if ($path) {{ \
+                 $parts = $path.Split(';') | Where-Object {{ $_ -ne '{}' -and $_ -ne '' }}; \
+                 [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User'); \
+                 Write-Host '✓ Removed from user PATH' \
+             }}",
+            install_path_str.replace("\\", "\\\\")
+        );
+        let _ = Command::new("powershell")
+            .arg("-Command")
+            .arg(&remove_path_script)
+            .status();
+
+        if let Some(home) = std::env::var_os("USERPROFILE") {
+            let shortcut_path = PathBuf::from(home)
+                .join("AppData")
+                .join("Roaming")
+                .join("Microsoft")
+                .join("Windows")
+                .join("Start Menu")
+                .join("Programs")
+                .join("YouTube Client GUI.lnk");
+            if shortcut_path.exists() {
+                if std::fs::remove_file(&shortcut_path).is_ok() {
+                    println!("✓ Removed Start Menu shortcut.");
+                }
+            }
+        }
+    } else if cfg!(target_os = "linux") {
+        if let Some(home) = std::env::var_os("HOME") {
+            let desktop_file_path = PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("applications")
+                .join("youtube-gui.desktop");
+            if desktop_file_path.exists() {
+                if std::fs::remove_file(&desktop_file_path).is_ok() {
+                    println!("✓ Removed desktop entry.");
+                }
+            }
         }
     }
 }
+

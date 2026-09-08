@@ -11,6 +11,7 @@ pub fn render_subscriptions_view(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
     subscriptions: &Option<Result<Vec<Subscription>, String>>,
+    filter_input: &mut String,
 ) -> Option<PendingAction> {
     let mut action = None;
 
@@ -31,6 +32,14 @@ pub fn render_subscriptions_view(
         ui.separator();
     });
 
+    ui.add_space(5.0);
+    ui.horizontal(|ui| {
+        ui.label("🔎 Filter Subscriptions:");
+        ui.add(egui::TextEdit::singleline(filter_input).hint_text("Search subscribed channels...").desired_width(250.0));
+        if !filter_input.is_empty() && ui.button("❌ Clear").clicked() {
+            filter_input.clear();
+        }
+    });
     ui.add_space(10.0);
 
     match subscriptions {
@@ -55,16 +64,30 @@ pub fn render_subscriptions_view(
             });
         }
         Some(Ok(subs)) => {
+            let filter = filter_input.trim().to_lowercase();
+            let filtered_subs: Vec<&Subscription> = if filter.is_empty() {
+                subs.iter().collect()
+            } else {
+                subs.iter()
+                    .filter(|s| s.title.to_lowercase().contains(&filter) || s.channel_id.to_lowercase().contains(&filter))
+                    .collect()
+            };
+
             if subs.is_empty() {
                 ui.vertical_centered(|ui| {
                     ui.add_space(50.0);
                     ui.label("No subscriptions found on your YouTube account.");
                 });
+            } else if filtered_subs.is_empty() {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(50.0);
+                    ui.label(format!("No subscriptions matching \"{}\"", filter_input));
+                });
             } else {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for sub in subs {
+                        for sub in filtered_subs {
                             ui.push_id(&sub.channel_id, |ui| {
                                 let texture = get_or_fetch_thumbnail(state, http_client, ctx, &sub.channel_id, &sub.thumbnail_url);
 

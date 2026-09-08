@@ -4,7 +4,36 @@ All notable changes to the `youtube-client` workspace are documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Quality Attributes Architecture Refactor
+## [Unreleased] - Complete Feature Set Implementation
+
+### Added
+- **Extended YouTube API V3 Models & Core Library (`youtube-client-lib`)**:
+  - `VideoDetails`: Comprehensive model with engagement metrics (view count, like count, comment count), ISO 8601 duration parser (`parse_iso8601_duration`), formatted duration (`format_duration`), and topic tags.
+  - `ChannelDetails`: Channel profile model with subscriber count, total video count, and cumulative view counts.
+  - `fetch_video_details(&self, video_id: &str)` on `YoutubeClient` and `VideoService`.
+  - `get_channel_details(&self, channel_id: &str)` on `YoutubeClient`.
+  - `post_comment(&self, video_id: &str, text: &str)` on `YoutubeClient` and `CommentService`.
+  - `delete_playlist(&self, playlist_id: &str)` on `YoutubeClient` and `PlaylistService`.
+  - Full mock support in `MockYoutubeClient` for all new services and endpoints.
+- **CLI Feature Expansion (`youtube-client`)**:
+  - `details <VIDEO_ID>`: Display comprehensive video statistics and engagement metrics with `--json` option.
+  - `channel <CHANNEL_ID>`: Display channel subscriber, video, and view count metrics with `--json` option.
+  - `comments <VIDEO_ID>`: List top-level video comments with author details and like counts.
+  - `comment-post <VIDEO_ID> <TEXT>`: Interactive and headless posting of comments to YouTube videos.
+  - `subscribe <CHANNEL_ID>` and `unsubscribe <SUBSCRIPTION_ID>`: Direct channel subscription management.
+  - `playlist-create <TITLE> [--description <DESC>]`: Direct creation of custom YouTube playlists.
+  - `playlist-delete <PLAYLIST_ID>`: Removal of custom playlists with confirmation prompt and `-y` flag.
+  - 8 new automated integration tests covering all added CLI subcommands.
+- **Native GUI Enhancements (`youtube-gui`)**:
+  - `VideoDetails` view enriched with statistics badges (views, likes, comments, duration), clickable channel link navigating to channel feed, and interactive comment submission form.
+  - `Playlists` view upgraded with "➕ Create New Playlist" inline form and per-playlist "🗑 Delete" button.
+  - `Subscriptions` view upgraded with real-time channel title & ID filter search box.
+  - Audio playback panel upgraded with volume slider (`0%` to `100%`) and quick mute/unmute toggle.
+- **Installer & Environment Lifecycle (`youtube-installer`)**:
+  - `--verify` flag to validate binary integrity, executable status, and global configuration setup.
+  - `--uninstall` flag to cleanly remove binaries, Start Menu shortcuts, desktop entries, and user PATH modifications.
+
+## [0.1.1] - Quality Attributes Architecture Refactor
 
 This milestone refactored the entire workspace to implement the **10 Attributes of a Well-Written Software Library & System**:
 

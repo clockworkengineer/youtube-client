@@ -12,18 +12,20 @@ anyhow.workspace = true
 google-youtube3.workspace = true
 open.workspace = true
 rodio = { workspace = true, optional = true }
-rusty_ytdl = { workspace = true, optional = true }
+tempfile = "3"
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt", "sync"] }
+tokio = { workspace = true, features = ["rt", "sync", "process", "io-util"] }
 yup-oauth2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rand = { workspace = true }
 
 [features]
-default = ["audio", "download"]
+default = []
 audio = ["dep:rodio"]
-download = ["dep:rusty_ytdl"]
+download = []
+testing = []
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

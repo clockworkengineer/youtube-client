@@ -48,8 +48,20 @@ To get Google API Client credentials:\n\
 pub fn get_global_config_dir() -> Option<std::path::PathBuf> {
     if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA").map(|appdata| std::path::PathBuf::from(appdata).join("youtube-client"))
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|home| {
+            std::path::PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("youtube-client")
+        })
     } else {
-        std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config").join("youtube-client"))
+        // Linux / BSD: Check XDG_CONFIG_HOME first, fallback to ~/.config
+        if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+            Some(std::path::PathBuf::from(xdg).join("youtube-client"))
+        } else {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config").join("youtube-client"))
+        }
     }
 }
 

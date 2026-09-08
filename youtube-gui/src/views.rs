@@ -23,6 +23,7 @@ pub use playlist_videos_view::*;
 pub use playlists_view::*;
 pub use search_view::*;
 pub use subscriptions_view::*;
+#[allow(unused_imports)]
 pub use traits::*;
 
 use eframe::egui;

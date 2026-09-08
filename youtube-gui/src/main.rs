@@ -58,6 +58,7 @@ impl YoutubeGuiApp {
             new_videos: None,
             cleared_video_ids,
             thumbnails: HashMap::new(),
+            thumbnail_lru: std::collections::VecDeque::new(),
             current_view: View::Subscriptions,
             view_history: Vec::new(),
             logging_in: false,
@@ -94,31 +95,26 @@ impl YoutubeGuiApp {
 
 impl eframe::App for YoutubeGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let (current_view, subscriptions, _logging_in, _login_error, player_state, playlists, playlist_action_status, new_videos, cleared_video_count) = {
-            let s = self.state.lock().unwrap();
+        let (current_view, is_login, player_title, player_playing) = {
+            let s = lock_state(&self.state);
             (
                 s.current_view.clone(),
-                s.subscriptions.clone(),
-                s.logging_in,
-                s.login_error.clone(),
-                s.player_state.clone(),
-                s.playlists.clone(),
-                s.playlist_action_status.clone(),
-                s.new_videos.clone(),
-                s.cleared_video_ids.len(),
+                matches!(s.current_view, View::Login),
+                s.player_state.current_title.clone(),
+                s.player_state.playing,
             )
         };
         let mut action = PendingAction::None;
 
-        if !matches!(current_view, View::Login) && !player_state.current_title.is_empty() {
+        if !is_login && !player_title.is_empty() {
             egui::TopBottomPanel::bottom("audio_player").show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("🎵 Playing:").strong());
-                    ui.label(&player_state.current_title);
+                    ui.label(&player_title);
                     
                     ui.add_space(20.0);
 
-                    if player_state.playing {
+                    if player_playing {
                         if ui.button("⏸ Pause").clicked() {
                             let _ = self.audio_tx.send(PlayerCommand::Pause);
                         }
@@ -179,23 +175,35 @@ impl eframe::App for YoutubeGuiApp {
 
             match current_view {
                 View::Login => {
-                    let s_lock = self.state.lock().unwrap();
+                    let s_lock = lock_state(&self.state);
                     if let Some(act) = render_login_view(ui, &mut self.client_id_input, &mut self.client_secret_input, &s_lock) {
                         action = act;
                     }
                 }
                 View::Subscriptions => {
-                    if let Some(act) = render_subscriptions_view(&self.state, &self.http_client, ui, ctx, &subscriptions) {
+                    let subs = {
+                        let s = lock_state(&self.state);
+                        s.subscriptions.clone()
+                    };
+                    if let Some(act) = render_subscriptions_view(&self.state, &self.http_client, ui, ctx, &subs) {
                         action = act;
                     }
                 }
                 View::NewVideos => {
-                    if let Some(act) = render_new_videos_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &new_videos, cleared_video_count) {
+                    let (vids, cleared_count) = {
+                        let s = lock_state(&self.state);
+                        (s.new_videos.clone(), s.cleared_video_ids.len())
+                    };
+                    if let Some(act) = render_new_videos_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &vids, cleared_count) {
                         action = act;
                     }
                 }
                 View::ChannelVideos { channel_id, channel_title, channel_description, videos } => {
-                    if let Some(act) = render_channel_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &channel_id, &channel_title, &channel_description, &videos, &subscriptions) {
+                    let subs = {
+                        let s = lock_state(&self.state);
+                        s.subscriptions.clone()
+                    };
+                    if let Some(act) = render_channel_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &channel_id, &channel_title, &channel_description, &videos, &subs) {
                         action = act;
                     }
                 }
@@ -215,7 +223,11 @@ impl eframe::App for YoutubeGuiApp {
                     }
                 }
                 View::VideoDetails { video, comments } => {
-                    if let Some(act) = render_details_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &video, &comments, &player_state, &playlists, &playlist_action_status) {
+                    let (p_state, pls, status) = {
+                        let s = lock_state(&self.state);
+                        (s.player_state.clone(), s.playlists.clone(), s.playlist_action_status.clone())
+                    };
+                    if let Some(act) = render_details_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &video, &comments, &p_state, &pls, &status) {
                         action = act;
                     }
                 }

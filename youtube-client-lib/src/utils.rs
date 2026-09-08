@@ -5,9 +5,10 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::io::Write;
 
 /// Represents the download state of a video.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DownloadStatus {
     NotStarted,
     Downloading { progress: String },
@@ -15,8 +16,7 @@ pub enum DownloadStatus {
     Failed(String),
 }
 
-
-/// Extract a YouTube video ID from a file path (expects a stem of length 11).
+/// Extract a YouTube video ID from a file path (expects a stem of length 11 or bracketed `[ID]`).
 pub fn extract_video_id_from_path(path: &Path) -> Option<String> {
     let stem = path.file_stem()?.to_str()?;
     if stem.len() == 11 {
@@ -34,23 +34,63 @@ pub fn extract_video_id_from_path(path: &Path) -> Option<String> {
     None
 }
 
-/// Sanitize a filename for safe filesystem usage.
+/// Windows reserved device names that cannot be used as filenames or stems.
+const WINDOWS_RESERVED_NAMES: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// Sanitize a filename for safe, cross-platform filesystem usage.
+///
+/// Features:
+/// - Strips illegal characters: `['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\0']`
+/// - Strips leading dashes to prevent command-line option injection in external utilities
+/// - Guards against Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1..9`, `LPT1..9`)
+/// - Truncates Unicode characters safely to a maximum of 60 characters
+/// - Trims invalid trailing dots and spaces
 pub fn sanitize_filename(name: &str) -> String {
     let sanitized: String = name
         .chars()
         .map(|c| match c {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0' => '_',
             _ => c,
         })
         .collect();
 
-    // Truncate to a safe length (e.g., 60 characters) to avoid MAX_PATH issues on Windows.
-    let mut truncated = sanitized;
-    if truncated.len() > 60 {
-        truncated.truncate(60);
+    // Trim trailing dots and spaces, which are invalid on Windows filesystems
+    let trimmed = sanitized.trim_end_matches(|c| c == ' ' || c == '.');
+
+    // Strip leading dashes and spaces to prevent argument injection in subprocesses
+    let no_leading = trimmed.trim_start_matches(|c| c == '-' || c == ' ');
+
+    let effective_name = if no_leading.is_empty() {
+        "unnamed"
+    } else {
+        no_leading
+    };
+
+    // Check Windows reserved names
+    let stem = effective_name.split('.').next().unwrap_or(effective_name);
+    let is_reserved = WINDOWS_RESERVED_NAMES.iter().any(|&res| res.eq_ignore_ascii_case(stem));
+
+    let mut result = if is_reserved {
+        format!("{}_", effective_name)
+    } else {
+        effective_name.to_string()
+    };
+
+    // Safely truncate to max 60 Unicode chars to avoid MAX_PATH restrictions
+    if result.chars().count() > 60 {
+        result = result.chars().take(60).collect();
+        result = result.trim_end_matches(|c| c == ' ' || c == '.').to_string();
     }
-    // Trim trailing dots and spaces, which are invalid on Windows filesystems.
-    truncated.trim_end_matches(|c| c == ' ' || c == '.').to_string()
+
+    if result.is_empty() {
+        "unnamed".to_string()
+    } else {
+        result
+    }
 }
 
 /// Scan a downloads directory and populate a map of known downloads.
@@ -64,11 +104,11 @@ pub fn scan_downloads_dir(dir: &Path, downloads: &mut HashMap<String, DownloadSt
                 if let Some(ext) = path.extension() {
                     let ext_str = ext.to_string_lossy();
                     if ext_str == "mp3" || ext_str == "mp4" {
-                            if let Some(video_id) = extract_video_id_from_path(&path) {
-                                downloads.insert(video_id, DownloadStatus::Finished(path));
-                            } else if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                                downloads.insert(stem.to_string(), DownloadStatus::Finished(path));
-                            }
+                        if let Some(video_id) = extract_video_id_from_path(&path) {
+                            downloads.insert(video_id, DownloadStatus::Finished(path));
+                        } else if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                            downloads.insert(stem.to_string(), DownloadStatus::Finished(path));
+                        }
                     }
                 }
             }
@@ -143,18 +183,42 @@ pub fn get_configured_player_path() -> Option<String> {
     config.player_path.filter(|s| !s.is_empty() && s != "ENTER_PATH_TO_MEDIA_PLAYER_HERE")
 }
 
-/// Launch an external media player for a file or URL target.
+/// Launch an external media player for a file or URL target with cross-platform fallbacks.
 pub fn launch_external_player(target: &std::ffi::OsStr) -> Result<(), String> {
     let mut players = Vec::new();
     if let Some(user_player) = get_configured_player_path() {
         players.push(user_player);
     }
-    players.extend(vec![
-        "mpv".to_string(),
-        "vlc".to_string(),
-        "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
-        "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
-    ]);
+
+    #[cfg(target_os = "windows")]
+    {
+        players.extend(vec![
+            "mpv".to_string(),
+            "vlc".to_string(),
+            "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe".to_string(),
+            "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe".to_string(),
+        ]);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        players.extend(vec![
+            "mpv".to_string(),
+            "vlc".to_string(),
+            "/Applications/VLC.app/Contents/MacOS/VLC".to_string(),
+            "/Applications/IINA.app/Contents/MacOS/IINA".to_string(),
+        ]);
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        players.extend(vec![
+            "mpv".to_string(),
+            "vlc".to_string(),
+            "totem".to_string(),
+            "xdg-open".to_string(),
+        ]);
+    }
 
     let target_str = target.to_string_lossy();
     let is_url = target_str.starts_with("http://") || target_str.starts_with("https://");
@@ -185,11 +249,20 @@ pub fn load_string_set_from_file(path: &Path) -> std::collections::HashSet<Strin
     std::collections::HashSet::new()
 }
 
-/// Save a set of strings to a JSON array file.
+/// Save a set of strings to a JSON array file atomically using a temporary file.
 pub fn save_string_set_to_file(path: &Path, set: &std::collections::HashSet<String>) -> Result<(), String> {
     let list: Vec<&String> = set.iter().collect();
     let content = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
-    std::fs::write(path, content).map_err(|e| e.to_string())
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    if !parent.as_os_str().is_empty() && !parent.exists() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    temp.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+    temp.as_file().sync_all().map_err(|e| e.to_string())?;
+    temp.persist(path).map_err(|e| e.to_string())?;
+
+    Ok(())
 }
-
-

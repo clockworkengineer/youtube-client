@@ -1,5 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard};
 use eframe::egui;
 use youtube_client_lib::utils::DownloadStatus;
 use youtube_client_lib::{Subscription, Video, Playlist, Comment};
@@ -58,6 +59,7 @@ pub struct AppState {
     pub new_videos: Option<Result<Vec<Video>, String>>,
     pub cleared_video_ids: HashSet<String>,
     pub thumbnails: HashMap<String, Thumbnail>,
+    pub thumbnail_lru: VecDeque<String>,
     pub current_view: View,
     pub view_history: Vec<View>,
     pub logging_in: bool,
@@ -69,14 +71,22 @@ pub struct AppState {
     pub downloads_dir: PathBuf,
 }
 
+/// Helper function to safely lock AppState with poison recovery.
+pub fn lock_state(state: &Arc<Mutex<AppState>>) -> MutexGuard<'_, AppState> {
+    state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 impl AppState {
     pub const MAX_THUMBNAILS: usize = 150;
 
     pub fn insert_thumbnail(&mut self, key: String, thumbnail: Thumbnail) {
-        if self.thumbnails.len() >= Self::MAX_THUMBNAILS && !self.thumbnails.contains_key(&key) {
-            if let Some(evict_key) = self.thumbnails.keys().next().cloned() {
-                self.thumbnails.remove(&evict_key);
+        if !self.thumbnails.contains_key(&key) {
+            if self.thumbnails.len() >= Self::MAX_THUMBNAILS {
+                if let Some(evict_key) = self.thumbnail_lru.pop_front() {
+                    self.thumbnails.remove(&evict_key);
+                }
             }
+            self.thumbnail_lru.push_back(key.clone());
         }
         self.thumbnails.insert(key, thumbnail);
     }

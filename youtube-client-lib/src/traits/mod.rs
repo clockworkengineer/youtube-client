@@ -1,3 +1,5 @@
+#![allow(async_fn_in_trait)]
+
 pub mod comment_service;
 pub mod downloader;
 pub mod playlist_service;

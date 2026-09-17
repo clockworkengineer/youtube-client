@@ -1,7 +1,8 @@
 # YouTube Client Workspace: Concrete Missing Features Refactor Plan
 
 > **Scope:** Entire workspace (`youtube-client-lib`, `youtube-client`, `youtube-gui`, `youtube-installer`).  
-> **Objective:** Identify, design, and architect all missing YouTube Data API v3 and client features across the library, CLI, GUI, and installer to achieve feature completeness and maximum utility.
+> **Objective:** Identify, design, and architect all missing YouTube Data API v3 and client features across the library, CLI, GUI, and installer to achieve feature completeness and maximum utility.  
+> **Documentation Reference:** For user and technical manuals covering these implemented features, see [`docs/cli_reference.md`](../docs/cli_reference.md) and [`docs/gui_user_guide.md`](../docs/gui_user_guide.md).
 
 ---
 

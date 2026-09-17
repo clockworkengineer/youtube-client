@@ -86,13 +86,8 @@ impl YoutubeClientBuilder {
             }
         };
 
-        let resolved_token_cache = if self.token_cache_path == Path::new("tokencache.json") && !self.token_cache_path.exists() {
-            if let Some(global_dir) = crate::config::get_global_config_dir() {
-                let _ = std::fs::create_dir_all(&global_dir);
-                global_dir.join("tokencache.json")
-            } else {
-                self.token_cache_path
-            }
+        let resolved_token_cache = if self.token_cache_path == Path::new("tokencache.json") {
+            crate::config::resolve_token_cache_path()
         } else {
             self.token_cache_path
         };

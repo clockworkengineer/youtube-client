@@ -1,6 +1,7 @@
 # YouTube Client Workspace: Comprehensive Quality Attributes Refactor Plan
 
 > **Architectural Standard:** Directly mapped to the **10 Attributes of a Well-Written Software Library & System** (see [`notes/attributes.md`](file:///c:/Projects/youtube-client/notes/attributes.md)).  
+> **Documentation Reference:** For the permanent architecture specification and workspace documentation plan, see [`docs/architecture.md`](../docs/architecture.md) and [`docs/documentation_plan.md`](../docs/documentation_plan.md).  
 > **Workspace Scope:**
 > - `youtube-client-lib` (Core library)
 > - `youtube-client` (Command-line interface application)

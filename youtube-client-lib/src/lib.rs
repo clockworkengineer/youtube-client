@@ -181,4 +181,40 @@ mod tests {
         assert_eq!(last_page.len(), 1);
         assert!(!last_page.has_more());
     }
+
+    #[test]
+    fn test_default_credentials_and_resolution() {
+        assert!(has_default_credentials());
+        let (def_id, def_sec) = get_default_credentials().expect("default credentials should be present");
+        assert_eq!(def_id, "474926444117-b6osuhgvik71cgqp2o928atth9d80mgj.apps.googleusercontent.com");
+        assert_eq!(def_sec.len(), 35);
+        assert!(def_sec.starts_with("GOCSPX-"));
+
+        // When non-existent config path is supplied and no opt credentials, it should resolve to default credentials
+        let dummy_path = Path::new("non_existent_config_file_xyz.json");
+        let (resolved_id, resolved_sec) = resolve_credentials(None, None, dummy_path).unwrap();
+        assert_eq!(resolved_id, def_id);
+        assert_eq!(resolved_sec, def_sec);
+
+        // When explicit credentials are provided, they take precedence
+        let (custom_id, custom_sec) = resolve_credentials(
+            Some("my_custom_client_id".to_string()),
+            Some("my_custom_client_secret".to_string()),
+            dummy_path,
+        )
+        .unwrap();
+        assert_eq!(custom_id, "my_custom_client_id");
+        assert_eq!(custom_sec, "my_custom_client_secret");
+    }
+
+    #[test]
+    fn test_resolve_token_cache_path() {
+        let path = resolve_token_cache_path();
+        assert!(path.to_string_lossy().contains("tokencache.json"));
+    }
+
+    #[test]
+    fn test_inspect_scopes() {
+        assert_eq!(google_youtube3::api::Scope::Readonly.as_ref(), "https://www.googleapis.com/auth/youtube.readonly");
+    }
 }

@@ -1,3 +1,6 @@
+> [!NOTE]
+> **Implementation Reference:** For the complete architectural implementation of these 10 quality attributes across the workspace, see [`docs/architecture.md`](../docs/architecture.md).
+
 A well-written software library is more than just functional code; it is an artifact designed for others to use, understand, and rely upon.
 
 High-quality libraries typically exhibit these 10 attributes:

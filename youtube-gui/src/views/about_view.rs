@@ -11,7 +11,7 @@ pub fn render_about_view(ui: &mut egui::Ui) {
         );
         ui.add_space(5.0);
         ui.label(
-            egui::RichText::new("Version 0.1.1 — Portable Native Desktop Client")
+            egui::RichText::new("Version 0.1.2 — Portable Native Desktop Client")
                 .size(14.0)
                 .color(egui::Color32::from_rgb(180, 180, 190)),
         );

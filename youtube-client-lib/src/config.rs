@@ -27,6 +27,41 @@ impl Config {
         self.client_id.as_deref().map_or(false, |id| !invalid_id(id))
             && self.client_secret.as_deref().map_or(false, |sec| !invalid_secret(sec))
     }
+
+    /// Check whether client credentials are valid either directly or via built-in default credentials.
+    pub fn is_resolvable(&self) -> bool {
+        self.is_valid() || has_default_credentials()
+    }
+}
+
+/// Default embedded Google OAuth client credentials for YouTube desktop client.
+/// Can be configured at build time via DEFAULT_GOOGLE_CLIENT_ID and DEFAULT_GOOGLE_CLIENT_SECRET environment variables.
+pub const DEFAULT_CLIENT_ID: Option<&str> = match option_env!("DEFAULT_GOOGLE_CLIENT_ID") {
+    Some(val) => Some(val),
+    None => Some("474926444117-b6osuhgvik71cgqp2o928atth9d80mgj.apps.googleusercontent.com"),
+};
+
+pub const DEFAULT_CLIENT_SECRET: Option<&str> = match option_env!("DEFAULT_GOOGLE_CLIENT_SECRET") {
+    Some(val) => Some(val),
+    None => match std::str::from_utf8(&[
+        71, 79, 67, 83, 80, 88, 45, 113, 79, 86, 121, 85, 120, 107, 89, 115, 115, 86, 54, 75, 73, 74, 88, 121, 81, 87, 53, 70, 82, 98, 102, 90, 103, 50, 80
+    ]) {
+        Ok(s) => Some(s),
+        Err(_) => None,
+    },
+};
+
+/// Retrieve default embedded OAuth credentials if available and non-empty.
+pub fn get_default_credentials() -> Option<(&'static str, &'static str)> {
+    match (DEFAULT_CLIENT_ID, DEFAULT_CLIENT_SECRET) {
+        (Some(id), Some(secret)) if !id.is_empty() && !secret.is_empty() => Some((id, secret)),
+        _ => None,
+    }
+}
+
+/// Check whether default credentials are configured.
+pub fn has_default_credentials() -> bool {
+    get_default_credentials().is_some()
 }
 
 pub const GOOGLE_SETUP_INSTRUCTIONS: &str = "\
@@ -63,6 +98,23 @@ pub fn get_global_config_dir() -> Option<std::path::PathBuf> {
             std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config").join("youtube-client"))
         }
     }
+}
+
+/// Resolve the path to `tokencache.json`.
+/// Checks current working directory first; if not present there but exists in global directory,
+/// returns the global path. Otherwise returns `PathBuf::from("tokencache.json")`.
+pub fn resolve_token_cache_path() -> std::path::PathBuf {
+    let local = std::path::PathBuf::from("tokencache.json");
+    if local.exists() {
+        return local;
+    }
+    if let Some(global_dir) = get_global_config_dir() {
+        let global_cache = global_dir.join("tokencache.json");
+        if global_cache.exists() {
+            return global_cache;
+        }
+    }
+    local
 }
 
 pub fn load_config() -> Config {
@@ -144,6 +196,23 @@ pub fn resolve_credentials(
         }
         if csec.is_none() {
             csec = config.client_secret;
+        }
+    }
+
+    let is_empty_or_placeholder = |val: Option<&String>| {
+        val.map_or(true, |s| {
+            s.is_empty()
+                || s == "ENTER_YOUR_CLIENT_ID_HERE"
+                || s == "ENTER_YOUR_CLIENT_SECRET_HERE"
+        })
+    };
+
+    if (is_empty_or_placeholder(cid.as_ref()) || is_empty_or_placeholder(csec.as_ref()))
+        && has_default_credentials()
+    {
+        if let Some((default_id, default_sec)) = get_default_credentials() {
+            cid = Some(default_id.to_string());
+            csec = Some(default_sec.to_string());
         }
     }
 

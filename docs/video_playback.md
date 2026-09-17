@@ -1,73 +1,110 @@
-# Setting Up Video Playback
+# Video & Audio Playback Configuration Guide
 
-This guide explains how the YouTube Client application handles video playback when you click a video, and how to configure your preferred media player for seamless streaming.
-
----
-
-## How Playback Works
-
-When you click on a video in the GUI application, the client attempts to stream the video directly using a native media player on your system. It searches for media players in the following order:
-
-1. **Configured Media Player**: The path specified in your configuration (`player_path`).
-2. **System Path Players**: Looks for `mpv` or `vlc` in your system's `PATH`.
-3. **Common VLC Installation Paths**:
-   - `C:\Program Files\VideoLAN\VLC\vlc.exe`
-   - `C:\Program Files (x86)\VideoLAN\VLC\vlc.exe`
-4. **Browser Fallback**: If no media player is found or starts successfully, the video will open in your system's default web browser.
+The YouTube Client suite provides multiple avenues for consuming media:
+1. **Direct Video Streaming:** Stream online YouTube videos via desktop media players (**MPV** or **VLC**) with browser fallback.
+2. **Integrated Desktop Audio Player:** Listen to background audio tracks directly within `youtube-gui` using the built-in **Rodio** audio dock.
+3. **Command-Line Playback:** Play downloaded audio/video files locally using `youtube-client play`.
+4. **Media Downloads:** Extract MP4 video or MP3 audio streams via `yt-dlp` using `youtube-client download`.
 
 ---
 
-## Step 1: Install a Media Player (Recommended)
+## 1. Direct Video Streaming Setup
 
-For the best experience, we recommend installing either **MPV** or **VLC**.
+When clicking a video card in `youtube-gui`, the application searches for an external media player in the following priority order:
 
-### Option A: MPV (Recommended for lightweight streaming)
-1. Download and install **mpv** from [mpv.io](https://mpv.io/).
-2. **Crucial**: MPV relies on `yt-dlp` (or `youtube-dl`) to stream YouTube videos.
-   - Download the latest version of `yt-dlp` from [yt-dlp GitHub releases](https://github.com/yt-dlp/yt-dlp).
-   - Place the `yt-dlp.exe` executable in the same folder as `mpv.exe`, or add it to your system's environment `PATH` variables.
+```mermaid
+graph TD
+    P1["1. Custom player_path in config.json / private_config.json"] -->|If Not Set| P2["2. mpv in System PATH"]
+    P2 -->|If Not Found| P3["3. vlc in System PATH"]
+    P3 -->|If Not Found| P4["4. Standard System Platform Paths<br/>(Program Files / Applications / usr)"]
+    P4 -->|If All Absent| P5["5. Default Web Browser Fallback"]
+```
+
+### Option A: MPV (Recommended)
+MPV is the recommended streaming player due to its lightweight footprint and fast buffering.
+
+1. **Install MPV:**
+   * **Windows:** Download from [mpv.io](https://mpv.io/) or install via Scoop/Chocolatey (`scoop install mpv`).
+   * **macOS:** Install via Homebrew: `brew install mpv`.
+   * **Linux:** Install via package manager: `sudo apt install mpv` or `sudo dnf install mpv`.
+2. **Install `yt-dlp`:**
+   * MPV uses `yt-dlp` under the hood to resolve YouTube video streams.
+   * Download the latest binary from [yt-dlp GitHub releases](https://github.com/yt-dlp/yt-dlp) and ensure it is in your system `PATH`.
+
+> [!IMPORTANT]
+> **HTTP 403 Forbidden Fix:** YouTube periodically throttles or blocks automated streaming requests. `youtube-gui` automatically passes `--ytdl-raw-options=extractor-args=youtube:player_client=mweb` when spawning MPV to ensure stable playback. Keep `yt-dlp` up to date by running `yt-dlp -U`.
 
 ### Option B: VLC Media Player
 1. Download and install VLC from [VideoLAN](https://www.videolan.org/).
-2. Make sure the VLC YouTube script is up-to-date. If VLC fails to play YouTube videos:
-   - Download the latest `youtube.luac` from the official [VLC Git Repository](https://code.videolan.org/videolan/vlc/-/raw/master/share/lua/playlist/youtube.lua).
-   - Place it in your VLC playlist directory (typically `C:\Program Files\VideoLAN\VLC\lua\playlist\`, replacing the existing one).
+2. If VLC fails to play YouTube URLs, update the VLC YouTube playlist parser:
+   * Download the latest `youtube.luac` from the [VLC Git Repository](https://code.videolan.org/videolan/vlc/-/raw/master/share/lua/playlist/youtube.lua).
+   * Place it into your VLC lua playlist directory (e.g. `C:\Program Files\VideoLAN\VLC\lua\playlist\youtube.luac`), replacing the outdated version.
 
 ---
 
-## Step 2: Configure Your Player Path
+## 2. Configuring Custom Media Player Paths
 
-If your media player is not installed in the default location or you want to use a specific player, you can specify its executable path in your configuration file (`private_config.json` or `config.json`).
+If your media player is installed in a non-standard location, define `player_path` in `private_config.json` (or `config.json`):
 
-### Example Configuration (`private_config.json`)
-
-Add the `player_path` property pointing to your media player executable:
-
+### Windows Example
 ```json
 {
-  "client_id": "YOUR_CLIENT_ID",
-  "client_secret": "YOUR_CLIENT_SECRET",
   "player_path": "C:\\Program Files\\mpv\\mpv.exe"
 }
 ```
 
-> [!NOTE]
-> - Always use double backslashes (`\\`) in JSON file paths on Windows.
-> - `private_config.json` is ignored by git, making it the safest place to store your local settings.
+### Linux Example
+```json
+{
+  "player_path": "/usr/bin/mpv"
+}
+```
+
+### macOS Example
+```json
+{
+  "player_path": "/Applications/VLC.app/Contents/MacOS/VLC"
+}
+```
 
 ---
 
-## Troubleshooting
+## 3. Integrated Audio Player (`rodio`)
 
-### Video Opens in Web Browser Instead
-* Check that your `player_path` in `private_config.json` is correct and uses double backslashes.
-* If relying on the system `PATH`, make sure you can run the player (e.g., `mpv` or `vlc`) from a terminal.
+`youtube-gui` includes a native hardware-accelerated audio engine built on `rodio`:
 
-### Player Opens but Fails to Load/Play the Video (HTTP 403 Forbidden)
-* **For MPV**:
-  * Ensure `yt-dlp.exe` is in your system `PATH` or the MPV directory, and that it is up-to-date (`yt-dlp -U`).
-  * If YouTube returns `HTTP error 403 Forbidden`, YouTube may be blocking the default `ANDROID_VR` client format requested by `yt-dlp`. The application automatically passes `--ytdl-raw-options=extractor-args=youtube:player_client=mweb` when launching MPV. If running MPV manually from command line, run:
-    ```bash
-    mpv "https://www.youtube.com/watch?v=..." --ytdl-raw-options=extractor-args=youtube:player_client=mweb
-    ```
-* **For VLC**: Update your `youtube.luac` file as described in Step 1.
+* **Hardware Decoding:** Runs on a dedicated background thread, decoupled from the 60 FPS egui rendering loop.
+* **Volume Slider:** Adjust output level dynamically from `0%` to `100%`.
+* **Instant Mute:** One-click mute toggle that remembers your previous volume setting.
+* **Zero External Dependencies:** Plays supported audio formats without requiring MPV or VLC.
+
+---
+
+## 4. Command-Line Playback & Media Downloading
+
+### Play Local Media via CLI
+To play downloaded media files using `youtube-client`:
+
+```bash
+# Play audio locally using Rodio
+youtube-client play --file downloads/song.mp3
+
+# Open using the operating system's default media player
+youtube-client play --file downloads/video.mp4 --system
+```
+
+### Download Media with Format Selection
+To download streams directly to disk:
+
+```bash
+# Download best MP4 video
+youtube-client download --video-id dQw4w9WgXcQ --format mp4
+
+# Download and extract MP3 audio
+youtube-client download --video-id dQw4w9WgXcQ --format mp3 --output downloads/rick.mp3
+
+# Constrain video resolution
+youtube-client download --video-id dQw4w9WgXcQ --quality 1080p
+```
+
+For full CLI options, see the [CLI Reference Manual](cli_reference.md).

@@ -126,6 +126,7 @@ impl AppState {
 #[allow(dead_code)]
 pub enum PendingAction {
     None,
+    SpawnDefaultLogin,
     SpawnLogin { id: String, secret: String },
     RetrySubscriptions,
     GoToSubscriptions,

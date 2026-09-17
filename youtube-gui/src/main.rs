@@ -278,6 +278,9 @@ impl eframe::App for YoutubeGuiApp {
 
         match action {
             PendingAction::None => {}
+            PendingAction::SpawnDefaultLogin => {
+                spawn_default_login(self.state.clone(), ctx.clone());
+            }
             PendingAction::SpawnLogin { id, secret } => {
                 spawn_login_and_auth(self.state.clone(), ctx.clone(), id, secret);
             }

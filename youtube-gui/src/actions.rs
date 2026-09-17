@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
 use youtube_client_lib::utils::{get_download_path, DownloadStatus};
@@ -7,33 +6,29 @@ use youtube_client_lib::{Comment, Video, VideoDetails, YoutubeClient};
 use crate::types::{AppState, View};
 
 pub async fn get_client_async() -> Result<YoutubeClient, String> {
-    let config = youtube_client_lib::load_config();
+    let (client_id, client_secret) = youtube_client_lib::resolve_credentials(
+        None,
+        None,
+        std::path::Path::new("config.json"),
+    )
+    .map_err(|e| e.to_string())?;
 
-    if !config.is_valid() {
-        return Err(format!(
-            "Google Client Credentials are not configured.\n\n{}",
-            youtube_client_lib::GOOGLE_SETUP_INSTRUCTIONS
-        ));
-    }
-
-    let client_id = config.client_id.unwrap();
-    let client_secret = config.client_secret.unwrap();
-
-    let token_cache_path = PathBuf::from("tokencache.json");
+    let token_cache_path = youtube_client_lib::resolve_token_cache_path();
     if !token_cache_path.exists() {
-        return Err("Token cache (tokencache.json) is missing. Please run the CLI login flow first: `cargo run --bin youtube-client -- login`".to_string());
+        return Err("Not signed in yet. Please sign in with your Google account.".to_string());
     }
 
-    let has_full_scope = youtube_client_lib::check_token_cache_scopes(
+    let has_scope = youtube_client_lib::check_token_cache_scopes(
         &token_cache_path,
         &[
+            "https://www.googleapis.com/auth/youtube.readonly",
             "https://www.googleapis.com/auth/youtube",
             "https://www.googleapis.com/auth/youtube.force-ssl",
         ],
     );
 
-    if !has_full_scope {
-        return Err("Token cache does not have full write permissions.\n\nPlease log in again via the terminal:\n`cargo run --bin youtube-client -- login`".to_string());
+    if !has_scope {
+        return Err("Authorization expired or missing permissions.\n\nPlease sign in again with Google.".to_string());
     }
 
     let client = YoutubeClient::new_oauth_with_scopes(
@@ -167,7 +162,7 @@ pub fn spawn_login_and_auth(state: Arc<Mutex<AppState>>, ctx: egui::Context, id:
             let content = serde_json::to_string_pretty(&config_data).map_err(|e| e.to_string())?;
             std::fs::write("private_config.json", content).map_err(|e| e.to_string())?;
 
-            let token_cache_path = PathBuf::from("tokencache.json");
+            let token_cache_path = youtube_client_lib::resolve_token_cache_path();
             let client = YoutubeClient::new_oauth_with_scopes(
                 &id,
                 &secret,
@@ -176,6 +171,58 @@ pub fn spawn_login_and_auth(state: Arc<Mutex<AppState>>, ctx: egui::Context, id:
             )
             .await
             .map_err(|e| format!("OAuth initialization failed: {}", e))?;
+            client
+                .test_connection()
+                .await
+                .map_err(|e| format!("YouTube connection failed: {}", e))?;
+            Ok(())
+        }
+        .await;
+
+        let mut s = state_clone.lock().unwrap();
+        s.logging_in = false;
+        match res {
+            Ok(_) => {
+                s.current_view = View::Subscriptions;
+                s.subscriptions = None;
+                drop(s);
+                spawn_fetch_subscriptions(state_clone, ctx_clone);
+            }
+            Err(e) => {
+                s.login_error = Some(e);
+                ctx_clone.request_repaint();
+            }
+        }
+    });
+}
+
+pub fn spawn_default_login(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
+    {
+        let mut s = state.lock().unwrap();
+        s.logging_in = true;
+        s.login_error = None;
+    }
+    let state_clone = state.clone();
+    let ctx_clone = ctx.clone();
+    tokio::spawn(async move {
+        let res = async {
+            let (client_id, client_secret) = youtube_client_lib::resolve_credentials(
+                None,
+                None,
+                std::path::Path::new("config.json"),
+            )
+            .map_err(|e| format!("Could not resolve credentials: {}", e))?;
+
+            let token_cache_path = youtube_client_lib::resolve_token_cache_path();
+            let client = YoutubeClient::new_oauth_with_scopes(
+                &client_id,
+                &client_secret,
+                &token_cache_path,
+                youtube_client_lib::YOUTUBE_SCOPES,
+            )
+            .await
+            .map_err(|e| format!("OAuth authentication failed: {}", e))?;
+
             client
                 .test_connection()
                 .await

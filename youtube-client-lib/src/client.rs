@@ -88,7 +88,7 @@ impl YoutubeClient {
         client_id: &str,
         client_secret: &str,
         token_cache_path: &Path,
-        _scopes: &[&str],
+        scopes: &[&str],
         return_method: InstalledFlowReturnMethod,
         delegate: Box<dyn InstalledFlowDelegate>,
     ) -> Result<Self> {
@@ -106,6 +106,10 @@ impl YoutubeClient {
             .persist_tokens_to_disk(token_cache_path)
             .build()
             .await?;
+
+        if !scopes.is_empty() {
+            auth.token(scopes).await?;
+        }
 
         let connector = hyper_rustls::HttpsConnectorBuilder::new()
             .with_native_roots()?
@@ -687,6 +691,8 @@ impl YoutubeClient {
                 .list(&vec!["snippet".to_string()])
                 .video_id(video_id)
                 .max_results(20)
+                .clear_scopes()
+                .add_scope(google_youtube3::api::Scope::Readonly)
                 .doit()
                 .await
         })

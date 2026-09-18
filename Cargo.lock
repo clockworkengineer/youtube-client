@@ -5745,7 +5745,7 @@ dependencies = [
 
 [[package]]
 name = "youtube-client"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -5760,7 +5760,7 @@ dependencies = [
 
 [[package]]
 name = "youtube-client-lib"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "google-youtube3",
@@ -5777,7 +5777,7 @@ dependencies = [
 
 [[package]]
 name = "youtube-gui"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "eframe",
@@ -5795,7 +5795,7 @@ dependencies = [
 
 [[package]]
 name = "youtube-installer"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "serde_json",

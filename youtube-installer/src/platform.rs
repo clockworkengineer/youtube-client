@@ -86,12 +86,13 @@ pub fn configure_platform_environment(install_dir: &Path, install_gui: bool) {
                 "$regKey = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\YouTubeClient'; \
                  if (-not (Test-Path $regKey)) {{ New-Item -Path $regKey -Force | Out-Null }}; \
                  Set-ItemProperty -Path $regKey -Name 'DisplayName' -Value 'YouTube Client'; \
-                 Set-ItemProperty -Path $regKey -Name 'DisplayVersion' -Value '0.1.2'; \
+                 Set-ItemProperty -Path $regKey -Name 'DisplayVersion' -Value '{}'; \
                  Set-ItemProperty -Path $regKey -Name 'Publisher' -Value 'clockworkengineer'; \
                  Set-ItemProperty -Path $regKey -Name 'DisplayIcon' -Value '{icon_ico_str},0'; \
                  Set-ItemProperty -Path $regKey -Name 'InstallLocation' -Value '{install_dir_str}'; \
                  Set-ItemProperty -Path $regKey -Name 'UninstallString' -Value '\"{installer_exe_str}\" --uninstall'; \
-                 Write-Host '✓ Registered in Windows Installed Apps'"
+                 Write-Host '✓ Registered in Windows Installed Apps'",
+                env!("CARGO_PKG_VERSION")
             );
             let _ = Command::new("powershell")
                 .arg("-Command")

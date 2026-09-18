@@ -1,6 +1,6 @@
 [package]
 name = "youtube-client-lib"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "A Rust library for interacting with YouTube API v3, managing subscriptions, playlists, and downloading/streaming videos."
 license = "MIT"

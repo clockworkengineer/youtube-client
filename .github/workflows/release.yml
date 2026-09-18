@@ -44,6 +44,12 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config libxkbcommon-dev
+
       - name: Build Release Binaries
         run: cargo build --release --target ${{ matrix.target }} -p youtube-client -p youtube-gui -p youtube-installer
 

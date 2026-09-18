@@ -18,4 +18,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 clap_complete.workspace = true
 
+[lints]
+workspace = true
+
+
 

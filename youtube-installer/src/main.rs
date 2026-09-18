@@ -10,6 +10,9 @@ use config_writer::setup_global_config;
 use platform::{configure_platform_environment, remove_platform_environment};
 use prompt::{get_default_install_dir, prompt};
 
+const ICON_ICO_BYTES: &[u8] = include_bytes!("../../assets/icon.ico");
+const ICON_PNG_BYTES: &[u8] = include_bytes!("../../assets/icon.png");
+
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let unattended = args.iter().any(|a| a == "-y" || a == "--yes");
@@ -44,6 +47,15 @@ fn main() -> anyhow::Result<()> {
             if std::fs::remove_file(&gui_file).is_ok() {
                 println!("✓ Removed {}", gui_file.display());
             }
+        }
+
+        let ico_file = install_dir.join("icon.ico");
+        if ico_file.exists() {
+            let _ = std::fs::remove_file(&ico_file);
+        }
+        let png_file = install_dir.join("icon.png");
+        if png_file.exists() {
+            let _ = std::fs::remove_file(&png_file);
         }
 
         remove_platform_environment(&install_dir);
@@ -100,6 +112,15 @@ fn main() -> anyhow::Result<()> {
             println!("✓ GUI binary found: {}", gui_file.display());
         } else {
             println!("❌ GUI binary NOT found: {}", gui_file.display());
+        }
+
+        let ico_file = install_dir.join("icon.ico");
+        if ico_file.exists() {
+            println!("✓ Application icon found: {}", ico_file.display());
+        }
+        let png_file = install_dir.join("icon.png");
+        if png_file.exists() {
+            println!("✓ PNG icon found: {}", png_file.display());
         }
 
         if let Some(config_dir) = youtube_client_lib::get_global_config_dir() {
@@ -175,6 +196,16 @@ fn main() -> anyhow::Result<()> {
             println!("✓ Copied youtube-gui to: {}", gui_dest.display());
         } else {
             println!("❌ Error: youtube-gui binary not found at {}", gui_src.display());
+        }
+
+        // Install icons
+        let ico_dest = install_dir.join("icon.ico");
+        let png_dest = install_dir.join("icon.png");
+        if std::fs::write(&ico_dest, ICON_ICO_BYTES).is_ok() {
+            println!("✓ Installed application icon: {}", ico_dest.display());
+        }
+        if std::fs::write(&png_dest, ICON_PNG_BYTES).is_ok() {
+            println!("✓ Installed PNG icon: {}", png_dest.display());
         }
     }
 

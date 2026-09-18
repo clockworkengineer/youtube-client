@@ -22,6 +22,12 @@ pub fn configure_platform_environment(install_dir: &Path, install_gui: bool) {
             .status();
 
         if install_gui {
+            let icon_ico_path = install_dir.join("icon.ico");
+            let icon_ico_str = icon_ico_path.to_string_lossy().replace("\\", "\\\\");
+            let gui_exe_path = install_dir.join("youtube-gui.exe");
+            let gui_exe_str = gui_exe_path.to_string_lossy().replace("\\", "\\\\");
+            let install_dir_str = install_dir.to_string_lossy().replace("\\", "\\\\");
+
             if let Some(home) = std::env::var_os("USERPROFILE") {
                 let start_menu = PathBuf::from(home)
                     .join("AppData")
@@ -32,17 +38,18 @@ pub fn configure_platform_environment(install_dir: &Path, install_gui: bool) {
                     .join("Programs");
                 if start_menu.exists() {
                     let shortcut_path = start_menu.join("YouTube Client GUI.lnk");
-                    let gui_exe_path = install_dir.join("youtube-gui.exe");
-                    println!("Creating Start Menu shortcut...");
+                    println!("Creating Start Menu shortcut with custom icon...");
                     let shortcut_script = format!(
                         "$WshShell = New-Object -ComObject WScript.Shell; \
                          $Shortcut = $WshShell.CreateShortcut('{}'); \
                          $Shortcut.TargetPath = '{}'; \
                          $Shortcut.WorkingDirectory = '{}'; \
+                         $Shortcut.IconLocation = '{},0'; \
                          $Shortcut.Save()",
                         shortcut_path.to_string_lossy().replace("\\", "\\\\"),
-                        gui_exe_path.to_string_lossy().replace("\\", "\\\\"),
-                        install_dir.to_string_lossy().replace("\\", "\\\\")
+                        gui_exe_str,
+                        install_dir_str,
+                        icon_ico_str
                     );
                     let shortcut_status = Command::new("powershell")
                         .arg("-Command")
@@ -53,6 +60,27 @@ pub fn configure_platform_environment(install_dir: &Path, install_gui: bool) {
                     }
                 }
             }
+
+            // Also create Desktop shortcut on Windows
+            let desktop_script = format!(
+                "$WshShell = New-Object -ComObject WScript.Shell; \
+                 $desktop = [Environment]::GetFolderPath('Desktop'); \
+                 if ($desktop) {{ \
+                     $Shortcut = $WshShell.CreateShortcut(\"$desktop\\YouTube Client GUI.lnk\"); \
+                     $Shortcut.TargetPath = '{}'; \
+                     $Shortcut.WorkingDirectory = '{}'; \
+                     $Shortcut.IconLocation = '{},0'; \
+                     $Shortcut.Save(); \
+                     Write-Host '✓ Created Desktop shortcut!' \
+                 }}",
+                gui_exe_str,
+                install_dir_str,
+                icon_ico_str
+            );
+            let _ = Command::new("powershell")
+                .arg("-Command")
+                .arg(&desktop_script)
+                .status();
         }
     } else if cfg!(target_os = "linux") {
         if install_gui {
@@ -61,19 +89,21 @@ pub fn configure_platform_environment(install_dir: &Path, install_gui: bool) {
                 if apps_dir.exists() {
                     let desktop_file_path = apps_dir.join("youtube-gui.desktop");
                     let gui_path = install_dir.join("youtube-gui");
+                    let icon_png_path = install_dir.join("icon.png");
                     let desktop_content = format!(
                         "[Desktop Entry]\n\
                          Type=Application\n\
                          Name=YouTube Client GUI\n\
                          Comment=Native YouTube Desktop client\n\
                          Exec={}\n\
-                         Icon=video-television\n\
+                         Icon={}\n\
                          Terminal=false\n\
                          Categories=Utility;AudioVideo;\n",
-                        gui_path.display()
+                        gui_path.display(),
+                        icon_png_path.display()
                     );
                     if std::fs::write(&desktop_file_path, desktop_content).is_ok() {
-                        println!("✓ Created desktop entry in {}", desktop_file_path.display());
+                        println!("✓ Created desktop entry with custom icon in {}", desktop_file_path.display());
                     }
                 }
             }
@@ -122,6 +152,17 @@ pub fn remove_platform_environment(install_dir: &Path) {
                 }
             }
         }
+
+        let remove_desktop_script = "\
+            $desktop = [Environment]::GetFolderPath('Desktop'); \
+            if ($desktop) { \
+                $file = \"$desktop\\YouTube Client GUI.lnk\"; \
+                if (Test-Path $file) { Remove-Item -Force $file; Write-Host '✓ Removed Desktop shortcut.' } \
+            }";
+        let _ = Command::new("powershell")
+            .arg("-Command")
+            .arg(remove_desktop_script)
+            .status();
     } else if cfg!(target_os = "linux") {
         if let Some(home) = std::env::var_os("HOME") {
             let desktop_file_path = PathBuf::from(home)

@@ -547,10 +547,22 @@ fn main() -> eframe::Result<()> {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let _guard = rt.enter();
 
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([700.0, 700.0])
+        .with_min_inner_size([400.0, 400.0]);
+
+    if let Ok(img) = image::load_from_memory(include_bytes!("../../assets/icon.png")) {
+        let rgba = img.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        viewport = viewport.with_icon(egui::IconData {
+            rgba: rgba.into_raw(),
+            width,
+            height,
+        });
+    }
+
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([700.0, 700.0])
-            .with_min_inner_size([400.0, 400.0]),
+        viewport,
         ..Default::default()
     };
 

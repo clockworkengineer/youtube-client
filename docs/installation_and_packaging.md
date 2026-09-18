@@ -68,13 +68,15 @@ cargo run --bin youtube-installer -- --yes --target-dir "C:\Tools\YouTubeClient"
 ## System Integration Details
 
 ### Windows Integration
+* **Application Icons:** Installs high-resolution multi-format `icon.ico` and `icon.png` to the installation folder and embeds the custom icon in `youtube-gui.exe`.
 * **User PATH Modification:** Adds the installation directory to `HKCU\Environment\Path` in the Windows Registry and broadcasts `WM_SETTINGCHANGE` so new terminals immediately recognize `youtube-client` without requiring a reboot.
-* **Start Menu Shortcut:** Creates `YouTube Client GUI.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\YouTube Client`.
-* **Desktop Shortcut:** Creates a desktop shortcut for quick GUI launching.
+* **Start Menu Shortcut:** Creates `YouTube Client GUI.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs` configured with the custom icon.
+* **Desktop Shortcut:** Creates `YouTube Client GUI.lnk` on the user's Desktop with the custom application icon for instant access.
 
 ### Linux / macOS Integration
+* **Application Icons:** Installs `icon.png` into the installation directory.
 * **User PATH:** Appends `export PATH="<INSTALL_DIR>:$PATH"` to `~/.bashrc`, `~/.zshrc`, or `~/.profile`.
-* **Desktop Entry:** Writes `~/.local/share/applications/youtube-gui.desktop` for integration with desktop application menus (GNOME, KDE, XFCE).
+* **Desktop Entry:** Writes `~/.local/share/applications/youtube-gui.desktop` linked to the custom icon for seamless integration with desktop application menus (GNOME, KDE, XFCE).
 
 ---
 

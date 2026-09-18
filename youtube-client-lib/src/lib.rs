@@ -217,4 +217,51 @@ mod tests {
     fn test_inspect_scopes() {
         assert_eq!(google_youtube3::api::Scope::Readonly.as_ref(), "https://www.googleapis.com/auth/youtube.readonly");
     }
+
+    #[test]
+    fn test_resolve_log_file_path() {
+        // CLI override takes highest precedence
+        let cli_override = Path::new("cli_specified.log");
+        assert_eq!(
+            resolve_log_file_path(Some(cli_override)),
+            std::path::PathBuf::from("cli_specified.log")
+        );
+
+        // When no CLI override is provided, fallback is used (either config or youtube-client.log)
+        let resolved = resolve_log_file_path(None);
+        assert!(
+            resolved.to_string_lossy().contains(".log"),
+            "Resolved path should have .log extension"
+        );
+    }
+
+    #[test]
+    fn test_append_to_log() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let log_file = temp_dir.path().join("subdir").join("test_run.log");
+
+        utils::append_to_log(&log_file, "INFO", "Application initialization test message");
+        utils::append_to_log(&log_file, "STDERR", "ffmpeg: processing audio stream");
+
+        assert!(log_file.exists(), "Log file should have been created");
+        let content = std::fs::read_to_string(&log_file).expect("Failed to read test log file");
+        assert!(content.contains("[INFO] Application initialization test message"));
+        assert!(content.contains("[STDERR] ffmpeg: processing audio stream"));
+    }
+
+    #[test]
+    fn test_resolve_cookies_options() {
+        let cli_file = Path::new("test_cookies.txt");
+        assert_eq!(
+            resolve_cookies_file(Some(cli_file)),
+            Some(std::path::PathBuf::from("test_cookies.txt"))
+        );
+
+        let cli_browser = "firefox";
+        assert_eq!(
+            resolve_cookies_from_browser(Some(cli_browser)),
+            Some("firefox".to_string())
+        );
+    }
 }
+

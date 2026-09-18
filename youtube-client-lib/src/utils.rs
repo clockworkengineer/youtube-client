@@ -223,10 +223,18 @@ pub fn launch_external_player(target: &std::ffi::OsStr) -> Result<(), String> {
     let target_str = target.to_string_lossy();
     let is_url = target_str.starts_with("http://") || target_str.starts_with("https://");
 
+    let cookies_file = crate::config::resolve_cookies_file(None);
+    let cookies_browser = crate::config::resolve_cookies_from_browser(None);
+
     for player in players {
         let mut cmd = std::process::Command::new(&player);
         if is_url && player.to_lowercase().contains("mpv") {
-            cmd.arg("--ytdl-raw-options=extractor-args=youtube:player_client=android");
+            if let Some(ref cf) = cookies_file {
+                cmd.arg(format!("--ytdl-raw-options-append=cookies={}", cf.display()));
+            }
+            if let Some(ref cb) = cookies_browser {
+                cmd.arg(format!("--ytdl-raw-options-append=cookies-from-browser={}", cb));
+            }
         }
         cmd.arg(target);
         if cmd.spawn().is_ok() {
@@ -265,4 +273,48 @@ pub fn save_string_set_to_file(path: &Path, set: &std::collections::HashSet<Stri
     temp.persist(path).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+fn format_current_timestamp() -> String {
+    let dur = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let total_secs = dur.as_secs();
+    let sec = (total_secs % 60) as u32;
+    let total_mins = total_secs / 60;
+    let min = (total_mins % 60) as u32;
+    let total_hours = total_mins / 60;
+    let hour = (total_hours % 24) as u32;
+    let mut days = (total_hours / 24) as i64;
+
+    // Howard Hinnant's algorithm for Gregorian date calculation from epoch days
+    days += 719468;
+    let era = if days >= 0 { days } else { days - 146096 } / 146097;
+    let doe = (days - era * 146097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, m, d, hour, min, sec)
+}
+
+/// Append a line with a timestamp and prefix to a log file, creating any missing parent directories.
+pub fn append_to_log(path: &Path, prefix: &str, message: &str) {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let now = format_current_timestamp();
+        let _ = writeln!(file, "[{}] [{}] {}", now, prefix, message);
+    }
 }

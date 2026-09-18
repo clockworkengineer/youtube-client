@@ -73,8 +73,8 @@ cargo run --bin youtube-client -- download --video-id dQw4w9WgXcQ --format mp3
 * 📂 **Playlist & Comment Lifecycle**: Create and delete playlists, inspect playlist items, read top-level comments, and post comments directly.
 * 👍 **Engagement & Rating**: Like, dislike, or clear ratings, and inspect view counts, likes, comments, and parsed ISO 8601 durations.
 * 🎵 **Built-in Audio Player**: Background audio worker utilizing `rodio` with volume slider (0-100%) and instant mute controls.
-* 🎬 **Video Streaming**: Seamless video streaming launched through MPV (with custom yt-dlp extractor args), VLC, or browser fallback.
-* 📥 **Media Downloading**: Download videos or extract audio via `yt-dlp` with format presets (`mp4`, `mp3`, `bestaudio`) and quality controls.
+* 🎬 **Video Streaming & Browser Playback**: Seamless video streaming launched through MPV (with configurable cookie authentication), VLC, or instant in-browser playback ("Watch in Browser").
+* 📥 **Media Downloading**: Download videos or extract audio via `yt-dlp` with format presets (`mp4`, `mp3`, `bestaudio`) and quality controls, with quiet execution and full `ffmpeg` traces captured directly to a configurable client log file.
 * 🧪 **In-Memory Test Mocking**: Comprehensive unit testing without live Google API keys or quota consumption via `MockYoutubeClient`.
 
 ---

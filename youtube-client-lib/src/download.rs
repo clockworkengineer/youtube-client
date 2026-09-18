@@ -22,6 +22,9 @@ pub struct DownloadOptions {
     pub format: DownloadFormat,
     pub extractor_args: Option<String>,
     pub additional_args: Vec<String>,
+    pub log_file: Option<std::path::PathBuf>,
+    pub cookies_file: Option<std::path::PathBuf>,
+    pub cookies_from_browser: Option<String>,
 }
 
 impl Default for DownloadOptions {
@@ -30,6 +33,9 @@ impl Default for DownloadOptions {
             format: DownloadFormat::Mp4,
             extractor_args: Some("youtube:player_client=mweb".to_string()),
             additional_args: Vec::new(),
+            log_file: None,
+            cookies_file: None,
+            cookies_from_browser: None,
         }
     }
 }
@@ -54,6 +60,24 @@ impl DownloadOptions {
     /// Add an additional argument for yt-dlp.
     pub fn with_arg(mut self, arg: impl Into<String>) -> Self {
         self.additional_args.push(arg.into());
+        self
+    }
+
+    /// Set a custom client log file to capture all output and ffmpeg traces.
+    pub fn with_log_file(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.log_file = Some(path.into());
+        self
+    }
+
+    /// Set path to cookies file for authenticated yt-dlp downloading.
+    pub fn with_cookies_file(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.cookies_file = Some(path.into());
+        self
+    }
+
+    /// Set browser name to extract cookies from.
+    pub fn with_cookies_from_browser(mut self, browser: impl Into<String>) -> Self {
+        self.cookies_from_browser = Some(browser.into());
         self
     }
 }
@@ -141,8 +165,37 @@ where
         cmd.arg(arg);
     }
 
+    let resolved_cookies_file = options
+        .cookies_file
+        .clone()
+        .or_else(|| crate::config::resolve_cookies_file(None));
+    if let Some(ref cf) = resolved_cookies_file {
+        cmd.arg("--cookies").arg(cf);
+    }
+
+    let resolved_cookies_browser = options
+        .cookies_from_browser
+        .clone()
+        .or_else(|| crate::config::resolve_cookies_from_browser(None));
+    if let Some(ref cb) = resolved_cookies_browser {
+        cmd.arg("--cookies-from-browser").arg(cb);
+    }
+
     // Use explicit argument boundaries
     cmd.arg("-o").arg(output_path).arg("--").arg(&url);
+
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW to suppress ffmpeg and yt-dlp console windows
+
+    let log_file_path = options.log_file.clone().unwrap_or_else(|| {
+        crate::config::resolve_log_file_path(None)
+    });
+
+    crate::utils::append_to_log(
+        &log_file_path,
+        "INFO",
+        &format!("Starting yt-dlp download: video_id={}, output={:?}, format={:?}", video_id, output_path, options.format),
+    );
 
     let mut child = match cmd
         .stdout(std::process::Stdio::piped())
@@ -151,9 +204,13 @@ where
     {
         Ok(child) => child,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            crate::utils::append_to_log(&log_file_path, "ERROR", &format!("yt-dlp missing: {}", e));
             return Err(YoutubeError::YtDlpMissing(e.to_string()));
         }
-        Err(e) => return Err(YoutubeError::Io(e)),
+        Err(e) => {
+            crate::utils::append_to_log(&log_file_path, "ERROR", &format!("Failed to spawn yt-dlp: {}", e));
+            return Err(YoutubeError::Io(e));
+        }
     };
 
     let mut stdout = child
@@ -165,14 +222,35 @@ where
         .take()
         .ok_or_else(|| YoutubeError::Download("Failed to capture stderr".to_string()))?;
 
+    let log_path_clone = log_file_path.clone();
     let stderr_handle = tokio::spawn(async move {
         let mut err_buf = Vec::new();
         let mut temp_err = [0u8; 1024];
+        let mut line_buf = Vec::new();
         while let Ok(n) = stderr.read(&mut temp_err).await {
             if n == 0 {
                 break;
             }
             err_buf.extend_from_slice(&temp_err[..n]);
+            line_buf.extend_from_slice(&temp_err[..n]);
+            while let Some(pos) = line_buf.iter().position(|&b| b == b'\n' || b == b'\r') {
+                let line_bytes = &line_buf[..pos];
+                if let Ok(line_str) = std::str::from_utf8(line_bytes) {
+                    let trimmed = line_str.trim();
+                    if !trimmed.is_empty() {
+                        crate::utils::append_to_log(&log_path_clone, "STDERR", trimmed);
+                    }
+                }
+                line_buf.drain(..pos + 1);
+            }
+        }
+        if !line_buf.is_empty() {
+            if let Ok(line_str) = std::str::from_utf8(&line_buf) {
+                let trimmed = line_str.trim();
+                if !trimmed.is_empty() {
+                    crate::utils::append_to_log(&log_path_clone, "STDERR", trimmed);
+                }
+            }
         }
         String::from_utf8_lossy(&err_buf).into_owned()
     });
@@ -194,6 +272,7 @@ where
             if let Ok(line_str) = std::str::from_utf8(line_bytes) {
                 let line = line_str.trim();
                 if !line.is_empty() {
+                    crate::utils::append_to_log(&log_file_path, "STDOUT", line);
                     if line.contains("[download]") {
                         if let Some(pct_idx) = line.find('%') {
                             if let Some(dl_idx) = line.find("[download]") {
@@ -218,11 +297,21 @@ where
     let status = child.wait().await?;
     let stderr_output = stderr_handle.await.unwrap_or_default();
     if !status.success() {
+        crate::utils::append_to_log(
+            &log_file_path,
+            "ERROR",
+            &format!("yt-dlp download failed with status {:?}: {}", status.code(), stderr_output.trim()),
+        );
         return Err(YoutubeError::Download(format!(
             "yt-dlp download failed: {}",
             stderr_output.trim()
         )));
     }
+    crate::utils::append_to_log(
+        &log_file_path,
+        "INFO",
+        &format!("Download finished successfully: {:?}", output_path),
+    );
     Ok(())
 }
 

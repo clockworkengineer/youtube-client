@@ -7,6 +7,7 @@ use youtube_client_lib::download::{DownloadFormat, DownloadOptions};
 use youtube_client_lib::download_video_with_options;
 
 pub async fn execute_download(
+    ctx: &crate::commands::context::CliContext,
     video_id: String,
     output: Option<PathBuf>,
     format_str: String,
@@ -33,6 +34,15 @@ pub async fn execute_download(
     println!("  Target: {:?}", out_path);
 
     let mut options = DownloadOptions::new(format);
+    if let Some(ref log) = ctx.log_file {
+        options = options.with_log_file(log);
+    }
+    if let Some(ref cf) = ctx.cookies_file {
+        options = options.with_cookies_file(cf);
+    }
+    if let Some(ref cb) = ctx.cookies_from_browser {
+        options = options.with_cookies_from_browser(cb);
+    }
     if let Some(q) = quality {
         options = options.with_quality(q);
     }

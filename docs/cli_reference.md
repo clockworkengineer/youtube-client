@@ -38,6 +38,9 @@ All subcommands inherit the following global options. They may be passed before 
 | :--- | :--- | :--- | :--- |
 | `-c, --config <FILE>` | — | `config.json` | Path to client credentials JSON file. |
 | `-t, --token-cache <FILE>` | — | `tokencache.json` | Path to cached OAuth2 token file. |
+| `-l, --log-file <FILE>` | `YOUTUBE_CLIENT_LOG_FILE` | `youtube-client.log` | Path to destination log file for operations, yt-dlp, and ffmpeg traces. |
+| `--cookies <FILE>` | `YOUTUBE_COOKIES_FILE` | — | Path to Netscape-format `cookies.txt` file for yt-dlp/MPV. |
+| `--cookies-from-browser <NAME>` | `YOUTUBE_COOKIES_FROM_BROWSER` | — | Browser name to extract cookies from (`chrome`, `firefox`, `edge`, `brave`, etc.). |
 | `--client-id <ID>` | `GOOGLE_CLIENT_ID` | Embedded Default | Google OAuth2 Client ID. |
 | `--client-secret <SECRET>` | `GOOGLE_CLIENT_SECRET` | Embedded Default | Google OAuth2 Client Secret. |
 | `-h, --help` | — | — | Print command-line help information. |

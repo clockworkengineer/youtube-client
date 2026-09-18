@@ -263,9 +263,9 @@ pub fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: Vi
     let ctx_clone = ctx.clone();
     tokio::spawn(async move {
         let res = async {
-            let downloads_base = {
+            let (downloads_base, log_file) = {
                 let s = state_clone.lock().unwrap();
-                s.downloads_dir.clone()
+                (s.downloads_dir.clone(), s.log_file.clone())
             };
 
             let output_path =
@@ -279,11 +279,19 @@ pub fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: Vi
 
             let client = get_client_async().await.map_err(|e| e.to_string())?;
 
+            let format = if is_audio {
+                youtube_client_lib::download::DownloadFormat::Mp3
+            } else {
+                youtube_client_lib::download::DownloadFormat::Mp4
+            };
+            let options = youtube_client_lib::download::DownloadOptions::new(format)
+                .with_log_file(log_file);
+
             let state_inner = state_clone.clone();
             let ctx_inner = ctx_clone.clone();
             let vid_id = video_id.clone();
             client
-                .download_video(&video_id, &output_path, move |prog| {
+                .download_video_with_options(&video_id, &output_path, &options, move |prog| {
                     if let Ok(mut s) = state_inner.lock() {
                         s.downloads.insert(
                             vid_id.clone(),

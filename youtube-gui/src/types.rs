@@ -82,6 +82,7 @@ pub struct AppState {
     pub playlists: Option<Result<Vec<Playlist>, String>>,
     pub playlist_action_status: Option<Result<String, String>>,
     pub downloads_dir: PathBuf,
+    pub log_file: PathBuf,
 }
 
 /// Helper function to safely lock AppState with poison recovery.
@@ -141,6 +142,7 @@ pub enum PendingAction {
     SpawnDownload { video: Video, is_audio: bool },
     PlayLocal { path: PathBuf, title: String },
     StreamVideo { video_id: String },
+    OpenInBrowser { url: String },
     Search { query: String },
     RetrySearch { query: String },
     LoadPlaylists,

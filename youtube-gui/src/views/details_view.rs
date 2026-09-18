@@ -186,9 +186,17 @@ pub fn render_details_view(
 
                 ui.add_space(10.0);
 
-                if ui.button(egui::RichText::new("📺 Stream Video").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
-                    action = Some(PendingAction::StreamVideo { video_id: video.id.clone() });
-                }
+                ui.horizontal(|ui| {
+                    if ui.button(egui::RichText::new("📺 Stream Video").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
+                        action = Some(PendingAction::StreamVideo { video_id: video.id.clone() });
+                    }
+
+                    if ui.button(egui::RichText::new("🌐 Watch in Browser").color(egui::Color32::from_rgb(100, 180, 255)).strong()).clicked() {
+                        action = Some(PendingAction::OpenInBrowser {
+                            url: format!("https://www.youtube.com/watch?v={}", video.id),
+                        });
+                    }
+                });
 
                 ui.add_space(15.0);
                 ui.separator();

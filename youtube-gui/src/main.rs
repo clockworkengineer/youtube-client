@@ -1,3 +1,4 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 //! # YouTube GUI Application Entry Point
 //!
 //! Initializes the eframe window, manages application lifecycle state, audio worker spawning,
@@ -38,7 +39,7 @@ struct YoutubeGuiApp {
 
 
 impl YoutubeGuiApp {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, log_file: PathBuf) -> Self {
         // Customize the styling to make it look premium
         let mut visuals = egui::Visuals::dark();
         visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(26, 27, 30);
@@ -50,6 +51,8 @@ impl YoutubeGuiApp {
         let client_id_input = config.client_id.unwrap_or_default();
         let client_secret_input = config.client_secret.unwrap_or_default();
         let downloads_dir = PathBuf::from(config.downloads_dir.unwrap_or_else(|| "downloads".to_string()));
+
+        youtube_client_lib::utils::append_to_log(&log_file, "INFO", "youtube-gui started");
 
         // Scan downloads directory for pre-existing media files
         let downloads = HashMap::new();
@@ -74,6 +77,7 @@ impl YoutubeGuiApp {
             playlists: None,
             playlist_action_status: None,
             downloads_dir: downloads_dir.clone(),
+            log_file: log_file.clone(),
         }));
 
         let http_client = reqwest::Client::new();
@@ -396,6 +400,10 @@ impl eframe::App for YoutubeGuiApp {
                     let _ = open::that(url);
                 }
             }
+            PendingAction::OpenInBrowser { url } => {
+                println!("Opening in web browser: {}", url);
+                let _ = open::that(url);
+            }
             PendingAction::Search { query } => {
                 {
                     let mut s_lock = self.state.lock().unwrap();
@@ -520,6 +528,22 @@ impl eframe::App for YoutubeGuiApp {
 
 
 fn main() -> eframe::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    let mut cli_log_file = None;
+    let mut i = 1;
+    while i < args.len() {
+        if (args[i] == "--log-file" || args[i] == "-l") && i + 1 < args.len() {
+            cli_log_file = Some(PathBuf::from(&args[i + 1]));
+            i += 2;
+        } else if let Some(stripped) = args[i].strip_prefix("--log-file=") {
+            cli_log_file = Some(PathBuf::from(stripped));
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+    let log_file = youtube_client_lib::resolve_log_file_path(cli_log_file.as_deref());
+
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let _guard = rt.enter();
 
@@ -530,10 +554,11 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
+    let log_file_clone = log_file.clone();
     eframe::run_native(
         "YouTube Premium Subscriptions Client",
         native_options,
-        Box::new(|cc| Box::new(YoutubeGuiApp::new(cc))),
+        Box::new(move |cc| Box::new(YoutubeGuiApp::new(cc, log_file_clone))),
     )
 }
 

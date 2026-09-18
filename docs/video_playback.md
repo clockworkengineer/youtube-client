@@ -32,7 +32,11 @@ MPV is the recommended streaming player due to its lightweight footprint and fas
    * Download the latest binary from [yt-dlp GitHub releases](https://github.com/yt-dlp/yt-dlp) and ensure it is in your system `PATH`.
 
 > [!IMPORTANT]
-> **HTTP 403 Forbidden Fix:** YouTube periodically throttles or blocks automated streaming requests. `youtube-gui` automatically passes `--ytdl-raw-options=extractor-args=youtube:player_client=mweb` when spawning MPV to ensure stable playback. Keep `yt-dlp` up to date by running `yt-dlp -U`.
+> **HTTP 403 Forbidden & YouTube Bot Verification:**
+> YouTube continuously updates server-side stream protection, which causes older versions of `yt-dlp` (such as `2026.07.04` and earlier) to hit `HTTP error 403 Forbidden` on `c=ANDROID_VR` or bot challenges when MPV streams video chunks.
+> 1. **Update yt-dlp:** Run `yt-dlp -U` (or `yt-dlp --update-to nightly`). Updating to `2026.08.19` or later resolves the `googlevideo.com` 403 Forbidden streaming error.
+> 2. **Watch in Browser:** Click the **"🌐 Watch in Browser"** button in `youtube-gui` for instant playback in your authenticated web browser.
+> 3. **Browser Cookies:** Set `"cookies_from_browser": "firefox"` (or `chrome`, `edge`, `brave`) or `"cookies_file": "path/to/cookies.txt"` in `config.json` / `private_config.json` (or via `--cookies` / `--cookies-from-browser`). `youtube-gui` passes these automatically to MPV and `yt-dlp`.
 
 ### Option B: VLC Media Player
 1. Download and install VLC from [VideoLAN](https://www.videolan.org/).

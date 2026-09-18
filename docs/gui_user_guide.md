@@ -26,6 +26,8 @@
 ### Via Cargo
 ```bash
 cargo run --bin youtube-gui
+# Or specify a custom log file destination:
+cargo run --bin youtube-gui -- --log-file custom_client.log
 ```
 
 ### Via Installed Desktop Shortcut or Application Menu
@@ -112,7 +114,9 @@ Clicking **"Details"** on any video card opens the comprehensive Video Details v
 
 ### Logs & Diagnostics
 
-* Displays asynchronous background task status, API query durations, and detailed error messages if an operation fails.
+* **In-App Logs:** Displays asynchronous background task status, API query durations, and detailed error messages if an operation fails.
+* **Client Log File (`youtube-client.log`):** All background `yt-dlp` download streams and `ffmpeg` post-processing traces (such as audio extraction and container muxing) are piped directly into the client log file without spawning any intrusive console or trace windows.
+* **Configurable Log Path:** Configure the log file destination via the `--log-file <PATH>` command-line parameter, the `YOUTUBE_CLIENT_LOG_FILE` environment variable, or `"log_file"` in `config.json`.
 
 ---
 
@@ -133,14 +137,11 @@ Located at the bottom of the window:
 
 ## Video Streaming & External Media Players
 
-Clicking a video thumbnail or clicking **"▶ Play"** attempts to stream video through your preferred desktop media player:
+Clicking **"📺 Stream Video"** or a video thumbnail attempts to stream video through your preferred desktop media player:
 
-1. **MPV (Recommended):** If `mpv` is installed, the GUI launches it with optimized format flags:
-   ```bash
-   mpv <URL> --ytdl-raw-options=extractor-args=youtube:player_client=mweb
-   ```
+1. **MPV (Recommended):** If `mpv` is installed, the GUI launches it. If `cookies_file` or `cookies_from_browser` is defined in configuration, they are automatically forwarded to MPV.
 2. **VLC Media Player:** If MPV is absent but VLC is detected, VLC is launched.
-3. **Web Browser Fallback:** If no desktop media player is configured or installed, the video opens automatically in your default web browser.
+3. **🌐 Watch in Browser:** Click the dedicated **"🌐 Watch in Browser"** button in Video Details to open the video instantly in your default web browser (bypassing any external player bot-check errors).
 
 > [!TIP]
-> To configure a custom player executable path, see [Setting Up Video Playback](video_playback.md) or specify `"player_path"` in `private_config.json`.
+> To configure cookies for MPV and yt-dlp, specify `"cookies_from_browser": "firefox"` or `"cookies_file": "path/to/cookies.txt"` in `config.json` (see [Configuration Guide](configuration.md)).

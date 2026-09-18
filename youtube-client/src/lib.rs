@@ -31,6 +31,18 @@ pub struct Cli {
     #[arg(long, env = "GOOGLE_CLIENT_SECRET")]
     pub client_secret: Option<String>,
 
+    /// Path to client log file for subprocess and media trace output
+    #[arg(short, long, env = "YOUTUBE_CLIENT_LOG_FILE")]
+    pub log_file: Option<PathBuf>,
+
+    /// Path to cookies.txt file for yt-dlp/MPV authentication
+    #[arg(long, env = "YOUTUBE_COOKIES_FILE")]
+    pub cookies: Option<PathBuf>,
+
+    /// Extract cookies from browser (e.g. chrome, firefox, edge, brave)
+    #[arg(long, env = "YOUTUBE_COOKIES_FROM_BROWSER")]
+    pub cookies_from_browser: Option<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -262,6 +274,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         client_secret: cli.client_secret,
         config: cli.config,
         token_cache: cli.token_cache,
+        log_file: cli.log_file,
+        cookies_file: cli.cookies,
+        cookies_from_browser: cli.cookies_from_browser,
     };
 
     match cli.command {
@@ -282,7 +297,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             execute_playlists(&ctx, limit, playlist_id, json).await
         }
         Commands::Download { video_id, output, format, quality, additional_args } => {
-            execute_download(video_id, output, format, quality, additional_args).await
+            execute_download(&ctx, video_id, output, format, quality, additional_args).await
         }
         Commands::Play { file, system } => execute_play(file, system).await,
         Commands::Details { video_id, json } => {

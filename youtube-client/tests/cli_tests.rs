@@ -198,3 +198,46 @@ fn test_playlist_manage_command_parsing() {
         _ => panic!("Expected PlaylistDelete command"),
     }
 }
+
+#[test]
+fn test_log_file_flag_parsing() {
+    let args = vec![
+        "youtube-client",
+        "--log-file",
+        "custom_client.log",
+        "search",
+        "--query",
+        "rust",
+    ];
+    let cli = Cli::try_parse_from(args).expect("Failed to parse --log-file");
+    assert_eq!(cli.log_file, Some(std::path::PathBuf::from("custom_client.log")));
+
+    let short_args = vec![
+        "youtube-client",
+        "-l",
+        "short_flag.log",
+        "search",
+        "--query",
+        "rust",
+    ];
+    let short_cli = Cli::try_parse_from(short_args).expect("Failed to parse -l");
+    assert_eq!(short_cli.log_file, Some(std::path::PathBuf::from("short_flag.log")));
+}
+
+#[test]
+fn test_cookies_flag_parsing() {
+    let args = vec![
+        "youtube-client",
+        "--cookies",
+        "my_cookies.txt",
+        "--cookies-from-browser",
+        "firefox",
+        "search",
+        "--query",
+        "rust",
+    ];
+    let cli = Cli::try_parse_from(args).expect("Failed to parse cookies flags");
+    assert_eq!(cli.cookies, Some(std::path::PathBuf::from("my_cookies.txt")));
+    assert_eq!(cli.cookies_from_browser, Some("firefox".to_string()));
+}
+

@@ -8,6 +8,9 @@ pub struct CliContext {
     pub client_secret: Option<String>,
     pub config: PathBuf,
     pub token_cache: PathBuf,
+    pub log_file: Option<PathBuf>,
+    pub cookies_file: Option<PathBuf>,
+    pub cookies_from_browser: Option<String>,
 }
 
 impl CliContext {

@@ -783,6 +783,20 @@ impl YoutubeClient {
         crate::download::download_video_direct(video_id, output_path, on_progress).await
     }
 
+    /// Download a YouTube video by ID to the target path with custom [`DownloadOptions`].
+    pub async fn download_video_with_options<F>(
+        &self,
+        video_id: &str,
+        output_path: &Path,
+        options: &crate::download::DownloadOptions,
+        on_progress: F,
+    ) -> Result<()>
+    where
+        F: Fn(&str) + Send + Sync + 'static,
+    {
+        crate::download::download_video_with_options(video_id, output_path, options, on_progress).await
+    }
+
     /// Play the video using the system's default media player.
     pub fn play_video_system(&self, file_path: &Path) -> Result<()> {
         open::that(file_path).map_err(|e| YoutubeError::Media(e.to_string()))?;

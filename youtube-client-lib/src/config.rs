@@ -16,6 +16,81 @@ pub struct Config {
     pub player_path: Option<String>,
     /// Path to downloads directory
     pub downloads_dir: Option<String>,
+    /// Path to client log file
+    pub log_file: Option<String>,
+    /// Path to cookies.txt file for yt-dlp/MPV authentication
+    pub cookies_file: Option<String>,
+    /// Browser name to extract cookies from (e.g. "chrome", "firefox", "edge", "brave")
+    pub cookies_from_browser: Option<String>,
+}
+
+/// Resolve the path for the client log file.
+/// Precedence:
+/// 1. Explicit CLI parameter override (if provided)
+/// 2. `YOUTUBE_CLIENT_LOG_FILE` environment variable
+/// 3. `log_file` entry in configuration file
+/// 4. Default: `"youtube-client.log"`
+pub fn resolve_log_file_path(cli_override: Option<&Path>) -> std::path::PathBuf {
+    if let Some(path) = cli_override {
+        return path.to_path_buf();
+    }
+    if let Ok(env_path) = std::env::var("YOUTUBE_CLIENT_LOG_FILE") {
+        if !env_path.trim().is_empty() {
+            return std::path::PathBuf::from(env_path.trim());
+        }
+    }
+    let config = load_config();
+    if let Some(ref cfg_path) = config.log_file {
+        if !cfg_path.trim().is_empty() {
+            return std::path::PathBuf::from(cfg_path.trim());
+        }
+    }
+    std::path::PathBuf::from("youtube-client.log")
+}
+
+/// Resolve path to cookies file if specified via CLI, environment variable, or configuration.
+pub fn resolve_cookies_file(cli_override: Option<&Path>) -> Option<std::path::PathBuf> {
+    if let Some(path) = cli_override {
+        return Some(path.to_path_buf());
+    }
+    if let Ok(env_path) = std::env::var("YOUTUBE_COOKIES_FILE") {
+        let trimmed = env_path.trim();
+        if !trimmed.is_empty() {
+            return Some(std::path::PathBuf::from(trimmed));
+        }
+    }
+    let config = load_config();
+    if let Some(ref path) = config.cookies_file {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return Some(std::path::PathBuf::from(trimmed));
+        }
+    }
+    None
+}
+
+/// Resolve browser name for cookie extraction if specified via CLI, environment variable, or configuration.
+pub fn resolve_cookies_from_browser(cli_override: Option<&str>) -> Option<String> {
+    if let Some(b) = cli_override {
+        let trimmed = b.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    if let Ok(env_browser) = std::env::var("YOUTUBE_COOKIES_FROM_BROWSER") {
+        let trimmed = env_browser.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    let config = load_config();
+    if let Some(ref b) = config.cookies_from_browser {
+        let trimmed = b.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
 }
 
 impl Config {
@@ -221,6 +296,9 @@ pub fn resolve_credentials(
         client_secret: csec,
         player_path: None,
         downloads_dir: None,
+        log_file: None,
+        cookies_file: None,
+        cookies_from_browser: None,
     };
 
     if temp_config.is_valid() {

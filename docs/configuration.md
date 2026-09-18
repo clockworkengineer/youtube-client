@@ -19,17 +19,18 @@ graph TD
 
 ### Precedence Details
 
-1. **Command-Line Arguments**: Flags passed directly to `youtube-client` (e.g. `--client-id "XYZ" --client-secret "ABC"`).
+1. **Command-Line Arguments**: Flags passed directly to `youtube-client` (e.g. `--client-id "XYZ" --client-secret "ABC"`, `--log-file "custom.log"`).
 2. **Environment Variables**:
    * `GOOGLE_CLIENT_ID`: Overrides the Google OAuth2 Client ID.
    * `GOOGLE_CLIENT_SECRET`: Overrides the Google OAuth2 Client Secret.
+   * `YOUTUBE_CLIENT_LOG_FILE`: Overrides the destination client log file path.
 3. **Local `private_config.json`**: Checked in the current working directory. This file is explicitly listed in `.gitignore` to prevent accidental credential commits.
 4. **Local `config.json`**: Fallback configuration file in the current working directory.
 5. **OS Global User Configuration Directory**:
    * **Windows**: `%APPDATA%\youtube-client\config.json` (typically `C:\Users\<User>\AppData\Roaming\youtube-client\config.json`)
    * **macOS**: `~/Library/Application Support/youtube-client/config.json`
    * **Linux / BSD**: `${XDG_CONFIG_HOME:-~/.config}/youtube-client/config.json`
-6. **Compile-Time Defaults**: Built-in OAuth credentials embedded at compile time via `option_env!("DEFAULT_GOOGLE_CLIENT_ID")` and `option_env!("DEFAULT_GOOGLE_CLIENT_SECRET")`.
+6. **Compile-Time Defaults**: Built-in OAuth credentials embedded at compile time via `option_env!("DEFAULT_GOOGLE_CLIENT_ID")` and `option_env!("DEFAULT_GOOGLE_CLIENT_SECRET")`. Default log file falls back to `youtube-client.log`.
 
 ---
 
@@ -42,7 +43,10 @@ Configuration files (`config.json` or `private_config.json`) use standard JSON f
   "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
   "client_secret": "YOUR_CLIENT_SECRET",
   "player_path": "C:\\Program Files\\mpv\\mpv.exe",
-  "downloads_dir": "C:\\Users\\User\\Downloads\\YouTube"
+  "downloads_dir": "C:\\Users\\User\\Downloads\\YouTube",
+  "log_file": "C:\\Users\\User\\AppData\\Roaming\\youtube-client\\youtube-client.log",
+  "cookies_file": "C:\\Users\\User\\cookies.txt",
+  "cookies_from_browser": "firefox"
 }
 ```
 
@@ -54,6 +58,9 @@ Configuration files (`config.json` or `private_config.json`) use standard JSON f
 | `client_secret` | String | No* | Google OAuth2 Desktop Client Secret. |
 | `player_path` | String | No | Absolute path to preferred media player (`mpv`, `vlc`). |
 | `downloads_dir` | String | No | Default destination folder for downloaded media files. |
+| `log_file` | String | No | Destination path for client logs, yt-dlp progress, and ffmpeg traces (defaults to `youtube-client.log`). |
+| `cookies_file` | String | No | Path to Netscape-format `cookies.txt` file for authenticated stream extraction and downloading. |
+| `cookies_from_browser` | String | No | Browser name to extract cookies from (`chrome`, `firefox`, `edge`, `brave`, `opera`, `vivaldi`). |
 
 *\* If not supplied in the file, credentials fall back to environment variables or embedded defaults.*
 

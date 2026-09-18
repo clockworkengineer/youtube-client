@@ -3,9 +3,9 @@
 //! Manages the Rodio audio mixer thread loop, device output initialization,
 //! playback control commands, and UI repaint triggers upon track completion.
 
-use std::sync::{Arc, Mutex};
-use eframe::egui;
 use crate::types::{AppState, PlayerCommand};
+use eframe::egui;
+use std::sync::{Arc, Mutex};
 
 /// Spawn the background Rodio audio thread for local audio decoding and playback.
 pub fn spawn_audio_worker(
@@ -35,7 +35,9 @@ pub fn spawn_audio_worker(
                             }
                             if let Some(sink) = &sink_opt {
                                 if let Ok(file) = std::fs::File::open(&path) {
-                                    if let Ok(source) = rodio::Decoder::new(std::io::BufReader::new(file)) {
+                                    if let Ok(source) =
+                                        rodio::Decoder::new(std::io::BufReader::new(file))
+                                    {
                                         let mut s = state.lock().unwrap();
                                         sink.set_volume(s.player_state.volume);
                                         sink.append(source);

@@ -320,6 +320,23 @@ youtube-client playlist-delete --playlist-id <PLAYLIST_ID>
 
 ---
 
+### 17. `completions`
+
+Generates tab-completion scripts for your preferred shell.
+
+```bash
+youtube-client completions <SHELL>
+```
+
+#### Supported Shells:
+* `bash`: `youtube-client completions bash > ~/.local/share/bash-completion/completions/youtube-client`
+* `zsh`: `youtube-client completions zsh > ~/.zfunc/_youtube-client`
+* `fish`: `youtube-client completions fish > ~/.config/fish/completions/youtube-client.fish`
+* `powershell`: `youtube-client completions powershell >> $PROFILE`
+* `elvish`: `youtube-client completions elvish`
+
+---
+
 ## Shell Scripting & JSON Pipelining Recipes
 
 ### 1. Extract All Subscribed Channel Titles & IDs

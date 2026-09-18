@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use eframe::egui;
+use std::sync::{Arc, Mutex};
 use youtube_client_lib::Playlist;
 
 use crate::types::{AppState, PendingAction};
@@ -21,14 +21,33 @@ pub fn render_playlists_view(
 
     // Create New Playlist Form
     ui.group(|ui| {
-        ui.label(egui::RichText::new("➕ Create New Playlist").strong().size(14.0));
+        ui.label(
+            egui::RichText::new("➕ Create New Playlist")
+                .strong()
+                .size(14.0),
+        );
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label("Title:");
-            ui.add(egui::TextEdit::singleline(title_input).hint_text("Playlist title...").desired_width(180.0));
+            ui.add(
+                egui::TextEdit::singleline(title_input)
+                    .hint_text("Playlist title...")
+                    .desired_width(180.0),
+            );
             ui.label("Description (opt):");
-            ui.add(egui::TextEdit::singleline(desc_input).hint_text("Optional description...").desired_width(200.0));
-            if ui.button(egui::RichText::new("Create").strong().color(egui::Color32::from_rgb(100, 220, 100))).clicked() {
+            ui.add(
+                egui::TextEdit::singleline(desc_input)
+                    .hint_text("Optional description...")
+                    .desired_width(200.0),
+            );
+            if ui
+                .button(
+                    egui::RichText::new("Create")
+                        .strong()
+                        .color(egui::Color32::from_rgb(100, 220, 100)),
+                )
+                .clicked()
+            {
                 let t = title_input.trim().to_string();
                 if !t.is_empty() {
                     let d = desc_input.trim().to_string();
@@ -56,7 +75,10 @@ pub fn render_playlists_view(
         Some(Err(err_msg)) => {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
-                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Failed to load playlists");
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 100, 100),
+                    "⚠️ Failed to load playlists",
+                );
                 ui.add_space(10.0);
                 ui.label(err_msg);
                 ui.add_space(20.0);
@@ -77,19 +99,33 @@ pub fn render_playlists_view(
                     .show(ui, |ui| {
                         for list in lists {
                             ui.push_id(&list.id, |ui| {
-                                let texture = get_or_fetch_thumbnail(state, http_client, ctx, &list.id, &list.thumbnail_url);
+                                let texture = get_or_fetch_thumbnail(
+                                    state,
+                                    http_client,
+                                    ctx,
+                                    &list.id,
+                                    &list.thumbnail_url,
+                                );
                                 let mut delete_clicked = false;
 
                                 let response = ui.group(|ui| {
                                     ui.horizontal(|ui| {
                                         if let Some(tex) = &texture {
-                                            ui.add(egui::Image::from_texture(tex).max_width(80.0).max_height(80.0));
+                                            ui.add(
+                                                egui::Image::from_texture(tex)
+                                                    .max_width(80.0)
+                                                    .max_height(80.0),
+                                            );
                                         } else {
                                             let (rect, _response) = ui.allocate_exact_size(
                                                 egui::vec2(80.0, 80.0),
                                                 egui::Sense::hover(),
                                             );
-                                            ui.painter().rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
+                                            ui.painter().rect_filled(
+                                                rect,
+                                                4.0,
+                                                egui::Color32::from_rgb(50, 53, 60),
+                                            );
                                             ui.painter().text(
                                                 rect.center(),
                                                 egui::Align2::CENTER_CENTER,
@@ -110,17 +146,28 @@ pub fn render_playlists_view(
                                             );
                                             ui.add_space(4.0);
                                             ui.label(
-                                                egui::RichText::new(format!("Videos: {}", list.video_count))
-                                                    .size(12.0)
-                                                    .color(egui::Color32::from_rgb(160, 160, 170)),
+                                                egui::RichText::new(format!(
+                                                    "Videos: {}",
+                                                    list.video_count
+                                                ))
+                                                .size(12.0)
+                                                .color(egui::Color32::from_rgb(160, 160, 170)),
                                             );
                                         });
 
-                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                            if ui.button(egui::RichText::new("🗑 Delete").color(egui::Color32::from_rgb(255, 100, 100))).clicked() {
-                                                delete_clicked = true;
-                                            }
-                                        });
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                if ui
+                                                    .button(egui::RichText::new("🗑 Delete").color(
+                                                        egui::Color32::from_rgb(255, 100, 100),
+                                                    ))
+                                                    .clicked()
+                                                {
+                                                    delete_clicked = true;
+                                                }
+                                            },
+                                        );
                                     });
                                 });
 
@@ -129,7 +176,11 @@ pub fn render_playlists_view(
                                         playlist_id: list.id.clone(),
                                     });
                                 } else {
-                                    let click_resp = ui.interact(response.response.rect, response.response.id, egui::Sense::click());
+                                    let click_resp = ui.interact(
+                                        response.response.rect,
+                                        response.response.id,
+                                        egui::Sense::click(),
+                                    );
                                     if click_resp.clicked() {
                                         action = Some(PendingAction::LoadPlaylistVideos {
                                             id: list.id.clone(),

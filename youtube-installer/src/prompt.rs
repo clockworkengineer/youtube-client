@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 pub fn prompt(message: &str, default: &str) -> String {
-    print!("{} [{}]: ", message, default);
+    print!("{message} [{default}]: ");
     let _ = io::stdout().flush();
     let mut input = String::new();
     if io::stdin().read_line(&mut input).is_ok() {
@@ -20,15 +20,15 @@ pub fn prompt(message: &str, default: &str) -> String {
 pub fn get_default_install_dir() -> PathBuf {
     if cfg!(target_os = "windows") {
         if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
-            PathBuf::from(local_appdata).join("Programs").join("youtube-client")
+            PathBuf::from(local_appdata)
+                .join("Programs")
+                .join("youtube-client")
         } else {
             PathBuf::from("C:\\Program Files\\youtube-client")
         }
+    } else if let Some(home) = std::env::var_os("HOME") {
+        PathBuf::from(home).join(".local").join("bin")
     } else {
-        if let Some(home) = std::env::var_os("HOME") {
-            PathBuf::from(home).join(".local").join("bin")
-        } else {
-            PathBuf::from("/usr/local/bin")
-        }
+        PathBuf::from("/usr/local/bin")
     }
 }

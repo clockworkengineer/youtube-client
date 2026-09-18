@@ -84,12 +84,9 @@ mod tests {
 
         std::fs::write(&cache_path, dummy_cache_content).unwrap();
 
-        let client = YoutubeClient::new_oauth(
-            "invalid_client_id",
-            "invalid_client_secret",
-            &cache_path,
-        )
-        .await;
+        let client =
+            YoutubeClient::new_oauth("invalid_client_id", "invalid_client_secret", &cache_path)
+                .await;
 
         let _ = std::fs::remove_file(&cache_path);
         assert!(client.is_err());
@@ -143,8 +140,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_api_call_non_retryable() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         let counter = Arc::new(AtomicUsize::new(0));
 
@@ -185,8 +182,12 @@ mod tests {
     #[test]
     fn test_default_credentials_and_resolution() {
         assert!(has_default_credentials());
-        let (def_id, def_sec) = get_default_credentials().expect("default credentials should be present");
-        assert_eq!(def_id, "474926444117-b6osuhgvik71cgqp2o928atth9d80mgj.apps.googleusercontent.com");
+        let (def_id, def_sec) =
+            get_default_credentials().expect("default credentials should be present");
+        assert_eq!(
+            def_id,
+            "474926444117-b6osuhgvik71cgqp2o928atth9d80mgj.apps.googleusercontent.com"
+        );
         assert_eq!(def_sec.len(), 35);
         assert!(def_sec.starts_with("GOCSPX-"));
 
@@ -215,7 +216,10 @@ mod tests {
 
     #[test]
     fn test_inspect_scopes() {
-        assert_eq!(google_youtube3::api::Scope::Readonly.as_ref(), "https://www.googleapis.com/auth/youtube.readonly");
+        assert_eq!(
+            google_youtube3::api::Scope::Readonly.as_ref(),
+            "https://www.googleapis.com/auth/youtube.readonly"
+        );
     }
 
     #[test]
@@ -264,4 +268,3 @@ mod tests {
         );
     }
 }
-

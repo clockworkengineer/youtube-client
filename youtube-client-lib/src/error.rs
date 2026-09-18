@@ -11,7 +11,7 @@ pub enum YoutubeError {
     Auth(#[from] yup_oauth2::Error),
 
     #[error("API request failed: {0}")]
-    Api(#[from] google_youtube3::Error),
+    Api(Box<google_youtube3::Error>),
 
     #[error("API Quota exceeded. Please check your Google Developer Console quota limits: {0}")]
     QuotaExceeded(String),
@@ -37,3 +37,9 @@ pub enum YoutubeError {
 
 /// Convenience result alias using [`YoutubeError`].
 pub type Result<T> = std::result::Result<T, YoutubeError>;
+
+impl From<google_youtube3::Error> for YoutubeError {
+    fn from(err: google_youtube3::Error) -> Self {
+        YoutubeError::Api(Box::new(err))
+    }
+}

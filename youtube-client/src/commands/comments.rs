@@ -16,11 +16,15 @@ pub async fn execute_comments(
     }
 
     if comments.is_empty() {
-        println!("No comments found for video {}.", video_id);
+        println!("No comments found for video {video_id}.");
         return Ok(());
     }
 
-    println!("Comments for video {} ({} comments):", video_id, comments.len());
+    println!(
+        "Comments for video {} ({} comments):",
+        video_id,
+        comments.len()
+    );
     print_table(
         &["Author", "Comment", "Likes", "Published At"],
         &[20, 50, 8, 12],
@@ -44,8 +48,11 @@ pub async fn execute_comment_post(
     text: String,
 ) -> anyhow::Result<()> {
     let client = ctx.get_client().await?;
-    println!("Posting comment to video {}...", video_id);
+    println!("Posting comment to video {video_id}...");
     let comment = client.post_comment(&video_id, &text).await?;
-    println!("✓ Successfully posted comment as {}: \"{}\"", comment.author_name, comment.text_display);
+    println!(
+        "✓ Successfully posted comment as {}: \"{}\"",
+        comment.author_name, comment.text_display
+    );
     Ok(())
 }

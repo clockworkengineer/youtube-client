@@ -1,11 +1,11 @@
 //! # Fluent Builder for [`YoutubeClient`]
 
-use std::path::{Path, PathBuf};
 use crate::auth::delegate::OpenBrowserFlowDelegate;
-use crate::client::{YoutubeClient, YOUTUBE_SCOPES};
+use crate::client::{YOUTUBE_SCOPES, YoutubeClient};
 use crate::error::Result;
-use yup_oauth2::authenticator_delegate::InstalledFlowDelegate;
+use std::path::{Path, PathBuf};
 use yup_oauth2::InstalledFlowReturnMethod;
+use yup_oauth2::authenticator_delegate::InstalledFlowDelegate;
 
 /// A fluent builder for configuring and constructing a [`YoutubeClient`].
 pub struct YoutubeClientBuilder {
@@ -39,7 +39,11 @@ impl YoutubeClientBuilder {
     }
 
     /// Set the Google OAuth2 Client ID and Client Secret.
-    pub fn with_credentials(mut self, client_id: impl Into<String>, client_secret: impl Into<String>) -> Self {
+    pub fn with_credentials(
+        mut self,
+        client_id: impl Into<String>,
+        client_secret: impl Into<String>,
+    ) -> Self {
         self.client_id = Some(client_id.into());
         self.client_secret = Some(client_secret.into());
         self
@@ -92,7 +96,9 @@ impl YoutubeClientBuilder {
             self.token_cache_path
         };
 
-        let delegate = self.flow_delegate.unwrap_or_else(|| Box::new(OpenBrowserFlowDelegate));
+        let delegate = self
+            .flow_delegate
+            .unwrap_or_else(|| Box::new(OpenBrowserFlowDelegate));
 
         YoutubeClient::construct_with_params(
             &client_id,

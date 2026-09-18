@@ -1,7 +1,7 @@
+use eframe::egui;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
-use eframe::egui;
 use youtube_client_lib::utils::DownloadStatus;
 use youtube_client_lib::{Comment, Playlist, Subscription, Video, VideoDetails};
 
@@ -83,15 +83,22 @@ pub struct AppState {
     pub playlist_action_status: Option<Result<String, String>>,
     pub downloads_dir: PathBuf,
     pub log_file: PathBuf,
+    pub toast: Option<(String, std::time::Instant, bool)>,
 }
 
 /// Helper function to safely lock AppState with poison recovery.
 pub fn lock_state(state: &Arc<Mutex<AppState>>) -> MutexGuard<'_, AppState> {
-    state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl AppState {
     pub const MAX_THUMBNAILS: usize = 150;
+
+    pub fn set_toast(&mut self, message: impl Into<String>, is_error: bool) {
+        self.toast = Some((message.into(), std::time::Instant::now(), is_error));
+    }
 
     pub fn insert_thumbnail(&mut self, key: String, thumbnail: Thumbnail) {
         if !self.thumbnails.contains_key(&key) {
@@ -128,35 +135,91 @@ impl AppState {
 pub enum PendingAction {
     None,
     SpawnDefaultLogin,
-    SpawnLogin { id: String, secret: String },
+    SpawnLogin {
+        id: String,
+        secret: String,
+    },
     RetrySubscriptions,
     GoToSubscriptions,
     GoToNewVideos,
     LoadNewVideos,
     ClearAllNewVideos,
-    DismissNewVideo { video_id: String },
+    DismissNewVideo {
+        video_id: String,
+    },
     ResetClearedVideos,
-    LoadChannel { id: String, title: String, description: String },
+    LoadChannel {
+        id: String,
+        title: String,
+        description: String,
+    },
     GoBack,
-    RetryVideos { id: String, title: String, description: String },
-    SpawnDownload { video: Video, is_audio: bool },
-    PlayLocal { path: PathBuf, title: String },
-    StreamVideo { video_id: String },
-    OpenInBrowser { url: String },
-    Search { query: String },
-    RetrySearch { query: String },
+    RetryVideos {
+        id: String,
+        title: String,
+        description: String,
+    },
+    SpawnDownload {
+        video: Video,
+        is_audio: bool,
+    },
+    PlayLocal {
+        path: PathBuf,
+        title: String,
+    },
+    StreamVideo {
+        video_id: String,
+    },
+    OpenInBrowser {
+        url: String,
+    },
+    Search {
+        query: String,
+    },
+    RetrySearch {
+        query: String,
+    },
     LoadPlaylists,
-    LoadPlaylistVideos { id: String, title: String },
+    LoadPlaylistVideos {
+        id: String,
+        title: String,
+    },
     RetryPlaylists,
-    RetryPlaylistVideos { id: String, title: String },
-    LoadVideoDetails { video: Video },
-    RetryVideoDetails { video: Video },
-    Subscribe { channel_id: String },
-    Unsubscribe { subscription_id: String },
-    RateVideo { video_id: String, rating: String },
-    AddToPlaylist { playlist_id: String, playlist_title: String, video_id: String },
-    PostComment { video_id: String, text: String },
-    CreatePlaylist { title: String, description: Option<String> },
-    DeletePlaylist { playlist_id: String },
+    RetryPlaylistVideos {
+        id: String,
+        title: String,
+    },
+    LoadVideoDetails {
+        video: Video,
+    },
+    RetryVideoDetails {
+        video: Video,
+    },
+    Subscribe {
+        channel_id: String,
+    },
+    Unsubscribe {
+        subscription_id: String,
+    },
+    RateVideo {
+        video_id: String,
+        rating: String,
+    },
+    AddToPlaylist {
+        playlist_id: String,
+        playlist_title: String,
+        video_id: String,
+    },
+    PostComment {
+        video_id: String,
+        text: String,
+    },
+    CreatePlaylist {
+        title: String,
+        description: Option<String>,
+    },
+    DeletePlaylist {
+        playlist_id: String,
+    },
     GoToAbout,
 }

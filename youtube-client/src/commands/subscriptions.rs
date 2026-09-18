@@ -47,12 +47,12 @@ pub async fn execute_subscriptions(
         return Ok(());
     }
 
-    println!("Subscriptions (limit: {}):", limit);
+    println!("Subscriptions (limit: {limit}):");
     print_subscriptions_table(&page.items);
 
     if let Some(next) = &page.next_page_token {
-        println!("\nNext page token: {}", next);
-        println!("Fetch next page with: --page-token {}", next);
+        println!("\nNext page token: {next}");
+        println!("Fetch next page with: --page-token {next}");
     }
 
     Ok(())

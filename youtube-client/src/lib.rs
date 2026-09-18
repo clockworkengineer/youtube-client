@@ -2,7 +2,7 @@
 //!
 //! Provides CLI definition, subcommands, and execution dispatcher for `youtube-client`.
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 pub mod commands;
@@ -248,6 +248,13 @@ pub enum Commands {
         #[arg(short, long)]
         playlist_id: String,
     },
+
+    /// Generate shell auto-completion scripts
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -280,41 +287,55 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     };
 
     match cli.command {
+        Commands::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "youtube-client", &mut std::io::stdout());
+            Ok(())
+        }
         Commands::Login => execute_login(&ctx).await,
-        Commands::Subscriptions { limit, page_token, all, json } => {
-            execute_subscriptions(&ctx, limit, page_token, all, json).await
-        }
-        Commands::Videos { channel_id, limit, page_token, json } => {
-            execute_videos(&ctx, channel_id, limit, page_token, json).await
-        }
-        Commands::Search { query, limit, page_token, json } => {
-            execute_search(&ctx, query, limit, page_token, json).await
-        }
-        Commands::Rate { video_id, rating } => {
-            execute_rate(&ctx, video_id, rating.into()).await
-        }
-        Commands::Playlists { limit, playlist_id, json } => {
-            execute_playlists(&ctx, limit, playlist_id, json).await
-        }
-        Commands::Download { video_id, output, format, quality, additional_args } => {
-            execute_download(&ctx, video_id, output, format, quality, additional_args).await
-        }
+        Commands::Subscriptions {
+            limit,
+            page_token,
+            all,
+            json,
+        } => execute_subscriptions(&ctx, limit, page_token, all, json).await,
+        Commands::Videos {
+            channel_id,
+            limit,
+            page_token,
+            json,
+        } => execute_videos(&ctx, channel_id, limit, page_token, json).await,
+        Commands::Search {
+            query,
+            limit,
+            page_token,
+            json,
+        } => execute_search(&ctx, query, limit, page_token, json).await,
+        Commands::Rate { video_id, rating } => execute_rate(&ctx, video_id, rating.into()).await,
+        Commands::Playlists {
+            limit,
+            playlist_id,
+            json,
+        } => execute_playlists(&ctx, limit, playlist_id, json).await,
+        Commands::Download {
+            video_id,
+            output,
+            format,
+            quality,
+            additional_args,
+        } => execute_download(&ctx, video_id, output, format, quality, additional_args).await,
         Commands::Play { file, system } => execute_play(file, system).await,
-        Commands::Details { video_id, json } => {
-            execute_details(&ctx, video_id, json).await
-        }
-        Commands::Channel { channel_id, json } => {
-            execute_channel(&ctx, channel_id, json).await
-        }
-        Commands::Comments { video_id, limit, json } => {
-            execute_comments(&ctx, video_id, limit, json).await
-        }
+        Commands::Details { video_id, json } => execute_details(&ctx, video_id, json).await,
+        Commands::Channel { channel_id, json } => execute_channel(&ctx, channel_id, json).await,
+        Commands::Comments {
+            video_id,
+            limit,
+            json,
+        } => execute_comments(&ctx, video_id, limit, json).await,
         Commands::CommentPost { video_id, text } => {
             execute_comment_post(&ctx, video_id, text).await
         }
-        Commands::Subscribe { channel_id } => {
-            execute_subscribe(&ctx, channel_id).await
-        }
+        Commands::Subscribe { channel_id } => execute_subscribe(&ctx, channel_id).await,
         Commands::Unsubscribe { subscription_id } => {
             execute_unsubscribe(&ctx, subscription_id).await
         }

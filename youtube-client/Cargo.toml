@@ -16,5 +16,6 @@ open.workspace = true
 rodio.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+clap_complete.workspace = true
 
 

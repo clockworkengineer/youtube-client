@@ -27,8 +27,8 @@ pub use subscriptions_view::*;
 pub use traits::*;
 
 use eframe::egui;
-use youtube_client_lib::utils::DownloadStatus;
 use youtube_client_lib::Video;
+use youtube_client_lib::utils::DownloadStatus;
 
 use crate::actions::fetch_thumbnail;
 use crate::types::{AppState, PendingAction, PlayerCommand, Thumbnail};
@@ -45,11 +45,16 @@ pub fn draw_video_card_with_dismiss(
     can_dismiss: bool,
 ) {
     ui.push_id(&video.id, |ui| {
-        let texture = get_or_fetch_thumbnail(state, http_client, ctx, &video.id, &video.thumbnail_url);
+        let texture =
+            get_or_fetch_thumbnail(state, http_client, ctx, &video.id, &video.thumbnail_url);
         let (download_status, player_state) = {
             let s_lock = state.lock().unwrap();
             (
-                s_lock.downloads.get(&video.id).cloned().unwrap_or(DownloadStatus::NotStarted),
+                s_lock
+                    .downloads
+                    .get(&video.id)
+                    .cloned()
+                    .unwrap_or(DownloadStatus::NotStarted),
                 s_lock.player_state.clone(),
             )
         };
@@ -59,13 +64,16 @@ pub fn draw_video_card_with_dismiss(
             ui.horizontal(|ui| {
                 let left_response = ui.horizontal(|ui| {
                     if let Some(tex) = &texture {
-                        ui.add(egui::Image::from_texture(tex).max_width(100.0).max_height(100.0));
-                    } else {
-                        let (rect, _response) = ui.allocate_exact_size(
-                            egui::vec2(100.0, 100.0),
-                            egui::Sense::hover(),
+                        ui.add(
+                            egui::Image::from_texture(tex)
+                                .max_width(100.0)
+                                .max_height(100.0),
                         );
-                        ui.painter().rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
+                    } else {
+                        let (rect, _response) =
+                            ui.allocate_exact_size(egui::vec2(100.0, 100.0), egui::Sense::hover());
+                        ui.painter()
+                            .rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
                         ui.painter().text(
                             rect.center(),
                             egui::Align2::CENTER_CENTER,
@@ -92,7 +100,7 @@ pub fn draw_video_card_with_dismiss(
                                 &video.published_at
                             };
                             ui.label(
-                                egui::RichText::new(format!("Published: {}", date))
+                                egui::RichText::new(format!("Published: {date}"))
                                     .size(11.0)
                                     .color(egui::Color32::from_rgb(140, 140, 150)),
                             );
@@ -119,15 +127,23 @@ pub fn draw_video_card_with_dismiss(
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if can_dismiss {
-                        if ui.button("❌ Clear").on_hover_text("Remove from New Videos feed").clicked() {
-                            *action = PendingAction::DismissNewVideo { video_id: video.id.clone() };
-                        }
+                    if can_dismiss
+                        && ui
+                            .button("❌ Clear")
+                            .on_hover_text("Remove from New Videos feed")
+                            .clicked()
+                    {
+                        *action = PendingAction::DismissNewVideo {
+                            video_id: video.id.clone(),
+                        };
                     }
                     match &download_status {
                         DownloadStatus::NotStarted => {
                             if ui.button("📥 Download Video").clicked() {
-                                *action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
+                                *action = PendingAction::SpawnDownload {
+                                    video: video.clone(),
+                                    is_audio: false,
+                                };
                             }
                         }
                         DownloadStatus::Downloading { progress } => {
@@ -139,34 +155,50 @@ pub fn draw_video_card_with_dismiss(
                                 DownloadStatus::Finished(path) => Some(path),
                                 _ => None,
                             };
-                            let is_mp3 = path_opt.map(|p| p.extension().map(|ext| ext == "mp3").unwrap_or(false)).unwrap_or(false);
+                            let is_mp3 = path_opt
+                                .map(|p| p.extension().map(|ext| ext == "mp3").unwrap_or(false))
+                                .unwrap_or(false);
 
                             if is_mp3 {
-                                let is_playing = player_state.playing && player_state.current_title == video.title;
+                                let is_playing = player_state.playing
+                                    && player_state.current_title == video.title;
                                 if is_playing {
-                                    if ui.button(egui::RichText::new("⏹ Stop").color(egui::Color32::from_rgb(255, 100, 100)).strong()).clicked() {
+                                    if ui
+                                        .button(
+                                            egui::RichText::new("⏹ Stop")
+                                                .color(egui::Color32::from_rgb(255, 100, 100))
+                                                .strong(),
+                                        )
+                                        .clicked()
+                                    {
                                         let _ = audio_tx.send(PlayerCommand::Stop);
                                     }
-                                } else {
-                                    if ui.button("▶ Play Local").clicked() {
-                                        if let Some(path) = path_opt {
-                                            *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
-                                        }
+                                } else if ui.button("▶ Play Local").clicked() {
+                                    if let Some(path) = path_opt {
+                                        *action = PendingAction::PlayLocal {
+                                            path: path.clone(),
+                                            title: video.title.clone(),
+                                        };
                                     }
                                 }
-                            } else {
-                                if ui.button("▶ Play Local Video").clicked() {
-                                    if let Some(path) = path_opt {
-                                        *action = PendingAction::PlayLocal { path: path.clone(), title: video.title.clone() };
-                                    }
+                            } else if ui.button("▶ Play Local Video").clicked() {
+                                if let Some(path) = path_opt {
+                                    *action = PendingAction::PlayLocal {
+                                        path: path.clone(),
+                                        title: video.title.clone(),
+                                    };
                                 }
                             }
                         }
                         DownloadStatus::Failed(err) => {
                             if ui.button("❌ Retry").clicked() {
-                                *action = PendingAction::SpawnDownload { video: video.clone(), is_audio: false };
+                                *action = PendingAction::SpawnDownload {
+                                    video: video.clone(),
+                                    is_audio: false,
+                                };
                             }
-                            ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED)).on_hover_text(err);
+                            ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED))
+                                .on_hover_text(err);
                         }
                     }
                 });
@@ -174,7 +206,9 @@ pub fn draw_video_card_with_dismiss(
         });
 
         if card_clicked && matches!(action, PendingAction::None) {
-            *action = PendingAction::LoadVideoDetails { video: video.clone() };
+            *action = PendingAction::LoadVideoDetails {
+                video: video.clone(),
+            };
         }
     });
 }

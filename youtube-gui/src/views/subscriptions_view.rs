@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use eframe::egui;
+use std::sync::{Arc, Mutex};
 use youtube_client_lib::Subscription;
 
 use crate::types::{AppState, PendingAction};
@@ -35,7 +35,11 @@ pub fn render_subscriptions_view(
     ui.add_space(5.0);
     ui.horizontal(|ui| {
         ui.label("🔎 Filter Subscriptions:");
-        ui.add(egui::TextEdit::singleline(filter_input).hint_text("Search subscribed channels...").desired_width(250.0));
+        ui.add(
+            egui::TextEdit::singleline(filter_input)
+                .hint_text("Search subscribed channels...")
+                .desired_width(250.0),
+        );
         if !filter_input.is_empty() && ui.button("❌ Clear").clicked() {
             filter_input.clear();
         }
@@ -54,7 +58,10 @@ pub fn render_subscriptions_view(
         Some(Err(err_msg)) => {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
-                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Error Encountered");
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 100, 100),
+                    "⚠️ Error Encountered",
+                );
                 ui.add_space(10.0);
                 ui.label(err_msg);
                 ui.add_space(20.0);
@@ -69,7 +76,10 @@ pub fn render_subscriptions_view(
                 subs.iter().collect()
             } else {
                 subs.iter()
-                    .filter(|s| s.title.to_lowercase().contains(&filter) || s.channel_id.to_lowercase().contains(&filter))
+                    .filter(|s| {
+                        s.title.to_lowercase().contains(&filter)
+                            || s.channel_id.to_lowercase().contains(&filter)
+                    })
                     .collect()
             };
 
@@ -81,7 +91,7 @@ pub fn render_subscriptions_view(
             } else if filtered_subs.is_empty() {
                 ui.vertical_centered(|ui| {
                     ui.add_space(50.0);
-                    ui.label(format!("No subscriptions matching \"{}\"", filter_input));
+                    ui.label(format!("No subscriptions matching \"{filter_input}\""));
                 });
             } else {
                 egui::ScrollArea::vertical()
@@ -89,12 +99,22 @@ pub fn render_subscriptions_view(
                     .show(ui, |ui| {
                         for sub in filtered_subs {
                             ui.push_id(&sub.channel_id, |ui| {
-                                let texture = get_or_fetch_thumbnail(state, http_client, ctx, &sub.channel_id, &sub.thumbnail_url);
+                                let texture = get_or_fetch_thumbnail(
+                                    state,
+                                    http_client,
+                                    ctx,
+                                    &sub.channel_id,
+                                    &sub.thumbnail_url,
+                                );
 
                                 let response = ui.group(|ui| {
                                     ui.horizontal(|ui| {
                                         if let Some(tex) = &texture {
-                                            ui.add(egui::Image::from_texture(tex).max_width(50.0).max_height(50.0));
+                                            ui.add(
+                                                egui::Image::from_texture(tex)
+                                                    .max_width(50.0)
+                                                    .max_height(50.0),
+                                            );
                                         } else {
                                             let (rect, _response) = ui.allocate_exact_size(
                                                 egui::vec2(50.0, 50.0),
@@ -125,15 +145,22 @@ pub fn render_subscriptions_view(
                                             );
                                             ui.add_space(2.0);
                                             ui.label(
-                                                egui::RichText::new(format!("Channel ID: {}", sub.channel_id))
-                                                    .size(12.0)
-                                                    .color(egui::Color32::from_rgb(160, 160, 170)),
+                                                egui::RichText::new(format!(
+                                                    "Channel ID: {}",
+                                                    sub.channel_id
+                                                ))
+                                                .size(12.0)
+                                                .color(egui::Color32::from_rgb(160, 160, 170)),
                                             );
                                         });
                                     });
                                 });
 
-                                let response = ui.interact(response.response.rect, response.response.id, egui::Sense::click());
+                                let response = ui.interact(
+                                    response.response.rect,
+                                    response.response.id,
+                                    egui::Sense::click(),
+                                );
                                 if response.clicked() {
                                     action = Some(PendingAction::LoadChannel {
                                         id: sub.channel_id.clone(),

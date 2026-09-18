@@ -1,5 +1,5 @@
-use crate::models::{Video, VideoDetails};
 use crate::Result;
+use crate::models::{Video, VideoDetails};
 
 pub trait VideoService: Send + Sync {
     async fn list_videos(&self, channel_id: &str, max_results: u32) -> Result<Vec<Video>>;

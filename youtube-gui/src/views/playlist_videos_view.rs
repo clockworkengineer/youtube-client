@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex, mpsc::Sender};
 use eframe::egui;
+use std::sync::{Arc, Mutex, mpsc::Sender};
 use youtube_client_lib::Video;
 
 use crate::types::{AppState, PendingAction, PlayerCommand};
@@ -21,7 +21,7 @@ pub fn render_playlist_videos_view(
         if ui.button("⬅ Back to Playlists").clicked() {
             action = Some(PendingAction::LoadPlaylists);
         }
-        ui.heading(format!("📂 Playlist: {}", playlist_title));
+        ui.heading(format!("📂 Playlist: {playlist_title}"));
     });
     ui.add_space(10.0);
 
@@ -36,7 +36,10 @@ pub fn render_playlist_videos_view(
         Some(Err(err_msg)) => {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
-                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Failed to load playlist videos");
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 100, 100),
+                    "⚠️ Failed to load playlist videos",
+                );
                 ui.add_space(10.0);
                 ui.label(err_msg);
                 ui.add_space(20.0);
@@ -60,7 +63,15 @@ pub fn render_playlist_videos_view(
                     .show(ui, |ui| {
                         for video in vids {
                             let mut card_action = PendingAction::None;
-                            draw_video_card(state, http_client, audio_tx, ui, ctx, video, &mut card_action);
+                            draw_video_card(
+                                state,
+                                http_client,
+                                audio_tx,
+                                ui,
+                                ctx,
+                                video,
+                                &mut card_action,
+                            );
                             if !matches!(card_action, PendingAction::None) {
                                 action = Some(card_action);
                             }

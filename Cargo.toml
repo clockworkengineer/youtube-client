@@ -7,9 +7,19 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+authors = ["Rob Tizzard"]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/clockworkengineer/youtube-client"
+homepage = "https://github.com/clockworkengineer/youtube-client"
+readme = "README.md"
+rust-version = "1.85"
+
 [workspace.dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.4", features = ["derive", "env"] }
+clap_complete = "4.5"
 eframe = "0.26.2"
 egui = "0.26.2"
 google-youtube3 = "7.0.0"
@@ -25,6 +35,10 @@ yup-oauth2 = "12.1.2"
 rand = "0.8"
 http-body-util = "0.1"
 youtube-client-lib = { path = "./youtube-client-lib", version = "0.1.2", default-features = false }
+
+[workspace.lints.clippy]
+collapsible_else_if = "warn"
+uninlined_format_args = "warn"
 
 [profile.release]
 opt-level = "s"

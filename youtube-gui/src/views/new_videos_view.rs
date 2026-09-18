@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex, mpsc::Sender};
 use eframe::egui;
+use std::sync::{Arc, Mutex, mpsc::Sender};
 use youtube_client_lib::Video;
 
 use crate::types::{AppState, PendingAction, PlayerCommand};
@@ -28,12 +28,17 @@ pub fn render_new_videos_view(
             action = Some(PendingAction::LoadNewVideos);
         }
         ui.add_space(10.0);
-        if ui.button("🗑️ Clear All").on_hover_text("Clear all videos from New Videos feed").clicked() {
+        if ui
+            .button("🗑️ Clear All")
+            .on_hover_text("Clear all videos from New Videos feed")
+            .clicked()
+        {
             action = Some(PendingAction::ClearAllNewVideos);
         }
         if cleared_video_count > 0 {
             ui.add_space(10.0);
-            if ui.button(format!("↺ Reset Cleared ({})", cleared_video_count))
+            if ui
+                .button(format!("↺ Reset Cleared ({cleared_video_count})"))
                 .on_hover_text("Restore all cleared/dismissed videos")
                 .clicked()
             {
@@ -57,7 +62,10 @@ pub fn render_new_videos_view(
         Some(Err(err_msg)) => {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
-                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Failed to load new videos");
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 100, 100),
+                    "⚠️ Failed to load new videos",
+                );
                 ui.add_space(10.0);
                 ui.label(err_msg);
                 ui.add_space(20.0);
@@ -78,7 +86,16 @@ pub fn render_new_videos_view(
                     .show(ui, |ui| {
                         for video in vids {
                             let mut card_action = PendingAction::None;
-                            draw_video_card_with_dismiss(state, http_client, audio_tx, ui, ctx, video, &mut card_action, true);
+                            draw_video_card_with_dismiss(
+                                state,
+                                http_client,
+                                audio_tx,
+                                ui,
+                                ctx,
+                                video,
+                                &mut card_action,
+                                true,
+                            );
                             if !matches!(card_action, PendingAction::None) {
                                 action = Some(card_action);
                             }

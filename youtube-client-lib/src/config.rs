@@ -22,6 +22,8 @@ pub struct Config {
     pub cookies_file: Option<String>,
     /// Browser name to extract cookies from (e.g. "chrome", "firefox", "edge", "brave")
     pub cookies_from_browser: Option<String>,
+    /// Persistent audio volume level (0.0 to 1.0)
+    pub volume: Option<f32>,
 }
 
 /// Resolve the path for the client log file.
@@ -99,8 +101,11 @@ impl Config {
         let invalid_id = |id: &str| id.is_empty() || id == "ENTER_YOUR_CLIENT_ID_HERE";
         let invalid_secret = |sec: &str| sec.is_empty() || sec == "ENTER_YOUR_CLIENT_SECRET_HERE";
 
-        self.client_id.as_deref().map_or(false, |id| !invalid_id(id))
-            && self.client_secret.as_deref().map_or(false, |sec| !invalid_secret(sec))
+        self.client_id.as_deref().is_some_and(|id| !invalid_id(id))
+            && self
+                .client_secret
+                .as_deref()
+                .is_some_and(|sec| !invalid_secret(sec))
     }
 
     /// Check whether client credentials are valid either directly or via built-in default credentials.
@@ -119,7 +124,8 @@ pub const DEFAULT_CLIENT_ID: Option<&str> = match option_env!("DEFAULT_GOOGLE_CL
 pub const DEFAULT_CLIENT_SECRET: Option<&str> = match option_env!("DEFAULT_GOOGLE_CLIENT_SECRET") {
     Some(val) => Some(val),
     None => match std::str::from_utf8(&[
-        71, 79, 67, 83, 80, 88, 45, 113, 79, 86, 121, 85, 120, 107, 89, 115, 115, 86, 54, 75, 73, 74, 88, 121, 81, 87, 53, 70, 82, 98, 102, 90, 103, 50, 80
+        71, 79, 67, 83, 80, 88, 45, 113, 79, 86, 121, 85, 120, 107, 89, 115, 115, 86, 54, 75, 73,
+        74, 88, 121, 81, 87, 53, 70, 82, 98, 102, 90, 103, 50, 80,
     ]) {
         Ok(s) => Some(s),
         Err(_) => None,
@@ -157,7 +163,8 @@ To get Google API Client credentials:\n\
 
 pub fn get_global_config_dir() -> Option<std::path::PathBuf> {
     if cfg!(target_os = "windows") {
-        std::env::var_os("APPDATA").map(|appdata| std::path::PathBuf::from(appdata).join("youtube-client"))
+        std::env::var_os("APPDATA")
+            .map(|appdata| std::path::PathBuf::from(appdata).join("youtube-client"))
     } else if cfg!(target_os = "macos") {
         std::env::var_os("HOME").map(|home| {
             std::path::PathBuf::from(home)
@@ -170,7 +177,11 @@ pub fn get_global_config_dir() -> Option<std::path::PathBuf> {
         if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
             Some(std::path::PathBuf::from(xdg).join("youtube-client"))
         } else {
-            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config").join("youtube-client"))
+            std::env::var_os("HOME").map(|home| {
+                std::path::PathBuf::from(home)
+                    .join(".config")
+                    .join("youtube-client")
+            })
         }
     }
 }
@@ -195,7 +206,7 @@ pub fn resolve_token_cache_path() -> std::path::PathBuf {
 pub fn load_config() -> Config {
     let local = load_config_from_dir(Path::new("."));
     let mut merged = local.clone();
-    
+
     if !local.is_valid() {
         if let Some(global_dir) = get_global_config_dir() {
             let global = load_config_from_dir(&global_dir);
@@ -275,10 +286,8 @@ pub fn resolve_credentials(
     }
 
     let is_empty_or_placeholder = |val: Option<&String>| {
-        val.map_or(true, |s| {
-            s.is_empty()
-                || s == "ENTER_YOUR_CLIENT_ID_HERE"
-                || s == "ENTER_YOUR_CLIENT_SECRET_HERE"
+        val.is_none_or(|s| {
+            s.is_empty() || s == "ENTER_YOUR_CLIENT_ID_HERE" || s == "ENTER_YOUR_CLIENT_SECRET_HERE"
         })
     };
 
@@ -299,14 +308,17 @@ pub fn resolve_credentials(
         log_file: None,
         cookies_file: None,
         cookies_from_browser: None,
+        volume: None,
     };
 
     if temp_config.is_valid() {
-        Ok((temp_config.client_id.unwrap(), temp_config.client_secret.unwrap()))
+        Ok((
+            temp_config.client_id.unwrap(),
+            temp_config.client_secret.unwrap(),
+        ))
     } else {
         Err(crate::YoutubeError::Credentials(format!(
-            "Google Client ID and Client Secret must be provided!\n\n{}",
-            GOOGLE_SETUP_INSTRUCTIONS
+            "Google Client ID and Client Secret must be provided!\n\n{GOOGLE_SETUP_INSTRUCTIONS}"
         )))
     }
 }
@@ -318,7 +330,7 @@ pub fn check_token_cache_scopes(token_cache_path: &Path, required_scopes: &[&str
                 if let Some(arr) = scopes.as_array() {
                     for scope in arr {
                         if let Some(scope_str) = scope.as_str() {
-                            if required_scopes.iter().any(|&s| s == scope_str) {
+                            if required_scopes.contains(&scope_str) {
                                 return true;
                             }
                         }

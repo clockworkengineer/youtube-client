@@ -1,16 +1,24 @@
 //! Tests for shared utility functions
 
-use youtube_client_lib::utils::{extract_video_id_from_path, sanitize_filename, scan_downloads_dir, DownloadStatus};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use youtube_client_lib::utils::{
+    DownloadStatus, extract_video_id_from_path, sanitize_filename, scan_downloads_dir,
+};
 
 #[test]
 fn test_extract_video_id_from_path() {
     let path = PathBuf::from("/tmp/abcdefghijk.mp4");
-    assert_eq!(extract_video_id_from_path(&path), Some("abcdefghijk".to_string()));
+    assert_eq!(
+        extract_video_id_from_path(&path),
+        Some("abcdefghijk".to_string())
+    );
 
     let path2 = PathBuf::from("/tmp/video_[abcdefghijk].mp4");
-    assert_eq!(extract_video_id_from_path(&path2), Some("abcdefghijk".to_string()));
+    assert_eq!(
+        extract_video_id_from_path(&path2),
+        Some("abcdefghijk".to_string())
+    );
 
     let bad = PathBuf::from("/tmp/notvideo.txt");
     assert_eq!(extract_video_id_from_path(&bad), None);
@@ -18,7 +26,10 @@ fn test_extract_video_id_from_path() {
 
 #[test]
 fn test_sanitize_filename() {
-    assert_eq!(sanitize_filename("Hello/World?"), "Hello_World_".to_string());
+    assert_eq!(
+        sanitize_filename("Hello/World?"),
+        "Hello_World_".to_string()
+    );
     assert_eq!(sanitize_filename("dots... "), "dots".to_string());
     let long = "A".repeat(100);
     let sanitized = sanitize_filename(&long);
@@ -51,9 +62,9 @@ fn test_get_download_path() {
 
 #[test]
 fn test_string_set_persistence() {
-    use youtube_client_lib::utils::{load_string_set_from_file, save_string_set_to_file};
-    use tempfile::tempdir;
     use std::collections::HashSet;
+    use tempfile::tempdir;
+    use youtube_client_lib::utils::{load_string_set_from_file, save_string_set_to_file};
 
     let tmp = tempdir().unwrap();
     let file_path = tmp.path().join("test_set.json");
@@ -66,4 +77,3 @@ fn test_string_set_persistence() {
     let loaded = load_string_set_from_file(&file_path);
     assert_eq!(original, loaded);
 }
-

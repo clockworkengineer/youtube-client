@@ -4,8 +4,8 @@
 //! table printing, external player invocation, and media download status tracking.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 /// Represents the download state of a video.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,9 +36,8 @@ pub fn extract_video_id_from_path(path: &Path) -> Option<String> {
 
 /// Windows reserved device names that cannot be used as filenames or stems.
 const WINDOWS_RESERVED_NAMES: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL",
-    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Sanitize a filename for safe, cross-platform filesystem usage.
@@ -59,10 +58,10 @@ pub fn sanitize_filename(name: &str) -> String {
         .collect();
 
     // Trim trailing dots and spaces, which are invalid on Windows filesystems
-    let trimmed = sanitized.trim_end_matches(|c| c == ' ' || c == '.');
+    let trimmed = sanitized.trim_end_matches([' ', '.']);
 
     // Strip leading dashes and spaces to prevent argument injection in subprocesses
-    let no_leading = trimmed.trim_start_matches(|c| c == '-' || c == ' ');
+    let no_leading = trimmed.trim_start_matches(['-', ' ']);
 
     let effective_name = if no_leading.is_empty() {
         "unnamed"
@@ -72,10 +71,12 @@ pub fn sanitize_filename(name: &str) -> String {
 
     // Check Windows reserved names
     let stem = effective_name.split('.').next().unwrap_or(effective_name);
-    let is_reserved = WINDOWS_RESERVED_NAMES.iter().any(|&res| res.eq_ignore_ascii_case(stem));
+    let is_reserved = WINDOWS_RESERVED_NAMES
+        .iter()
+        .any(|&res| res.eq_ignore_ascii_case(stem));
 
     let mut result = if is_reserved {
-        format!("{}_", effective_name)
+        format!("{effective_name}_")
     } else {
         effective_name.to_string()
     };
@@ -83,7 +84,7 @@ pub fn sanitize_filename(name: &str) -> String {
     // Safely truncate to max 60 Unicode chars to avoid MAX_PATH restrictions
     if result.chars().count() > 60 {
         result = result.chars().take(60).collect();
-        result = result.trim_end_matches(|c| c == ' ' || c == '.').to_string();
+        result = result.trim_end_matches([' ', '.']).to_string();
     }
 
     if result.is_empty() {
@@ -180,7 +181,9 @@ pub fn get_download_path(
 /// Retrieve configured media player path from config if specified.
 pub fn get_configured_player_path() -> Option<String> {
     let config = crate::load_config();
-    config.player_path.filter(|s| !s.is_empty() && s != "ENTER_PATH_TO_MEDIA_PLAYER_HERE")
+    config
+        .player_path
+        .filter(|s| !s.is_empty() && s != "ENTER_PATH_TO_MEDIA_PLAYER_HERE")
 }
 
 /// Launch an external media player for a file or URL target with cross-platform fallbacks.
@@ -244,10 +247,15 @@ pub fn launch_external_player_with_log(
             cmd.arg("--no-terminal");
             if is_url {
                 if let Some(ref cf) = cookies_file {
-                    cmd.arg(format!("--ytdl-raw-options-append=cookies={}", cf.display()));
+                    cmd.arg(format!(
+                        "--ytdl-raw-options-append=cookies={}",
+                        cf.display()
+                    ));
                 }
                 if let Some(ref cb) = cookies_browser {
-                    cmd.arg(format!("--ytdl-raw-options-append=cookies-from-browser={}", cb));
+                    cmd.arg(format!(
+                        "--ytdl-raw-options-append=cookies-from-browser={cb}"
+                    ));
                 }
             }
         }
@@ -287,7 +295,7 @@ pub fn launch_external_player_with_log(
             append_to_log(
                 &log_file_path,
                 "INFO",
-                &format!("Launched media player '{}' for target: {}", player, target_str),
+                &format!("Launched media player '{player}' for target: {target_str}"),
             );
             return Ok(());
         }
@@ -296,7 +304,7 @@ pub fn launch_external_player_with_log(
     append_to_log(
         &log_file_path,
         "ERROR",
-        &format!("No media players succeeded for target: {}", target_str),
+        &format!("No media players succeeded for target: {target_str}"),
     );
     Err("No media players succeeded.".to_string())
 }
@@ -314,7 +322,10 @@ pub fn load_string_set_from_file(path: &Path) -> std::collections::HashSet<Strin
 }
 
 /// Save a set of strings to a JSON array file atomically using a temporary file.
-pub fn save_string_set_to_file(path: &Path, set: &std::collections::HashSet<String>) -> Result<(), String> {
+pub fn save_string_set_to_file(
+    path: &Path,
+    set: &std::collections::HashSet<String>,
+) -> Result<(), String> {
     let list: Vec<&String> = set.iter().collect();
     let content = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
 
@@ -324,7 +335,8 @@ pub fn save_string_set_to_file(path: &Path, set: &std::collections::HashSet<Stri
     }
 
     let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
-    temp.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+    temp.write_all(content.as_bytes())
+        .map_err(|e| e.to_string())?;
     temp.as_file().sync_all().map_err(|e| e.to_string())?;
     temp.persist(path).map_err(|e| e.to_string())?;
 
@@ -355,7 +367,7 @@ fn format_current_timestamp() -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
 
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, m, d, hour, min, sec)
+    format!("{y:04}-{m:02}-{d:02} {hour:02}:{min:02}:{sec:02}")
 }
 
 /// Append a line with a timestamp and prefix to a log file, creating any missing parent directories.
@@ -371,6 +383,6 @@ pub fn append_to_log(path: &Path, prefix: &str, message: &str) {
 
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
         let now = format_current_timestamp();
-        let _ = writeln!(file, "[{}] [{}] {}", now, prefix, message);
+        let _ = writeln!(file, "[{now}] [{prefix}] {message}");
     }
 }

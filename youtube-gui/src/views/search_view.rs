@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex, mpsc::Sender};
 use eframe::egui;
+use std::sync::{Arc, Mutex, mpsc::Sender};
 use youtube_client_lib::Video;
 
 use crate::types::{AppState, PendingAction, PlayerCommand};
@@ -74,7 +74,15 @@ pub fn render_search_view(
                     .show(ui, |ui| {
                         for video in vids {
                             let mut card_action = PendingAction::None;
-                            draw_video_card(state, http_client, audio_tx, ui, ctx, video, &mut card_action);
+                            draw_video_card(
+                                state,
+                                http_client,
+                                audio_tx,
+                                ui,
+                                ctx,
+                                video,
+                                &mut card_action,
+                            );
                             if !matches!(card_action, PendingAction::None) {
                                 action = Some(card_action);
                             }

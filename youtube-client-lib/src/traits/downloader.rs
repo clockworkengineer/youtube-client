@@ -1,5 +1,5 @@
-use std::path::Path;
 use crate::Result;
+use std::path::Path;
 
 pub trait MediaDownloader: Send + Sync {
     async fn download_media(

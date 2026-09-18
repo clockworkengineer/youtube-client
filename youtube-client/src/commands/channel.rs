@@ -16,7 +16,7 @@ pub async fn execute_channel(
     println!("==================================================");
     println!("  📺 {}", details.title);
     if let Some(handle) = &details.custom_url {
-        println!("  Handle:          {}", handle);
+        println!("  Handle:          {handle}");
     }
     println!("==================================================");
     println!("  Channel ID:      {}", details.id);

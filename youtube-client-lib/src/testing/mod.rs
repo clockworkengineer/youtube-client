@@ -4,14 +4,14 @@
 //! [`PlaylistService`], [`CommentService`], and [`MediaDownloader`]. Useful for testing UI views
 //! and CLI commands without real YouTube credentials or network access.
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
 use crate::error::Result;
 use crate::models::{Comment, Playlist, Subscription, Video, VideoDetails};
 use crate::traits::{
     CommentService, MediaDownloader, PlaylistService, SubscriptionService, VideoService,
 };
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 /// An in-memory mock client that implements all library service traits.
 #[derive(Clone, Default)]
@@ -40,8 +40,8 @@ impl SubscriptionService for MockYoutubeClient {
     async fn subscribe_to_channel(&self, channel_id: &str) -> Result<()> {
         let mut subs = self.subscriptions.lock().unwrap();
         subs.push(Subscription {
-            id: format!("sub_{}", channel_id),
-            title: format!("Channel {}", channel_id),
+            id: format!("sub_{channel_id}"),
+            title: format!("Channel {channel_id}"),
             description: "Mock channel".to_string(),
             channel_id: channel_id.to_string(),
             thumbnail_url: String::new(),
@@ -85,7 +85,7 @@ impl VideoService for MockYoutubeClient {
     async fn fetch_video_details(&self, video_id: &str) -> Result<VideoDetails> {
         Ok(VideoDetails {
             id: video_id.to_string(),
-            title: format!("Mock Video {}", video_id),
+            title: format!("Mock Video {video_id}"),
             description: "Mock video description".to_string(),
             published_at: "2026-01-01T00:00:00Z".to_string(),
             channel_id: "mock_channel".to_string(),
@@ -107,7 +107,11 @@ impl PlaylistService for MockYoutubeClient {
         Ok(pls.iter().take(max_results as usize).cloned().collect())
     }
 
-    async fn list_playlist_videos(&self, playlist_id: &str, max_results: u32) -> Result<Vec<Video>> {
+    async fn list_playlist_videos(
+        &self,
+        playlist_id: &str,
+        max_results: u32,
+    ) -> Result<Vec<Video>> {
         let map = self.playlist_items.lock().unwrap();
         let list = map.get(playlist_id).cloned().unwrap_or_default();
         Ok(list.into_iter().take(max_results as usize).collect())
@@ -118,7 +122,7 @@ impl PlaylistService for MockYoutubeClient {
         let list = map.entry(playlist_id.to_string()).or_default();
         list.push(Video {
             id: video_id.to_string(),
-            title: format!("Video {}", video_id),
+            title: format!("Video {video_id}"),
             description: String::new(),
             published_at: "2026-01-01T00:00:00Z".to_string(),
             thumbnail_url: String::new(),

@@ -1,4 +1,9 @@
 #![windows_subsystem = "windows"]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::large_enum_variant
+)]
 //! # YouTube GUI Application Entry Point
 //!
 //! Initializes the eframe window, manages application lifecycle state, audio worker spawning,
@@ -37,8 +42,6 @@ struct YoutubeGuiApp {
     audio_tx: std::sync::mpsc::Sender<PlayerCommand>,
 }
 
-
-
 impl YoutubeGuiApp {
     fn new(cc: &eframe::CreationContext<'_>, log_file: PathBuf) -> Self {
         // Customize the styling to make it look premium
@@ -51,14 +54,19 @@ impl YoutubeGuiApp {
         let config = youtube_client_lib::load_config();
         let client_id_input = config.client_id.unwrap_or_default();
         let client_secret_input = config.client_secret.unwrap_or_default();
-        let downloads_dir = PathBuf::from(config.downloads_dir.unwrap_or_else(|| "downloads".to_string()));
+        let downloads_dir = PathBuf::from(
+            config
+                .downloads_dir
+                .unwrap_or_else(|| "downloads".to_string()),
+        );
 
         youtube_client_lib::utils::append_to_log(&log_file, "INFO", "youtube-gui started");
 
         // Scan downloads directory for pre-existing media files
         let downloads = HashMap::new();
         // Initial empty downloads map; directory scanned asynchronously in background
-        let cleared_video_ids = load_string_set_from_file(std::path::Path::new("cleared_videos.json"));
+        let cleared_video_ids =
+            load_string_set_from_file(std::path::Path::new("cleared_videos.json"));
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
             new_videos: None,
@@ -79,6 +87,7 @@ impl YoutubeGuiApp {
             playlist_action_status: None,
             downloads_dir: downloads_dir.clone(),
             log_file: log_file.clone(),
+            toast: None,
         }));
 
         let http_client = reqwest::Client::new();
@@ -114,7 +123,7 @@ impl YoutubeGuiApp {
             playlist_title_input: String::new(),
             playlist_desc_input: String::new(),
             subscription_filter: String::new(),
-            volume: 1.0,
+            volume: config.volume.unwrap_or(1.0),
             muted: false,
             audio_tx,
         }
@@ -139,17 +148,15 @@ impl eframe::App for YoutubeGuiApp {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("🎵 Playing:").strong());
                     ui.label(&player_title);
-                    
+
                     ui.add_space(20.0);
 
                     if player_playing {
                         if ui.button("⏸ Pause").clicked() {
                             let _ = self.audio_tx.send(PlayerCommand::Pause);
                         }
-                    } else {
-                        if ui.button("▶ Resume").clicked() {
-                            let _ = self.audio_tx.send(PlayerCommand::Resume);
-                        }
+                    } else if ui.button("▶ Resume").clicked() {
+                        let _ = self.audio_tx.send(PlayerCommand::Resume);
                     }
 
                     if ui.button("⏹ Stop").clicked() {
@@ -159,12 +166,19 @@ impl eframe::App for YoutubeGuiApp {
                     ui.add_space(20.0);
                     ui.label("🔊");
                     let mut vol = self.volume;
-                    if ui.add(egui::Slider::new(&mut vol, 0.0..=1.0).show_value(false)).changed() {
+                    if ui
+                        .add(egui::Slider::new(&mut vol, 0.0..=1.0).show_value(false))
+                        .changed()
+                    {
                         self.volume = vol;
                         self.muted = false;
                         let _ = self.audio_tx.send(PlayerCommand::SetVolume(vol));
                     }
-                    let mute_text = if self.muted { "🔇 Unmute" } else { "🔈 Mute" };
+                    let mute_text = if self.muted {
+                        "🔇 Unmute"
+                    } else {
+                        "🔈 Mute"
+                    };
                     if ui.button(mute_text).clicked() {
                         self.muted = !self.muted;
                         let target_vol = if self.muted { 0.0 } else { self.volume };
@@ -179,7 +193,9 @@ impl eframe::App for YoutubeGuiApp {
                 ui.horizontal(|ui| {
                     ui.label("🔍 Search YouTube:");
                     let response = ui.text_edit_singleline(&mut self.search_input);
-                    if (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) || ui.button("Search").clicked() {
+                    if (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                        || ui.button("Search").clicked()
+                    {
                         let q = self.search_input.trim().to_string();
                         if !q.is_empty() {
                             action = PendingAction::Search { query: q };
@@ -190,7 +206,10 @@ impl eframe::App for YoutubeGuiApp {
 
                 // Navigation Tabs
                 ui.horizontal(|ui| {
-                    let on_subs = matches!(current_view, View::Subscriptions | View::ChannelVideos { .. });
+                    let on_subs = matches!(
+                        current_view,
+                        View::Subscriptions | View::ChannelVideos { .. }
+                    );
                     if ui.selectable_label(on_subs, "📺 Subscriptions").clicked() {
                         action = PendingAction::GoToSubscriptions;
                     }
@@ -200,7 +219,10 @@ impl eframe::App for YoutubeGuiApp {
                         action = PendingAction::GoToNewVideos;
                     }
                     ui.add_space(10.0);
-                    let on_playlists = matches!(current_view, View::Playlists { .. } | View::PlaylistVideos { .. });
+                    let on_playlists = matches!(
+                        current_view,
+                        View::Playlists { .. } | View::PlaylistVideos { .. }
+                    );
                     if ui.selectable_label(on_playlists, "📂 Playlists").clicked() {
                         action = PendingAction::LoadPlaylists;
                     }
@@ -213,13 +235,56 @@ impl eframe::App for YoutubeGuiApp {
                 ui.add_space(5.0);
                 ui.separator();
                 ui.add_space(5.0);
-            }
 
+                // Toast notification banner
+                let toast_data = {
+                    let mut s = lock_state(&self.state);
+                    if let Some((msg, time, is_err)) = &s.toast {
+                        if time.elapsed().as_secs() < 5 {
+                            Some((msg.clone(), *is_err))
+                        } else {
+                            s.toast = None;
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some((msg, is_err)) = toast_data {
+                    ui.horizontal(|ui| {
+                        let (bg, fg) = if is_err {
+                            (
+                                egui::Color32::from_rgb(85, 25, 25),
+                                egui::Color32::from_rgb(255, 180, 180),
+                            )
+                        } else {
+                            (
+                                egui::Color32::from_rgb(25, 75, 45),
+                                egui::Color32::from_rgb(180, 255, 200),
+                            )
+                        };
+                        egui::Frame::none()
+                            .fill(bg)
+                            .rounding(egui::Rounding::same(4.0))
+                            .inner_margin(egui::Margin::symmetric(10.0, 4.0))
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new(&msg).color(fg).small());
+                            });
+                    });
+                    ui.add_space(3.0);
+                }
+            }
 
             match current_view {
                 View::Login => {
                     let s_lock = lock_state(&self.state);
-                    if let Some(act) = render_login_view(ui, &mut self.client_id_input, &mut self.client_secret_input, &s_lock) {
+                    if let Some(act) = render_login_view(
+                        ui,
+                        &mut self.client_id_input,
+                        &mut self.client_secret_input,
+                        &s_lock,
+                    ) {
                         action = act;
                     }
                 }
@@ -228,7 +293,14 @@ impl eframe::App for YoutubeGuiApp {
                         let s = lock_state(&self.state);
                         s.subscriptions.clone()
                     };
-                    if let Some(act) = render_subscriptions_view(&self.state, &self.http_client, ui, ctx, &subs, &mut self.subscription_filter) {
+                    if let Some(act) = render_subscriptions_view(
+                        &self.state,
+                        &self.http_client,
+                        ui,
+                        ctx,
+                        &subs,
+                        &mut self.subscription_filter,
+                    ) {
                         action = act;
                     }
                 }
@@ -237,40 +309,114 @@ impl eframe::App for YoutubeGuiApp {
                         let s = lock_state(&self.state);
                         (s.new_videos.clone(), s.cleared_video_ids.len())
                     };
-                    if let Some(act) = render_new_videos_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &vids, cleared_count) {
+                    if let Some(act) = render_new_videos_view(
+                        &self.state,
+                        &self.http_client,
+                        &self.audio_tx,
+                        ui,
+                        ctx,
+                        &vids,
+                        cleared_count,
+                    ) {
                         action = act;
                     }
                 }
-                View::ChannelVideos { channel_id, channel_title, channel_description, videos } => {
+                View::ChannelVideos {
+                    channel_id,
+                    channel_title,
+                    channel_description,
+                    videos,
+                } => {
                     let subs = {
                         let s = lock_state(&self.state);
                         s.subscriptions.clone()
                     };
-                    if let Some(act) = render_channel_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &channel_id, &channel_title, &channel_description, &videos, &subs) {
+                    if let Some(act) = render_channel_view(
+                        &self.state,
+                        &self.http_client,
+                        &self.audio_tx,
+                        ui,
+                        ctx,
+                        &channel_id,
+                        &channel_title,
+                        &channel_description,
+                        &videos,
+                        &subs,
+                    ) {
                         action = act;
                     }
                 }
                 View::SearchResults { query: _, videos } => {
-                    if let Some(act) = render_search_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &mut self.search_input, &videos) {
+                    if let Some(act) = render_search_view(
+                        &self.state,
+                        &self.http_client,
+                        &self.audio_tx,
+                        ui,
+                        ctx,
+                        &mut self.search_input,
+                        &videos,
+                    ) {
                         action = act;
                     }
                 }
                 View::Playlists { playlists } => {
-                    if let Some(act) = render_playlists_view(&self.state, &self.http_client, ui, ctx, &playlists, &mut self.playlist_title_input, &mut self.playlist_desc_input) {
+                    if let Some(act) = render_playlists_view(
+                        &self.state,
+                        &self.http_client,
+                        ui,
+                        ctx,
+                        &playlists,
+                        &mut self.playlist_title_input,
+                        &mut self.playlist_desc_input,
+                    ) {
                         action = act;
                     }
                 }
-                View::PlaylistVideos { playlist_id, playlist_title, videos } => {
-                    if let Some(act) = render_playlist_videos_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &playlist_id, &playlist_title, &videos) {
+                View::PlaylistVideos {
+                    playlist_id,
+                    playlist_title,
+                    videos,
+                } => {
+                    if let Some(act) = render_playlist_videos_view(
+                        &self.state,
+                        &self.http_client,
+                        &self.audio_tx,
+                        ui,
+                        ctx,
+                        &playlist_id,
+                        &playlist_title,
+                        &videos,
+                    ) {
                         action = act;
                     }
                 }
-                View::VideoDetails { video, details, comments } => {
+                View::VideoDetails {
+                    video,
+                    details,
+                    comments,
+                } => {
                     let (p_state, pls, status) = {
                         let s = lock_state(&self.state);
-                        (s.player_state.clone(), s.playlists.clone(), s.playlist_action_status.clone())
+                        (
+                            s.player_state.clone(),
+                            s.playlists.clone(),
+                            s.playlist_action_status.clone(),
+                        )
                     };
-                    if let Some(act) = render_details_view(&self.state, &self.http_client, &self.audio_tx, ui, ctx, &video, &details, &comments, &p_state, &pls, &status, &mut self.comment_input) {
+                    if let Some(act) = render_details_view(
+                        &self.state,
+                        &self.http_client,
+                        &self.audio_tx,
+                        ui,
+                        ctx,
+                        &video,
+                        &details,
+                        &comments,
+                        &p_state,
+                        &pls,
+                        &status,
+                        &mut self.comment_input,
+                    ) {
                         action = act;
                     }
                 }
@@ -279,7 +425,6 @@ impl eframe::App for YoutubeGuiApp {
                 }
             }
         });
-
 
         match action {
             PendingAction::None => {}
@@ -327,13 +472,19 @@ impl eframe::App for YoutubeGuiApp {
                 for id in ids_to_clear {
                     s_lock.cleared_video_ids.insert(id);
                 }
-                let _ = save_string_set_to_file(std::path::Path::new("cleared_videos.json"), &s_lock.cleared_video_ids);
+                let _ = save_string_set_to_file(
+                    std::path::Path::new("cleared_videos.json"),
+                    &s_lock.cleared_video_ids,
+                );
                 s_lock.new_videos = Some(Ok(Vec::new()));
             }
             PendingAction::DismissNewVideo { video_id } => {
                 let mut s_lock = self.state.lock().unwrap();
                 s_lock.cleared_video_ids.insert(video_id.clone());
-                let _ = save_string_set_to_file(std::path::Path::new("cleared_videos.json"), &s_lock.cleared_video_ids);
+                let _ = save_string_set_to_file(
+                    std::path::Path::new("cleared_videos.json"),
+                    &s_lock.cleared_video_ids,
+                );
                 if let Some(Ok(ref mut vids)) = s_lock.new_videos {
                     vids.retain(|v| v.id != video_id);
                 }
@@ -342,12 +493,19 @@ impl eframe::App for YoutubeGuiApp {
                 {
                     let mut s_lock = self.state.lock().unwrap();
                     s_lock.cleared_video_ids.clear();
-                    let _ = save_string_set_to_file(std::path::Path::new("cleared_videos.json"), &s_lock.cleared_video_ids);
+                    let _ = save_string_set_to_file(
+                        std::path::Path::new("cleared_videos.json"),
+                        &s_lock.cleared_video_ids,
+                    );
                     s_lock.new_videos = None;
                 }
                 spawn_fetch_new_videos(self.state.clone(), ctx.clone());
             }
-            PendingAction::LoadChannel { id, title, description } => {
+            PendingAction::LoadChannel {
+                id,
+                title,
+                description,
+            } => {
                 {
                     let mut s_lock = self.state.lock().unwrap();
                     s_lock.navigate_to(View::ChannelVideos {
@@ -363,7 +521,11 @@ impl eframe::App for YoutubeGuiApp {
                 let mut s_lock = self.state.lock().unwrap();
                 s_lock.go_back();
             }
-            PendingAction::RetryVideos { id, title, description } => {
+            PendingAction::RetryVideos {
+                id,
+                title,
+                description,
+            } => {
                 {
                     let mut s_lock = self.state.lock().unwrap();
                     s_lock.current_view = View::ChannelVideos {
@@ -382,30 +544,49 @@ impl eframe::App for YoutubeGuiApp {
                 let is_mp3 = path.extension().map(|e| e == "mp3").unwrap_or(false);
                 let log_file = self.state.lock().unwrap().log_file.clone();
                 if is_mp3 {
-                    append_to_log(&log_file, "INFO", &format!("Playing local audio: {:?}", path));
+                    append_to_log(&log_file, "INFO", &format!("Playing local audio: {path:?}"));
                     let _ = self.audio_tx.send(PlayerCommand::Play(path, title));
                 } else {
-                    append_to_log(&log_file, "INFO", &format!("Opening local video: {:?}", path));
-                    if let Err(e) = launch_external_player_with_log(path.as_os_str(), Some(&log_file)) {
-                        append_to_log(&log_file, "WARN", &format!("{} Falling back to default file opener.", e));
+                    append_to_log(&log_file, "INFO", &format!("Opening local video: {path:?}"));
+                    if let Err(e) =
+                        launch_external_player_with_log(path.as_os_str(), Some(&log_file))
+                    {
+                        append_to_log(
+                            &log_file,
+                            "WARN",
+                            &format!("{e} Falling back to default file opener."),
+                        );
                         let _ = open::that(path);
                     }
                 }
             }
             PendingAction::StreamVideo { video_id } => {
-                let url = format!("https://www.youtube.com/watch?v={}", video_id);
+                let url = format!("https://www.youtube.com/watch?v={video_id}");
                 let log_file = self.state.lock().unwrap().log_file.clone();
-                append_to_log(&log_file, "INFO", &format!("Video clicked: {}", url));
-                
+                append_to_log(&log_file, "INFO", &format!("Video clicked: {url}"));
+
                 // Try to open the stream in MPV or VLC first
-                if let Err(e) = launch_external_player_with_log(std::ffi::OsStr::new(&url), Some(&log_file)) {
-                    append_to_log(&log_file, "WARN", &format!("{} Falling back to default browser.", e));
+                if let Err(e) =
+                    launch_external_player_with_log(std::ffi::OsStr::new(&url), Some(&log_file))
+                {
+                    append_to_log(
+                        &log_file,
+                        "WARN",
+                        &format!("{e} Falling back to default browser."),
+                    );
+                    let mut s = lock_state(&self.state);
+                    s.set_toast("Media player not found; opening in browser", true);
                     let _ = open::that(url);
+                } else {
+                    let mut s = lock_state(&self.state);
+                    s.set_toast("Opening stream in external media player...", false);
                 }
             }
             PendingAction::OpenInBrowser { url } => {
                 let log_file = self.state.lock().unwrap().log_file.clone();
-                append_to_log(&log_file, "INFO", &format!("Opening in web browser: {}", url));
+                append_to_log(&log_file, "INFO", &format!("Opening in web browser: {url}"));
+                let mut s = lock_state(&self.state);
+                s.set_toast("Opening in web browser...", false);
                 let _ = open::that(url);
             }
             PendingAction::Search { query } => {
@@ -432,7 +613,9 @@ impl eframe::App for YoutubeGuiApp {
                 let cache = {
                     let mut s_lock = self.state.lock().unwrap();
                     let cached = s_lock.playlists.clone();
-                    s_lock.navigate_clear_history(View::Playlists { playlists: cached.clone() });
+                    s_lock.navigate_clear_history(View::Playlists {
+                        playlists: cached.clone(),
+                    });
                     cached
                 };
                 if cache.is_none() {
@@ -519,8 +702,18 @@ impl eframe::App for YoutubeGuiApp {
             PendingAction::RateVideo { video_id, rating } => {
                 spawn_rate_video(self.state.clone(), ctx.clone(), video_id, rating);
             }
-            PendingAction::AddToPlaylist { playlist_id, playlist_title, video_id } => {
-                spawn_add_to_playlist(self.state.clone(), ctx.clone(), playlist_id, playlist_title, video_id);
+            PendingAction::AddToPlaylist {
+                playlist_id,
+                playlist_title,
+                video_id,
+            } => {
+                spawn_add_to_playlist(
+                    self.state.clone(),
+                    ctx.clone(),
+                    playlist_id,
+                    playlist_title,
+                    video_id,
+                );
             }
             PendingAction::GoToAbout => {
                 let mut s_lock = self.state.lock().unwrap();
@@ -529,7 +722,6 @@ impl eframe::App for YoutubeGuiApp {
         }
     }
 }
-
 
 fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -577,4 +769,3 @@ fn main() -> eframe::Result<()> {
         Box::new(move |cc| Box::new(YoutubeGuiApp::new(cc, log_file_clone))),
     )
 }
-

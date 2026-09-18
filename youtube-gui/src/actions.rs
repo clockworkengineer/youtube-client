@@ -1,17 +1,14 @@
-use std::sync::{Arc, Mutex};
 use eframe::egui;
-use youtube_client_lib::utils::{get_download_path, DownloadStatus};
+use std::sync::{Arc, Mutex};
+use youtube_client_lib::utils::{DownloadStatus, get_download_path};
 use youtube_client_lib::{Comment, Video, VideoDetails, YoutubeClient};
 
 use crate::types::{AppState, View};
 
 pub async fn get_client_async() -> Result<YoutubeClient, String> {
-    let (client_id, client_secret) = youtube_client_lib::resolve_credentials(
-        None,
-        None,
-        std::path::Path::new("config.json"),
-    )
-    .map_err(|e| e.to_string())?;
+    let (client_id, client_secret) =
+        youtube_client_lib::resolve_credentials(None, None, std::path::Path::new("config.json"))
+            .map_err(|e| e.to_string())?;
 
     let token_cache_path = youtube_client_lib::resolve_token_cache_path();
     if !token_cache_path.exists() {
@@ -28,7 +25,10 @@ pub async fn get_client_async() -> Result<YoutubeClient, String> {
     );
 
     if !has_scope {
-        return Err("Authorization expired or missing permissions.\n\nPlease sign in again with Google.".to_string());
+        return Err(
+            "Authorization expired or missing permissions.\n\nPlease sign in again with Google."
+                .to_string(),
+        );
     }
 
     let client = YoutubeClient::new_oauth_with_scopes(
@@ -38,7 +38,7 @@ pub async fn get_client_async() -> Result<YoutubeClient, String> {
         youtube_client_lib::YOUTUBE_SCOPES,
     )
     .await
-    .map_err(|e| format!("Authentication failed: {}", e))?;
+    .map_err(|e| format!("Authentication failed: {e}"))?;
 
     Ok(client)
 }
@@ -67,10 +67,10 @@ pub fn spawn_client_action<F, Fut, T>(
             youtube_client_lib::utils::append_to_log(
                 &s.log_file,
                 "ERROR",
-                &format!("Error during {}: {}", action_name, e),
+                &format!("Error during {action_name}: {e}"),
             );
         }
-        on_complete(res, &mut *s, &ctx);
+        on_complete(res, &mut s, &ctx);
     });
 }
 
@@ -83,7 +83,7 @@ pub fn spawn_fetch_subscriptions(state: Arc<Mutex<AppState>>, ctx: egui::Context
             client
                 .list_subscriptions(50)
                 .await
-                .map_err(|e| format!("Failed to fetch subscriptions: {}", e))
+                .map_err(|e| format!("Failed to fetch subscriptions: {e}"))
         },
         |res, s, ctx| {
             match res {
@@ -109,7 +109,7 @@ pub fn spawn_fetch_new_videos(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
             let subs = client
                 .list_subscriptions(10)
                 .await
-                .map_err(|e| format!("Failed to fetch subscriptions for new videos feed: {}", e))?;
+                .map_err(|e| format!("Failed to fetch subscriptions for new videos feed: {e}"))?;
 
             let client_arc = Arc::new(client);
             let mut handles = Vec::new();
@@ -144,7 +144,12 @@ pub fn spawn_fetch_new_videos(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
     );
 }
 
-pub fn spawn_login_and_auth(state: Arc<Mutex<AppState>>, ctx: egui::Context, id: String, secret: String) {
+pub fn spawn_login_and_auth(
+    state: Arc<Mutex<AppState>>,
+    ctx: egui::Context,
+    id: String,
+    secret: String,
+) {
     {
         let mut s = state.lock().unwrap();
         s.logging_in = true;
@@ -174,11 +179,11 @@ pub fn spawn_login_and_auth(state: Arc<Mutex<AppState>>, ctx: egui::Context, id:
                 youtube_client_lib::YOUTUBE_SCOPES,
             )
             .await
-            .map_err(|e| format!("OAuth initialization failed: {}", e))?;
+            .map_err(|e| format!("OAuth initialization failed: {e}"))?;
             client
                 .test_connection()
                 .await
-                .map_err(|e| format!("YouTube connection failed: {}", e))?;
+                .map_err(|e| format!("YouTube connection failed: {e}"))?;
             Ok(())
         }
         .await;
@@ -215,7 +220,7 @@ pub fn spawn_default_login(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
                 None,
                 std::path::Path::new("config.json"),
             )
-            .map_err(|e| format!("Could not resolve credentials: {}", e))?;
+            .map_err(|e| format!("Could not resolve credentials: {e}"))?;
 
             let token_cache_path = youtube_client_lib::resolve_token_cache_path();
             let client = YoutubeClient::new_oauth_with_scopes(
@@ -225,12 +230,12 @@ pub fn spawn_default_login(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
                 youtube_client_lib::YOUTUBE_SCOPES,
             )
             .await
-            .map_err(|e| format!("OAuth authentication failed: {}", e))?;
+            .map_err(|e| format!("OAuth authentication failed: {e}"))?;
 
             client
                 .test_connection()
                 .await
-                .map_err(|e| format!("YouTube connection failed: {}", e))?;
+                .map_err(|e| format!("YouTube connection failed: {e}"))?;
             Ok(())
         }
         .await;
@@ -252,7 +257,12 @@ pub fn spawn_default_login(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
     });
 }
 
-pub fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: Video, is_audio: bool) {
+pub fn spawn_download(
+    state: Arc<Mutex<AppState>>,
+    ctx: egui::Context,
+    video: Video,
+    is_audio: bool,
+) {
     let video_id = video.id.clone();
     {
         let mut s = state.lock().unwrap();
@@ -272,8 +282,13 @@ pub fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: Vi
                 (s.downloads_dir.clone(), s.log_file.clone())
             };
 
-            let output_path =
-                get_download_path(&downloads_base, &video.channel_title, &video.title, &video.id, is_audio);
+            let output_path = get_download_path(
+                &downloads_base,
+                &video.channel_title,
+                &video.title,
+                &video.id,
+                is_audio,
+            );
 
             if let Some(parent) = output_path.parent() {
                 if !parent.exists() {
@@ -288,8 +303,8 @@ pub fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: Vi
             } else {
                 youtube_client_lib::download::DownloadFormat::Mp4
             };
-            let options = youtube_client_lib::download::DownloadOptions::new(format)
-                .with_log_file(log_file);
+            let options =
+                youtube_client_lib::download::DownloadOptions::new(format).with_log_file(log_file);
 
             let state_inner = state_clone.clone();
             let ctx_inner = ctx_clone.clone();
@@ -326,7 +341,12 @@ pub fn spawn_download(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: Vi
     });
 }
 
-pub fn fetch_videos(ctx: egui::Context, state: Arc<Mutex<AppState>>, channel_id: String, _channel_title: String) {
+pub fn fetch_videos(
+    ctx: egui::Context,
+    state: Arc<Mutex<AppState>>,
+    channel_id: String,
+    _channel_title: String,
+) {
     let channel_id_clone = channel_id.clone();
     spawn_client_action(
         state,
@@ -336,7 +356,7 @@ pub fn fetch_videos(ctx: egui::Context, state: Arc<Mutex<AppState>>, channel_id:
             client
                 .list_videos(&channel_id, 20)
                 .await
-                .map_err(|e| format!("Failed to fetch videos: {}", e))
+                .map_err(|e| format!("Failed to fetch videos: {e}"))
         },
         move |res, s, ctx| {
             if let View::ChannelVideos {
@@ -370,7 +390,7 @@ pub fn fetch_search_results(ctx: egui::Context, state: Arc<Mutex<AppState>>, que
             client
                 .search_videos(&query, 20)
                 .await
-                .map_err(|e| format!("Failed to search videos: {}", e))
+                .map_err(|e| format!("Failed to search videos: {e}"))
         },
         move |res, s, ctx| {
             if let View::SearchResults {
@@ -399,12 +419,14 @@ pub fn spawn_fetch_playlists(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
             client
                 .list_playlists(50)
                 .await
-                .map_err(|e| format!("Failed to fetch playlists: {}", e))
+                .map_err(|e| format!("Failed to fetch playlists: {e}"))
         },
         |res, s, ctx| {
             s.playlists = Some(res.clone());
             if let View::Playlists { playlists: _ } = &s.current_view {
-                s.current_view = View::Playlists { playlists: Some(res) };
+                s.current_view = View::Playlists {
+                    playlists: Some(res),
+                };
             }
             ctx.request_repaint();
         },
@@ -426,7 +448,7 @@ pub fn fetch_playlist_videos(
             client
                 .list_playlist_videos(&playlist_id, 50)
                 .await
-                .map_err(|e| format!("Failed to fetch playlist videos: {}", e))
+                .map_err(|e| format!("Failed to fetch playlist videos: {e}"))
         },
         move |res, s, ctx| {
             if let View::PlaylistVideos {
@@ -456,11 +478,19 @@ pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, vid
         ctx,
         "fetch_video_details_and_comments",
         move |client| async move {
-            let details_res = client.fetch_video_details(&vid_id).await.map_err(|e| e.to_string());
-            let comments_res = client.fetch_comments(&vid_id).await.map_err(|e| e.to_string());
+            let details_res = client
+                .fetch_video_details(&vid_id)
+                .await
+                .map_err(|e| e.to_string());
+            let comments_res = client
+                .fetch_comments(&vid_id)
+                .await
+                .map_err(|e| e.to_string());
             Ok((details_res, comments_res))
         },
-        move |res: Result<(Result<VideoDetails, String>, Result<Vec<Comment>, String>), String>, s, ctx| {
+        move |res: Result<(Result<VideoDetails, String>, Result<Vec<Comment>, String>), String>,
+              s,
+              ctx| {
             if let View::VideoDetails {
                 video: current_video,
                 ..
@@ -483,7 +513,12 @@ pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, vid
     );
 }
 
-pub fn spawn_post_comment(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_id: String, text: String) {
+pub fn spawn_post_comment(
+    state: Arc<Mutex<AppState>>,
+    ctx: egui::Context,
+    video_id: String,
+    text: String,
+) {
     let video_id_clone = video_id.clone();
     spawn_client_action(
         state,
@@ -493,7 +528,7 @@ pub fn spawn_post_comment(state: Arc<Mutex<AppState>>, ctx: egui::Context, video
             client
                 .post_comment(&video_id, &text)
                 .await
-                .map_err(|e| format!("Failed to post comment: {}", e))
+                .map_err(|e| format!("Failed to post comment: {e}"))
         },
         move |res, s, ctx| {
             if let View::VideoDetails {
@@ -527,7 +562,7 @@ pub fn spawn_create_playlist(
             client
                 .create_playlist(&title, description.as_deref())
                 .await
-                .map_err(|e| format!("Failed to create playlist: {}", e))
+                .map_err(|e| format!("Failed to create playlist: {e}"))
         },
         move |res, s, ctx| {
             if let Ok(new_pl) = res {
@@ -550,7 +585,7 @@ pub fn spawn_delete_playlist(state: Arc<Mutex<AppState>>, ctx: egui::Context, pl
             client
                 .delete_playlist(&playlist_id)
                 .await
-                .map_err(|e| format!("Failed to delete playlist: {}", e))
+                .map_err(|e| format!("Failed to delete playlist: {e}"))
         },
         move |res, s, ctx| {
             if res.is_ok() {
@@ -573,7 +608,7 @@ pub fn spawn_subscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, channel_
             client
                 .subscribe_to_channel(&channel_id)
                 .await
-                .map_err(|e| format!("Failed to subscribe: {}", e))
+                .map_err(|e| format!("Failed to subscribe: {e}"))
         },
         move |res, _, ctx| {
             if res.is_ok() {
@@ -593,7 +628,7 @@ pub fn spawn_unsubscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, subscr
             client
                 .unsubscribe_from_channel(&subscription_id)
                 .await
-                .map_err(|e| format!("Failed to unsubscribe: {}", e))
+                .map_err(|e| format!("Failed to unsubscribe: {e}"))
         },
         move |res, _, ctx| {
             if res.is_ok() {
@@ -603,7 +638,12 @@ pub fn spawn_unsubscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, subscr
     );
 }
 
-pub fn spawn_rate_video(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_id: String, rating: String) {
+pub fn spawn_rate_video(
+    state: Arc<Mutex<AppState>>,
+    ctx: egui::Context,
+    video_id: String,
+    rating: String,
+) {
     spawn_client_action(
         state,
         ctx,
@@ -612,7 +652,7 @@ pub fn spawn_rate_video(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_i
             client
                 .rate_video(&video_id, &rating)
                 .await
-                .map_err(|e| format!("Failed to rate: {}", e))?;
+                .map_err(|e| format!("Failed to rate: {e}"))?;
             Ok((video_id, rating))
         },
         move |res, s, _| {
@@ -620,7 +660,7 @@ pub fn spawn_rate_video(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_i
                 youtube_client_lib::utils::append_to_log(
                     &s.log_file,
                     "INFO",
-                    &format!("Successfully rated video {} as {}", vid, rat),
+                    &format!("Successfully rated video {vid} as {rat}"),
                 );
             }
         },
@@ -642,8 +682,8 @@ pub fn spawn_add_to_playlist(
             client
                 .add_to_playlist(&playlist_id, &video_id)
                 .await
-                .map_err(|e| format!("Failed to add to playlist: {}", e))?;
-            Ok(format!("Added to '{}'", playlist_title))
+                .map_err(|e| format!("Failed to add to playlist: {e}"))?;
+            Ok(format!("Added to '{playlist_title}'"))
         },
         move |res, s, ctx| {
             s.playlist_action_status = Some(res);
@@ -670,7 +710,7 @@ pub fn fetch_thumbnail(
             let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
 
             let texture = ctx.load_texture(
-                format!("thumb_{}", channel_id),
+                format!("thumb_{channel_id}"),
                 color_image,
                 Default::default(),
             );

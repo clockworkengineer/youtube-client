@@ -1,7 +1,7 @@
 //! # Media Downloader Engine (yt-dlp integration)
 
-use std::path::Path;
 use crate::error::{Result, YoutubeError};
+use std::path::Path;
 
 /// Desired output media format.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,7 +53,8 @@ impl DownloadOptions {
     pub fn with_quality(mut self, quality: impl Into<String>) -> Self {
         let q = quality.into();
         self.additional_args.push("-S".to_string());
-        self.additional_args.push(format!("res:{}", q.trim_end_matches('p')));
+        self.additional_args
+            .push(format!("res:{}", q.trim_end_matches('p')));
         self
     }
 
@@ -97,7 +98,13 @@ pub async fn download_video_direct<F>(
 where
     F: Fn(&str) + Send + Sync + 'static,
 {
-    download_video_with_options(video_id, output_path, &DownloadOptions::default(), on_progress).await
+    download_video_with_options(
+        video_id,
+        output_path,
+        &DownloadOptions::default(),
+        on_progress,
+    )
+    .await
 }
 
 #[cfg(not(feature = "download"))]
@@ -127,16 +134,17 @@ where
 {
     use tokio::io::AsyncReadExt;
 
-    let url = format!("https://www.youtube.com/watch?v={}", video_id);
+    let url = format!("https://www.youtube.com/watch?v={video_id}");
     let is_mp3 = match &options.format {
         DownloadFormat::Mp3 => true,
-        DownloadFormat::Mp4 => output_path.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("mp3")),
+        DownloadFormat::Mp4 => output_path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("mp3")),
         _ => false,
     };
 
     let mut cmd = tokio::process::Command::new("yt-dlp");
-    cmd.arg("--newline")
-       .arg("--no-keep-video");
+    cmd.arg("--newline").arg("--no-keep-video");
 
     if let Some(ref ext_args) = options.extractor_args {
         cmd.arg("--extractor-args").arg(ext_args);
@@ -156,7 +164,8 @@ where
             if is_mp3 {
                 cmd.arg("-x").arg("--audio-format").arg("mp3");
             } else {
-                cmd.arg("-f").arg("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b");
+                cmd.arg("-f")
+                    .arg("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b");
             }
         }
     }
@@ -187,14 +196,18 @@ where
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW to suppress ffmpeg and yt-dlp console windows
 
-    let log_file_path = options.log_file.clone().unwrap_or_else(|| {
-        crate::config::resolve_log_file_path(None)
-    });
+    let log_file_path = options
+        .log_file
+        .clone()
+        .unwrap_or_else(|| crate::config::resolve_log_file_path(None));
 
     crate::utils::append_to_log(
         &log_file_path,
         "INFO",
-        &format!("Starting yt-dlp download: video_id={}, output={:?}, format={:?}", video_id, output_path, options.format),
+        &format!(
+            "Starting yt-dlp download: video_id={}, output={:?}, format={:?}",
+            video_id, output_path, options.format
+        ),
     );
 
     let mut child = match cmd
@@ -204,11 +217,15 @@ where
     {
         Ok(child) => child,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            crate::utils::append_to_log(&log_file_path, "ERROR", &format!("yt-dlp missing: {}", e));
+            crate::utils::append_to_log(&log_file_path, "ERROR", &format!("yt-dlp missing: {e}"));
             return Err(YoutubeError::YtDlpMissing(e.to_string()));
         }
         Err(e) => {
-            crate::utils::append_to_log(&log_file_path, "ERROR", &format!("Failed to spawn yt-dlp: {}", e));
+            crate::utils::append_to_log(
+                &log_file_path,
+                "ERROR",
+                &format!("Failed to spawn yt-dlp: {e}"),
+            );
             return Err(YoutubeError::Io(e));
         }
     };
@@ -279,7 +296,7 @@ where
                                 let start = dl_idx + 10;
                                 if start < pct_idx {
                                     let pct = line[start..pct_idx].trim();
-                                    on_progress(&format!("Downloading: {}%", pct));
+                                    on_progress(&format!("Downloading: {pct}%"));
                                 }
                             }
                         } else if line.contains("Destination:") {
@@ -300,7 +317,11 @@ where
         crate::utils::append_to_log(
             &log_file_path,
             "ERROR",
-            &format!("yt-dlp download failed with status {:?}: {}", status.code(), stderr_output.trim()),
+            &format!(
+                "yt-dlp download failed with status {:?}: {}",
+                status.code(),
+                stderr_output.trim()
+            ),
         );
         return Err(YoutubeError::Download(format!(
             "yt-dlp download failed: {}",
@@ -310,7 +331,7 @@ where
     crate::utils::append_to_log(
         &log_file_path,
         "INFO",
-        &format!("Download finished successfully: {:?}", output_path),
+        &format!("Download finished successfully: {output_path:?}"),
     );
     Ok(())
 }

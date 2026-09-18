@@ -1,5 +1,8 @@
 # YouTube Client Workspace
 
+[![CI](https://github.com/clockworkengineer/youtube-client/actions/workflows/ci.yml/badge.svg)](https://github.com/clockworkengineer/youtube-client/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A modular, high-performance Rust workspace providing YouTube Data API v3 integration, a native desktop GUI application (`youtube-gui`), a command-line interface (`youtube-client`), and a cross-platform system installer (`youtube-installer`).
 
 ---
@@ -10,7 +13,7 @@ A modular, high-performance Rust workspace providing YouTube Data API v3 integra
 graph TD
     subgraph "Workspace Crates"
         LIB["youtube-client-lib<br/>(Core API, Models, Traits, Audio, Download)"]
-        CLI["youtube-client<br/>(16 CLI Subcommands, JSON Piping)"]
+        CLI["youtube-client<br/>(17 CLI Subcommands, JSON Piping, Shell Completions)"]
         GUI["youtube-gui<br/>(egui Desktop App, Audio Player, View Dispatcher)"]
         INST["youtube-installer<br/>(Cross-Platform Setup, Verify, Uninstall)"]
     end
@@ -22,9 +25,9 @@ graph TD
 ```
 
 * **[`youtube-client-lib`](youtube-client-lib/)**: Core library handling YouTube Data API v3 authentication, OAuth tokens, subscriptions, feeds, playlists, comments, media downloads, and background audio.
-* **[`youtube-gui`](youtube-gui/)**: Fast, lightweight native desktop application built with `egui` and `eframe`. Features persistent cleared video feeds, interactive comments, playlist management, background audio playback via `rodio`, and video streaming via `mpv`/`vlc`.
-* **[`youtube-client`](youtube-client/)**: Feature-rich CLI application exposing 16 subcommands, structured `--json` output, and pagination for terminal workflows and shell scripting.
-* **[`youtube-installer`](youtube-installer/)**: Dedicated installation and lifecycle utility supporting interactive setup, automated/unattended deployments (`--yes`), health verification (`--verify`), and clean uninstallation (`--uninstall`).
+* **[`youtube-gui`](youtube-gui/)**: Fast, lightweight native desktop application built with `egui` and `eframe`. Features persistent cleared video feeds, interactive comments, playlist management, background audio playback via `rodio`, in-app toast feedback, and video streaming via `mpv`/`vlc`.
+* **[`youtube-client`](youtube-client/)**: Feature-rich CLI application exposing 17 subcommands, shell auto-completions (`completions`), structured `--json` output, and pagination for terminal workflows and shell scripting.
+* **[`youtube-installer`](youtube-installer/)**: Dedicated installation and lifecycle utility supporting standalone pre-built distributions, automated deployments (`--yes`), Windows Add/Remove Programs integration, health verification (`--verify`), and clean uninstallation (`--uninstall`).
 
 ---
 

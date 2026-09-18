@@ -10,9 +10,15 @@ pub fn setup_global_config() -> anyhow::Result<()> {
                 "downloads_dir": null
             });
             std::fs::write(&config_file, serde_json::to_string_pretty(&default_config)?)?;
-            println!("✓ Created global config template at: {}", config_file.display());
+            println!(
+                "✓ Created global config template at: {}",
+                config_file.display()
+            );
         } else {
-            println!("✓ Global config file already exists at: {}", config_file.display());
+            println!(
+                "✓ Global config file already exists at: {}",
+                config_file.display()
+            );
         }
     }
     Ok(())

@@ -1,5 +1,5 @@
 use clap::Parser;
-use youtube_client::{run, Cli};
+use youtube_client::{Cli, run};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

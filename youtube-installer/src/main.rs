@@ -16,7 +16,10 @@ const ICON_PNG_BYTES: &[u8] = include_bytes!("../../assets/icon.png");
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let unattended = args.iter().any(|a| a == "-y" || a == "--yes");
-    let target_dir_arg = args.windows(2).find(|w| w[0] == "--target-dir").map(|w| PathBuf::from(&w[1]));
+    let target_dir_arg = args
+        .windows(2)
+        .find(|w| w[0] == "--target-dir")
+        .map(|w| PathBuf::from(&w[1]));
 
     // Handle --uninstall mode
     if args.iter().any(|a| a == "--uninstall") {
@@ -32,21 +35,35 @@ fn main() -> anyhow::Result<()> {
 
         println!("Target installation directory: {}", install_dir.display());
 
-        let cli_bin_name = if cfg!(target_os = "windows") { "youtube-client.exe" } else { "youtube-client" };
-        let gui_bin_name = if cfg!(target_os = "windows") { "youtube-gui.exe" } else { "youtube-gui" };
+        let cli_bin_name = if cfg!(target_os = "windows") {
+            "youtube-client.exe"
+        } else {
+            "youtube-client"
+        };
+        let gui_bin_name = if cfg!(target_os = "windows") {
+            "youtube-gui.exe"
+        } else {
+            "youtube-gui"
+        };
 
         let cli_file = install_dir.join(cli_bin_name);
-        if cli_file.exists() {
-            if std::fs::remove_file(&cli_file).is_ok() {
-                println!("✓ Removed {}", cli_file.display());
-            }
+        if cli_file.exists() && std::fs::remove_file(&cli_file).is_ok() {
+            println!("✓ Removed {}", cli_file.display());
         }
 
         let gui_file = install_dir.join(gui_bin_name);
-        if gui_file.exists() {
-            if std::fs::remove_file(&gui_file).is_ok() {
-                println!("✓ Removed {}", gui_file.display());
-            }
+        if gui_file.exists() && std::fs::remove_file(&gui_file).is_ok() {
+            println!("✓ Removed {}", gui_file.display());
+        }
+
+        let installer_bin_name = if cfg!(target_os = "windows") {
+            "youtube-installer.exe"
+        } else {
+            "youtube-installer"
+        };
+        let installer_file = install_dir.join(installer_bin_name);
+        if installer_file.exists() && std::fs::remove_file(&installer_file).is_ok() {
+            println!("✓ Removed {}", installer_file.display());
         }
 
         let ico_file = install_dir.join("icon.ico");
@@ -64,7 +81,10 @@ fn main() -> anyhow::Result<()> {
             if let Ok(entries) = std::fs::read_dir(&install_dir) {
                 if entries.count() == 0 {
                     let _ = std::fs::remove_dir(&install_dir);
-                    println!("✓ Removed empty installation directory: {}", install_dir.display());
+                    println!(
+                        "✓ Removed empty installation directory: {}",
+                        install_dir.display()
+                    );
                 }
             }
         }
@@ -87,21 +107,32 @@ fn main() -> anyhow::Result<()> {
             get_default_install_dir()
         };
 
-        println!("Checking installation directory: {}\n", install_dir.display());
+        println!(
+            "Checking installation directory: {}\n",
+            install_dir.display()
+        );
 
-        let cli_bin_name = if cfg!(target_os = "windows") { "youtube-client.exe" } else { "youtube-client" };
-        let gui_bin_name = if cfg!(target_os = "windows") { "youtube-gui.exe" } else { "youtube-gui" };
+        let cli_bin_name = if cfg!(target_os = "windows") {
+            "youtube-client.exe"
+        } else {
+            "youtube-client"
+        };
+        let gui_bin_name = if cfg!(target_os = "windows") {
+            "youtube-gui.exe"
+        } else {
+            "youtube-gui"
+        };
 
         let cli_file = install_dir.join(cli_bin_name);
         if cli_file.exists() {
             println!("✓ CLI binary found: {}", cli_file.display());
-            let status = std::process::Command::new(&cli_file)
-                .arg("--help")
-                .output();
+            let status = std::process::Command::new(&cli_file).arg("--help").output();
             match status {
-                Ok(out) if out.status.success() => println!("  ✓ CLI binary executes successfully (--help tested)"),
+                Ok(out) if out.status.success() => {
+                    println!("  ✓ CLI binary executes successfully (--help tested)")
+                }
                 Ok(out) => println!("  ⚠️ CLI binary returned non-zero code: {:?}", out.status),
-                Err(e) => println!("  ❌ Failed to execute CLI binary: {}", e),
+                Err(e) => println!("  ❌ Failed to execute CLI binary: {e}"),
             }
         } else {
             println!("❌ CLI binary NOT found: {}", cli_file.display());
@@ -112,6 +143,19 @@ fn main() -> anyhow::Result<()> {
             println!("✓ GUI binary found: {}", gui_file.display());
         } else {
             println!("❌ GUI binary NOT found: {}", gui_file.display());
+        }
+
+        let installer_bin_name = if cfg!(target_os = "windows") {
+            "youtube-installer.exe"
+        } else {
+            "youtube-installer"
+        };
+        let installer_file = install_dir.join(installer_bin_name);
+        if installer_file.exists() {
+            println!(
+                "✓ Installer / Uninstaller found: {}",
+                installer_file.display()
+            );
         }
 
         let ico_file = install_dir.join("icon.ico");
@@ -128,7 +172,10 @@ fn main() -> anyhow::Result<()> {
             if config_file.exists() {
                 println!("✓ Global configuration found: {}", config_file.display());
             } else {
-                println!("ℹ️ Global configuration not initialized at {}", config_file.display());
+                println!(
+                    "ℹ️ Global configuration not initialized at {}",
+                    config_file.display()
+                );
             }
         }
 
@@ -148,7 +195,10 @@ fn main() -> anyhow::Result<()> {
         dir
     } else if unattended {
         let dir = get_default_install_dir();
-        println!("Unattended mode: using default directory: {}", dir.display());
+        println!(
+            "Unattended mode: using default directory: {}",
+            dir.display()
+        );
         dir
     } else {
         let default_dir = get_default_install_dir();
@@ -192,7 +242,10 @@ fn main() -> anyhow::Result<()> {
             }
             println!("✓ Copied youtube-client to: {}", cli_dest.display());
         } else {
-            println!("❌ Error: youtube-client binary not found at {}", cli_src.display());
+            println!(
+                "❌ Error: youtube-client binary not found at {}",
+                cli_src.display()
+            );
         }
     }
 
@@ -209,7 +262,10 @@ fn main() -> anyhow::Result<()> {
             }
             println!("✓ Copied youtube-gui to: {}", gui_dest.display());
         } else {
-            println!("❌ Error: youtube-gui binary not found at {}", gui_src.display());
+            println!(
+                "❌ Error: youtube-gui binary not found at {}",
+                gui_src.display()
+            );
         }
 
         // Install icons
@@ -225,6 +281,21 @@ fn main() -> anyhow::Result<()> {
 
     // 5. Initialize Configuration
     setup_global_config()?;
+
+    // Copy installer executable itself so user has a local uninstaller/verifier
+    if let Ok(current_exe) = std::env::current_exe() {
+        let installer_dest = install_dir.join(if cfg!(target_os = "windows") {
+            "youtube-installer.exe"
+        } else {
+            "youtube-installer"
+        });
+        if current_exe != installer_dest && std::fs::copy(&current_exe, &installer_dest).is_ok() {
+            println!(
+                "✓ Installed uninstaller utility: {}",
+                installer_dest.display()
+            );
+        }
+    }
 
     // 6. Platform specific integrations (PATH & Shortcuts)
     configure_platform_environment(&install_dir, install_gui);

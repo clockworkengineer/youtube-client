@@ -25,7 +25,7 @@ where
                 // Check if the error indicates a quota limit breach
                 if let google_youtube3::Error::Failure(ref resp) = e {
                     if resp.status().as_u16() == 403 {
-                        let status_str = format!("{:?}", resp);
+                        let status_str = format!("{resp:?}");
                         if status_str.contains("quotaExceeded")
                             || status_str.contains("Quota Exceeded")
                             || status_str.contains("403")
@@ -36,7 +36,7 @@ where
                 }
 
                 if attempts >= 3 {
-                    return Err(YoutubeError::Api(e));
+                    return Err(YoutubeError::Api(Box::new(e)));
                 }
 
                 let is_retryable = match &e {
@@ -49,7 +49,7 @@ where
                 };
 
                 if !is_retryable {
-                    return Err(YoutubeError::Api(e));
+                    return Err(YoutubeError::Api(Box::new(e)));
                 }
 
                 // Exponential backoff with jitter: delay * (0.5 to 1.5)

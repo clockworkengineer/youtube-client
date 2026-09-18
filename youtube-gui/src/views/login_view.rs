@@ -1,5 +1,5 @@
-use eframe::egui;
 use crate::types::{AppState, PendingAction};
+use eframe::egui;
 
 pub fn render_login_view(
     ui: &mut egui::Ui,
@@ -76,19 +76,18 @@ pub fn render_login_view(
             ui.text_edit_singleline(client_secret_input);
             ui.add_space(10.0);
 
-            if !state.logging_in {
-                if ui.button("Save & Sign In with Custom Keys").clicked() {
+            if !state.logging_in
+                && ui.button("Save & Sign In with Custom Keys").clicked() {
                     let id = client_id_input.trim().to_string();
                     let secret = client_secret_input.trim().to_string();
                     if !id.is_empty() && !secret.is_empty() {
                         action = Some(PendingAction::SpawnLogin { id, secret });
                     }
                 }
-            }
             ui.add_space(5.0);
         });
 
-        let display_error = state.login_error.as_ref().or_else(|| {
+        let display_error = state.login_error.as_ref().or({
             if let Some(Err(err)) = &state.subscriptions {
                 Some(err)
             } else {
@@ -98,7 +97,7 @@ pub fn render_login_view(
 
         if let Some(err) = display_error {
             ui.add_space(10.0);
-            ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠️ Error: {}", err));
+            ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠️ Error: {err}"));
         }
     });
 

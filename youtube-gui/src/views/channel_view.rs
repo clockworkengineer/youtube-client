@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex, mpsc::Sender};
 use eframe::egui;
+use std::sync::{Arc, Mutex, mpsc::Sender};
 use youtube_client_lib::{Subscription, Video};
 
 use crate::types::{AppState, PendingAction, PlayerCommand};
@@ -26,7 +26,7 @@ pub fn render_channel_view(
             }
             ui.add_space(15.0);
             ui.heading(
-                egui::RichText::new(format!("Videos: {}", channel_title))
+                egui::RichText::new(format!("Videos: {channel_title}"))
                     .size(20.0)
                     .strong()
                     .color(egui::Color32::WHITE),
@@ -38,13 +38,19 @@ pub fn render_channel_view(
             } else {
                 None
             } {
-                if ui.button("✓ Subscribed").on_hover_text("Click to unsubscribe").clicked() {
-                    action = Some(PendingAction::Unsubscribe { subscription_id: sub_details.id.clone() });
+                if ui
+                    .button("✓ Subscribed")
+                    .on_hover_text("Click to unsubscribe")
+                    .clicked()
+                {
+                    action = Some(PendingAction::Unsubscribe {
+                        subscription_id: sub_details.id.clone(),
+                    });
                 }
-            } else {
-                if ui.button("➕ Subscribe").clicked() {
-                    action = Some(PendingAction::Subscribe { channel_id: channel_id.to_string() });
-                }
+            } else if ui.button("➕ Subscribe").clicked() {
+                action = Some(PendingAction::Subscribe {
+                    channel_id: channel_id.to_string(),
+                });
             }
         });
         if !channel_description.is_empty() {
@@ -73,7 +79,10 @@ pub fn render_channel_view(
         Some(Err(err_msg)) => {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
-                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Failed to load videos");
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 100, 100),
+                    "⚠️ Failed to load videos",
+                );
                 ui.add_space(10.0);
                 ui.label(err_msg);
                 ui.add_space(20.0);
@@ -98,7 +107,15 @@ pub fn render_channel_view(
                     .show(ui, |ui| {
                         for video in vids {
                             let mut card_action = PendingAction::None;
-                            draw_video_card(state, http_client, audio_tx, ui, ctx, video, &mut card_action);
+                            draw_video_card(
+                                state,
+                                http_client,
+                                audio_tx,
+                                ui,
+                                ctx,
+                                video,
+                                &mut card_action,
+                            );
                             if !matches!(card_action, PendingAction::None) {
                                 action = Some(card_action);
                             }

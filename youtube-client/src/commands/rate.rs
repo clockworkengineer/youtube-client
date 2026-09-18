@@ -7,8 +7,8 @@ pub async fn execute_rate(
     rating: Rating,
 ) -> anyhow::Result<()> {
     let client = ctx.get_client().await?;
-    println!("Submitting rating '{:?}' for video ID {}...", rating, video_id);
+    println!("Submitting rating '{rating:?}' for video ID {video_id}...");
     client.rate_video(&video_id, rating).await?;
-    println!("Successfully rated video {} as {:?}.", video_id, rating);
+    println!("Successfully rated video {video_id} as {rating:?}.");
     Ok(())
 }

@@ -9,7 +9,10 @@ fn test_page_lifecycle() {
     assert_eq!(empty_page.len(), 0);
     assert!(!empty_page.has_more());
 
-    let page1 = Page::new(vec!["item1".to_string(), "item2".to_string()], Some("token_123".to_string()));
+    let page1 = Page::new(
+        vec!["item1".to_string(), "item2".to_string()],
+        Some("token_123".to_string()),
+    );
     assert!(!page1.is_empty());
     assert_eq!(page1.len(), 2);
     assert!(page1.has_more());

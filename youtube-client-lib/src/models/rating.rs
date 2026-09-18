@@ -44,7 +44,9 @@ impl FromStr for Rating {
             "like" => Ok(Rating::Like),
             "dislike" => Ok(Rating::Dislike),
             "none" => Ok(Rating::None),
-            other => Err(format!("Invalid rating '{}', expected 'like', 'dislike', or 'none'", other)),
+            other => Err(format!(
+                "Invalid rating '{other}', expected 'like', 'dislike', or 'none'"
+            )),
         }
     }
 }

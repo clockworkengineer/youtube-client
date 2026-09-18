@@ -1,7 +1,7 @@
 //! # Core YouTube Client Implementation
 
+use google_youtube3::{YouTube, hyper_rustls, hyper_util};
 use std::path::Path;
-use google_youtube3::{hyper_rustls, hyper_util, YouTube};
 use yup_oauth2::authenticator_delegate::InstalledFlowDelegate;
 use yup_oauth2::{ApplicationSecret, InstalledFlowAuthenticator, InstalledFlowReturnMethod};
 
@@ -117,8 +117,9 @@ impl YoutubeClient {
             .enable_http2()
             .build();
 
-        let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-            .build(connector);
+        let client =
+            hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+                .build(connector);
 
         let hub = YouTube::new(client, auth);
 
@@ -200,14 +201,18 @@ impl YoutubeClient {
             .items
             .ok_or_else(|| YoutubeError::Other("Channel not found".to_string()))?;
         if items.is_empty() {
-            return Err(YoutubeError::Other("Channel has no content details".to_string()));
+            return Err(YoutubeError::Other(
+                "Channel has no content details".to_string(),
+            ));
         }
         let uploads_playlist_id = items[0]
             .content_details
             .as_ref()
             .and_then(|cd| cd.related_playlists.as_ref())
             .and_then(|rp| rp.uploads.as_ref())
-            .ok_or_else(|| YoutubeError::Other("No uploads playlist found for this channel".to_string()))?;
+            .ok_or_else(|| {
+                YoutubeError::Other("No uploads playlist found for this channel".to_string())
+            })?;
 
         let limit = max_results.min(50);
         let (_resp, playlist_res) = retry_api_call(|| async {
@@ -342,7 +347,7 @@ impl YoutubeClient {
         let item = video_res
             .items
             .and_then(|items| items.into_iter().next())
-            .ok_or_else(|| YoutubeError::Other(format!("Video '{}' not found", video_id)))?;
+            .ok_or_else(|| YoutubeError::Other(format!("Video '{video_id}' not found")))?;
 
         let snippet = item.snippet.unwrap_or_default();
         let stats = item.statistics.unwrap_or_default();
@@ -350,7 +355,10 @@ impl YoutubeClient {
 
         let title = snippet.title.unwrap_or_default();
         let description = snippet.description.unwrap_or_default();
-        let published_at = snippet.published_at.map(|dt| dt.to_string()).unwrap_or_default();
+        let published_at = snippet
+            .published_at
+            .map(|dt| dt.to_string())
+            .unwrap_or_default();
         let channel_id = snippet.channel_id.unwrap_or_default();
         let channel_title = snippet.channel_title.unwrap_or_default();
         let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
@@ -386,10 +394,7 @@ impl YoutubeClient {
         let (_resp, channel_res) = retry_api_call(|| async {
             self.hub
                 .channels()
-                .list(&vec![
-                    "snippet".to_string(),
-                    "statistics".to_string(),
-                ])
+                .list(&vec!["snippet".to_string(), "statistics".to_string()])
                 .add_id(channel_id)
                 .doit()
                 .await
@@ -399,7 +404,7 @@ impl YoutubeClient {
         let item = channel_res
             .items
             .and_then(|items| items.into_iter().next())
-            .ok_or_else(|| YoutubeError::Other(format!("Channel '{}' not found", channel_id)))?;
+            .ok_or_else(|| YoutubeError::Other(format!("Channel '{channel_id}' not found")))?;
 
         let snippet = item.snippet.unwrap_or_default();
         let stats = item.statistics.unwrap_or_default();
@@ -543,8 +548,14 @@ impl YoutubeClient {
     }
 
     /// List the videos inside a specific playlist.
-    pub async fn list_playlist_videos(&self, playlist_id: &str, max_results: u32) -> Result<Vec<Video>> {
-        let page = self.list_playlist_videos_page(playlist_id, max_results, None).await?;
+    pub async fn list_playlist_videos(
+        &self,
+        playlist_id: &str,
+        max_results: u32,
+    ) -> Result<Vec<Video>> {
+        let page = self
+            .list_playlist_videos_page(playlist_id, max_results, None)
+            .await?;
         Ok(page.items)
     }
 
@@ -563,24 +574,30 @@ impl YoutubeClient {
             snippet: Some(snippet),
             ..Default::default()
         };
-        retry_api_call(|| async {
-            self.hub.subscriptions().insert(sub.clone()).doit().await
-        })
-        .await?;
+        retry_api_call(|| async { self.hub.subscriptions().insert(sub.clone()).doit().await })
+            .await?;
         Ok(())
     }
 
     /// Unsubscribe from a channel using its subscription ID.
     pub async fn unsubscribe_from_channel(&self, subscription_id: &str) -> Result<()> {
         retry_api_call(|| async {
-            self.hub.subscriptions().delete(subscription_id).doit().await
+            self.hub
+                .subscriptions()
+                .delete(subscription_id)
+                .doit()
+                .await
         })
         .await?;
         Ok(())
     }
 
     /// Create a new playlist.
-    pub async fn create_playlist(&self, title: &str, description: Option<&str>) -> Result<Playlist> {
+    pub async fn create_playlist(
+        &self,
+        title: &str,
+        description: Option<&str>,
+    ) -> Result<Playlist> {
         use google_youtube3::api::{Playlist as YtPlaylist, PlaylistSnippet};
         let snippet = PlaylistSnippet {
             title: Some(title.to_string()),
@@ -591,10 +608,9 @@ impl YoutubeClient {
             snippet: Some(snippet),
             ..Default::default()
         };
-        let (_resp, playlist_res) = retry_api_call(|| async {
-            self.hub.playlists().insert(pl.clone()).doit().await
-        })
-        .await?;
+        let (_resp, playlist_res) =
+            retry_api_call(|| async { self.hub.playlists().insert(pl.clone()).doit().await })
+                .await?;
         let id = playlist_res.id.unwrap_or_default();
         let title = playlist_res
             .snippet
@@ -629,10 +645,7 @@ impl YoutubeClient {
 
     /// Delete a playlist owned by the authenticated user.
     pub async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
-        retry_api_call(|| async {
-            self.hub.playlists().delete(playlist_id).doit().await
-        })
-        .await?;
+        retry_api_call(|| async { self.hub.playlists().delete(playlist_id).doit().await }).await?;
         Ok(())
     }
 
@@ -652,17 +665,19 @@ impl YoutubeClient {
             snippet: Some(snippet),
             ..Default::default()
         };
-        retry_api_call(|| async {
-            self.hub.playlist_items().insert(item.clone()).doit().await
-        })
-        .await?;
+        retry_api_call(|| async { self.hub.playlist_items().insert(item.clone()).doit().await })
+            .await?;
         Ok(())
     }
 
     /// Remove a video from a playlist using its playlist item ID.
     pub async fn remove_from_playlist(&self, playlist_item_id: &str) -> Result<()> {
         retry_api_call(|| async {
-            self.hub.playlist_items().delete(playlist_item_id).doit().await
+            self.hub
+                .playlist_items()
+                .delete(playlist_item_id)
+                .doit()
+                .await
         })
         .await?;
         Ok(())
@@ -671,10 +686,8 @@ impl YoutubeClient {
     /// Rate a video ("like", "dislike", or "none") using a raw string or [`Rating`] enum.
     pub async fn rate_video(&self, video_id: &str, rating: impl AsRef<str>) -> Result<()> {
         let rating_str = rating.as_ref();
-        retry_api_call(|| async {
-            self.hub.videos().rate(video_id, rating_str).doit().await
-        })
-        .await?;
+        retry_api_call(|| async { self.hub.videos().rate(video_id, rating_str).doit().await })
+            .await?;
         Ok(())
     }
 
@@ -728,8 +741,8 @@ impl YoutubeClient {
     /// Post a new top-level comment on a video.
     pub async fn post_comment(&self, video_id: &str, text: &str) -> Result<Comment> {
         use google_youtube3::api::{
-            Comment as YtComment, CommentSnippet as YtCommentSnippet,
-            CommentThread, CommentThreadSnippet,
+            Comment as YtComment, CommentSnippet as YtCommentSnippet, CommentThread,
+            CommentThreadSnippet,
         };
 
         let comment_snippet = YtCommentSnippet {
@@ -767,16 +780,26 @@ impl YoutubeClient {
             .unwrap_or_default();
 
         Ok(Comment {
-            author_name: snippet.author_display_name.unwrap_or_else(|| "You".to_string()),
+            author_name: snippet
+                .author_display_name
+                .unwrap_or_else(|| "You".to_string()),
             author_thumbnail: snippet.author_profile_image_url.unwrap_or_default(),
             text_display: snippet.text_display.unwrap_or_else(|| text.to_string()),
-            published_at: snippet.published_at.map(|dt| dt.to_string()).unwrap_or_else(|| "Just now".to_string()),
+            published_at: snippet
+                .published_at
+                .map(|dt| dt.to_string())
+                .unwrap_or_else(|| "Just now".to_string()),
             like_count: 0,
         })
     }
 
     /// Download a YouTube video by ID to the target path.
-    pub async fn download_video<F>(&self, video_id: &str, output_path: &Path, on_progress: F) -> Result<()>
+    pub async fn download_video<F>(
+        &self,
+        video_id: &str,
+        output_path: &Path,
+        on_progress: F,
+    ) -> Result<()>
     where
         F: Fn(&str) + Send + Sync + 'static,
     {
@@ -794,7 +817,8 @@ impl YoutubeClient {
     where
         F: Fn(&str) + Send + Sync + 'static,
     {
-        crate::download::download_video_with_options(video_id, output_path, options, on_progress).await
+        crate::download::download_video_with_options(video_id, output_path, options, on_progress)
+            .await
     }
 
     /// Play the video using the system's default media player.
@@ -846,7 +870,11 @@ impl PlaylistService for YoutubeClient {
     async fn list_playlists(&self, max_results: u32) -> Result<Vec<Playlist>> {
         self.list_playlists(max_results).await
     }
-    async fn list_playlist_videos(&self, playlist_id: &str, max_results: u32) -> Result<Vec<Video>> {
+    async fn list_playlist_videos(
+        &self,
+        playlist_id: &str,
+        max_results: u32,
+    ) -> Result<Vec<Video>> {
         self.list_playlist_videos(playlist_id, max_results).await
     }
     async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> Result<()> {
@@ -876,7 +904,8 @@ impl MediaDownloader for YoutubeClient {
         output_path: &Path,
         progress_cb: Box<dyn Fn(&str) + Send + Sync>,
     ) -> Result<()> {
-        self.download_video(video_id, output_path, progress_cb).await
+        self.download_video(video_id, output_path, progress_cb)
+            .await
     }
 }
 
@@ -890,16 +919,17 @@ pub async fn init_client(
     let (client_id, client_secret) =
         resolve_credentials(opt_client_id, opt_client_secret, config_path)?;
 
-    let resolved_token_cache = if token_cache_path == Path::new("tokencache.json") && !token_cache_path.exists() {
-        if let Some(global_dir) = crate::config::get_global_config_dir() {
-            let _ = std::fs::create_dir_all(&global_dir);
-            global_dir.join("tokencache.json")
+    let resolved_token_cache =
+        if token_cache_path == Path::new("tokencache.json") && !token_cache_path.exists() {
+            if let Some(global_dir) = crate::config::get_global_config_dir() {
+                let _ = std::fs::create_dir_all(&global_dir);
+                global_dir.join("tokencache.json")
+            } else {
+                token_cache_path.to_path_buf()
+            }
         } else {
             token_cache_path.to_path_buf()
-        }
-    } else {
-        token_cache_path.to_path_buf()
-    };
+        };
 
     YoutubeClient::new_oauth_with_scopes(
         &client_id,

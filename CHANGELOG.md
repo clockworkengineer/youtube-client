@@ -4,6 +4,26 @@ All notable changes to the `youtube-client` workspace are documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - Professional Product Polish, Standalone Installer & Release Automation
+
+### Added
+- **Multi-Platform CI/CD & GitHub Release Automation**:
+  - Added `.github/workflows/ci.yml` matrix checking `ubuntu-latest`, `windows-latest`, and `macos-latest` with `cargo test`, `cargo fmt --check`, and `cargo clippy -- -D warnings`.
+  - Added `.github/workflows/release.yml` automating binary packaging, SHA256 checksum generation, and GitHub Release deployment on `v*` tag pushes.
+- **Standalone Installer & Windows System Integration (`youtube-installer`)**:
+  - Pre-built binary detection allowing non-developer end users to install immediately from downloaded zip releases without requiring `cargo` or Rust.
+  - Windows "Add/Remove Programs" registration in `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\YouTubeClient` with custom icon, publisher, version, and clean uninstaller string.
+  - Local installation of uninstaller utility (`youtube-installer.exe`) in installation directory.
+- **CLI Shell Auto-Completions (`youtube-client`)**:
+  - Added `completions` subcommand supporting `bash`, `zsh`, `fish`, `powershell`, and `elvish` via `clap_complete`.
+- **Desktop GUI UX Polish (`youtube-gui`)**:
+  - Non-intrusive in-app toast notification banner providing real-time feedback for media streaming, player fallbacks, downloads, and user actions.
+  - Persistent volume configuration and muted state.
+  - Complete elimination of console window and console trace leakage.
+- **Code Quality & Ergonomics**:
+  - Resolved all 85+ Clippy warnings across the entire workspace, reaching zero-warning strict hygiene with `-D warnings`.
+  - Boxed large error variants in `YoutubeError` to reduce enum size and optimize `Result` stack usage.
+
 ## [0.1.2] - Complete Feature Set Implementation & Comprehensive Documentation Suite
 
 ### Added

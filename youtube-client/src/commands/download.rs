@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use youtube_client_lib::download::{DownloadFormat, DownloadOptions};
 use youtube_client_lib::download_video_with_options;
@@ -27,11 +27,11 @@ pub async fn execute_download(
         _ => "mp4",
     };
 
-    let out_path = output.unwrap_or_else(|| PathBuf::from(format!("{}.{}", video_id, default_ext)));
+    let out_path = output.unwrap_or_else(|| PathBuf::from(format!("{video_id}.{default_ext}")));
 
-    println!("Downloading video {}...", video_id);
-    println!("  Format: {:?}", format);
-    println!("  Target: {:?}", out_path);
+    println!("Downloading video {video_id}...");
+    println!("  Format: {format:?}");
+    println!("  Target: {out_path:?}");
 
     let mut options = DownloadOptions::new(format);
     if let Some(ref log) = ctx.log_file {
@@ -59,12 +59,12 @@ pub async fn execute_download(
         let prev = last_print.load(Ordering::Relaxed);
         if now_ms.saturating_sub(prev) >= 100 || prog.contains("100%") {
             last_print.store(now_ms, Ordering::Relaxed);
-            print!("\r{}", prog);
+            print!("\r{prog}");
             let _ = std::io::stdout().flush();
         }
     })
     .await?;
 
-    println!("\n✓ Download completed successfully! Saved to {:?}", out_path);
+    println!("\n✓ Download completed successfully! Saved to {out_path:?}");
     Ok(())
 }

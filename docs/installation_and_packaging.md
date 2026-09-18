@@ -68,7 +68,10 @@ cargo run --bin youtube-installer -- --yes --target-dir "C:\Tools\YouTubeClient"
 ## System Integration Details
 
 ### Windows Integration
+* **Standalone Installation:** Automatically detects pre-built binaries when extracted from a GitHub Release archive, requiring zero developer tools or dependencies.
 * **Application Icons:** Installs high-resolution multi-format `icon.ico` and `icon.png` to the installation folder and embeds the custom icon in `youtube-gui.exe`.
+* **Windows Installed Apps (Add/Remove Programs):** Registers the application in `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\YouTubeClient` with publisher, version, icon, and direct uninstaller link in Windows Settings > Installed Apps.
+* **Local Uninstaller Utility:** Copies `youtube-installer.exe` into the installation directory for offline maintenance and clean removal.
 * **User PATH Modification:** Adds the installation directory to `HKCU\Environment\Path` in the Windows Registry and broadcasts `WM_SETTINGCHANGE` so new terminals immediately recognize `youtube-client` without requiring a reboot.
 * **Start Menu Shortcut:** Creates `YouTube Client GUI.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs` configured with the custom icon.
 * **Desktop Shortcut:** Creates `YouTube Client GUI.lnk` on the user's Desktop with the custom application icon for instant access.
@@ -96,6 +99,8 @@ cargo run --bin youtube-installer -- --verify
 * ✓ CLI binary presence in target installation directory.
 * ✓ CLI `--help` invocation test (verifies execution and dynamic linker).
 * ✓ GUI binary presence in target installation directory.
+* ✓ Installer / Uninstaller utility presence in target installation directory.
+* ✓ Custom application icon files (`icon.ico`, `icon.png`).
 * ✓ Global configuration directory and credentials file accessibility.
 
 ---
@@ -105,6 +110,7 @@ cargo run --bin youtube-installer -- --verify
 The installer provides complete uninstallation capability, removing all deployed artifacts:
 
 ```bash
+# Directly from the installed directory or Windows Settings
 youtube-installer --uninstall
 ```
 Or with custom target directory:
@@ -113,10 +119,12 @@ youtube-installer --uninstall --target-dir "C:\Tools\YouTubeClient"
 ```
 
 ### Actions Performed During Uninstallation:
-1. Deletes `youtube-client` and `youtube-gui` executables.
-2. Removes Desktop and Start Menu shortcuts.
-3. Cleans the target directory from user `PATH` (Windows Registry or Unix shell rc files).
-4. Deletes the installation directory if it is empty.
+1. Deletes `youtube-client`, `youtube-gui`, and `youtube-installer` executables.
+2. Deletes `icon.ico` and `icon.png`.
+3. Removes Windows Add/Remove Programs registry entry.
+4. Removes Desktop and Start Menu shortcuts.
+5. Cleans the target directory from user `PATH` (Windows Registry or Unix shell rc files).
+6. Deletes the installation directory if it is empty.
 
 ---
 

@@ -9,12 +9,11 @@ pub fn build_release_binaries(install_cli: bool, install_gui: bool) -> (PathBuf,
     } else {
         let mut cargo_cmd = Command::new("cargo");
         cargo_cmd.arg("build").arg("--release");
-        if install_cli && !install_gui {
+        if install_cli {
             cargo_cmd.arg("--package").arg("youtube-client");
-        } else if install_gui && !install_cli {
+        }
+        if install_gui {
             cargo_cmd.arg("--package").arg("youtube-gui");
-        } else {
-            cargo_cmd.arg("--workspace");
         }
 
         let status = cargo_cmd.status();

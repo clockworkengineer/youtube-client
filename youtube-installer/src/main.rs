@@ -182,7 +182,14 @@ fn main() -> anyhow::Result<()> {
     if install_cli {
         if cli_src.exists() {
             let cli_dest = install_dir.join(cli_src.file_name().unwrap());
-            std::fs::copy(&cli_src, &cli_dest)?;
+            if let Err(e) = std::fs::copy(&cli_src, &cli_dest) {
+                eprintln!(
+                    "❌ Error copying youtube-client to {}: {}. If the application is currently running, please close it and retry.",
+                    cli_dest.display(),
+                    e
+                );
+                return Err(e.into());
+            }
             println!("✓ Copied youtube-client to: {}", cli_dest.display());
         } else {
             println!("❌ Error: youtube-client binary not found at {}", cli_src.display());
@@ -192,7 +199,14 @@ fn main() -> anyhow::Result<()> {
     if install_gui {
         if gui_src.exists() {
             let gui_dest = install_dir.join(gui_src.file_name().unwrap());
-            std::fs::copy(&gui_src, &gui_dest)?;
+            if let Err(e) = std::fs::copy(&gui_src, &gui_dest) {
+                eprintln!(
+                    "❌ Error copying youtube-gui to {}: {}. If the application is currently running, please close it and retry.",
+                    gui_dest.display(),
+                    e
+                );
+                return Err(e.into());
+            }
             println!("✓ Copied youtube-gui to: {}", gui_dest.display());
         } else {
             println!("❌ Error: youtube-gui binary not found at {}", gui_src.display());

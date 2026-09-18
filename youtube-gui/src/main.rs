@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![windows_subsystem = "windows"]
 //! # YouTube GUI Application Entry Point
 //!
 //! Initializes the eframe window, manages application lifecycle state, audio worker spawning,
@@ -18,7 +18,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use youtube_client_lib::utils::{
-    launch_external_player, load_string_set_from_file, save_string_set_to_file, scan_downloads_dir,
+    append_to_log, launch_external_player_with_log, load_string_set_from_file,
+    save_string_set_to_file, scan_downloads_dir,
 };
 
 struct YoutubeGuiApp {
@@ -379,29 +380,32 @@ impl eframe::App for YoutubeGuiApp {
             }
             PendingAction::PlayLocal { path, title } => {
                 let is_mp3 = path.extension().map(|e| e == "mp3").unwrap_or(false);
+                let log_file = self.state.lock().unwrap().log_file.clone();
                 if is_mp3 {
-                    println!("Playing local audio: {:?}", path);
+                    append_to_log(&log_file, "INFO", &format!("Playing local audio: {:?}", path));
                     let _ = self.audio_tx.send(PlayerCommand::Play(path, title));
                 } else {
-                    println!("Opening local video: {:?}", path);
-                    if let Err(e) = launch_external_player(path.as_os_str()) {
-                        println!("{} Falling back to default file opener.", e);
+                    append_to_log(&log_file, "INFO", &format!("Opening local video: {:?}", path));
+                    if let Err(e) = launch_external_player_with_log(path.as_os_str(), Some(&log_file)) {
+                        append_to_log(&log_file, "WARN", &format!("{} Falling back to default file opener.", e));
                         let _ = open::that(path);
                     }
                 }
             }
             PendingAction::StreamVideo { video_id } => {
                 let url = format!("https://www.youtube.com/watch?v={}", video_id);
-                println!("Video clicked: {}", url);
+                let log_file = self.state.lock().unwrap().log_file.clone();
+                append_to_log(&log_file, "INFO", &format!("Video clicked: {}", url));
                 
                 // Try to open the stream in MPV or VLC first
-                if let Err(e) = launch_external_player(std::ffi::OsStr::new(&url)) {
-                    println!("{} Falling back to default browser.", e);
+                if let Err(e) = launch_external_player_with_log(std::ffi::OsStr::new(&url), Some(&log_file)) {
+                    append_to_log(&log_file, "WARN", &format!("{} Falling back to default browser.", e));
                     let _ = open::that(url);
                 }
             }
             PendingAction::OpenInBrowser { url } => {
-                println!("Opening in web browser: {}", url);
+                let log_file = self.state.lock().unwrap().log_file.clone();
+                append_to_log(&log_file, "INFO", &format!("Opening in web browser: {}", url));
                 let _ = open::that(url);
             }
             PendingAction::Search { query } => {

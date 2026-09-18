@@ -185,6 +185,14 @@ pub fn get_configured_player_path() -> Option<String> {
 
 /// Launch an external media player for a file or URL target with cross-platform fallbacks.
 pub fn launch_external_player(target: &std::ffi::OsStr) -> Result<(), String> {
+    launch_external_player_with_log(target, None)
+}
+
+/// Launch an external media player for a file or URL target with cross-platform fallbacks and logging.
+pub fn launch_external_player_with_log(
+    target: &std::ffi::OsStr,
+    log_file: Option<&Path>,
+) -> Result<(), String> {
     let mut players = Vec::new();
     if let Some(user_player) = get_configured_player_path() {
         players.push(user_player);
@@ -226,22 +234,70 @@ pub fn launch_external_player(target: &std::ffi::OsStr) -> Result<(), String> {
     let cookies_file = crate::config::resolve_cookies_file(None);
     let cookies_browser = crate::config::resolve_cookies_from_browser(None);
 
+    let log_file_path = log_file
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| crate::config::resolve_log_file_path(None));
+
     for player in players {
         let mut cmd = std::process::Command::new(&player);
-        if is_url && player.to_lowercase().contains("mpv") {
-            if let Some(ref cf) = cookies_file {
-                cmd.arg(format!("--ytdl-raw-options-append=cookies={}", cf.display()));
-            }
-            if let Some(ref cb) = cookies_browser {
-                cmd.arg(format!("--ytdl-raw-options-append=cookies-from-browser={}", cb));
+        if player.to_lowercase().contains("mpv") {
+            cmd.arg("--no-terminal");
+            if is_url {
+                if let Some(ref cf) = cookies_file {
+                    cmd.arg(format!("--ytdl-raw-options-append=cookies={}", cf.display()));
+                }
+                if let Some(ref cb) = cookies_browser {
+                    cmd.arg(format!("--ytdl-raw-options-append=cookies-from-browser={}", cb));
+                }
             }
         }
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        // Redirect child process stdout & stderr to the client log file so no trace/console window appears
+        if let Some(parent) = log_file_path.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+        if let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file_path)
+        {
+            if let Ok(file_err) = file.try_clone() {
+                cmd.stdout(std::process::Stdio::from(file));
+                cmd.stderr(std::process::Stdio::from(file_err));
+            } else {
+                cmd.stdout(std::process::Stdio::from(file));
+                cmd.stderr(std::process::Stdio::null());
+            }
+        } else {
+            cmd.stdout(std::process::Stdio::null());
+            cmd.stderr(std::process::Stdio::null());
+        }
+
         cmd.arg(target);
         if cmd.spawn().is_ok() {
+            append_to_log(
+                &log_file_path,
+                "INFO",
+                &format!("Launched media player '{}' for target: {}", player, target_str),
+            );
             return Ok(());
         }
     }
 
+    append_to_log(
+        &log_file_path,
+        "ERROR",
+        &format!("No media players succeeded for target: {}", target_str),
+    );
     Err("No media players succeeded.".to_string())
 }
 

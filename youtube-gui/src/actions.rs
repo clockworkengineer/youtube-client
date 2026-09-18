@@ -62,10 +62,14 @@ pub fn spawn_client_action<F, Fut, T>(
         }
         .await;
 
-        if let Err(e) = &res {
-            println!("Error during {}: {}", action_name, e);
-        }
         let mut s = state_clone.lock().unwrap();
+        if let Err(e) = &res {
+            youtube_client_lib::utils::append_to_log(
+                &s.log_file,
+                "ERROR",
+                &format!("Error during {}: {}", action_name, e),
+            );
+        }
         on_complete(res, &mut *s, &ctx);
     });
 }
@@ -611,9 +615,13 @@ pub fn spawn_rate_video(state: Arc<Mutex<AppState>>, ctx: egui::Context, video_i
                 .map_err(|e| format!("Failed to rate: {}", e))?;
             Ok((video_id, rating))
         },
-        move |res, _, _| {
+        move |res, s, _| {
             if let Ok((vid, rat)) = res {
-                println!("Successfully rated video {} as {}", vid, rat);
+                youtube_client_lib::utils::append_to_log(
+                    &s.log_file,
+                    "INFO",
+                    &format!("Successfully rated video {} as {}", vid, rat),
+                );
             }
         },
     );

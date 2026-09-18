@@ -19,3 +19,4 @@ cleared_videos.json
 # Contains mutation testing data
 **/mutants.out*/
 downloads/*
+.vscode/*

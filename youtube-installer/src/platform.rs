@@ -1,6 +1,55 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+fn linux_path_export_line(install_dir: &Path) -> String {
+    format!("export PATH=\"$PATH:{}\"", install_dir.display())
+}
+
+fn ensure_linux_path_in_shell_rc(install_dir: &Path) -> bool {
+    let Some(home) = std::env::var_os("HOME") else {
+        return false;
+    };
+
+    let home_dir = PathBuf::from(home);
+    let profiles = [
+        home_dir.join(".profile"),
+        home_dir.join(".bashrc"),
+        home_dir.join(".zshrc"),
+    ];
+
+    let export_line = linux_path_export_line(install_dir);
+    let target = profiles
+        .iter()
+        .find(|path| path.exists())
+        .unwrap_or(&profiles[0]);
+
+    if let Ok(existing) = std::fs::read_to_string(target) {
+        if existing.lines().any(|line| line.trim() == export_line.trim()) {
+            println!("✓ PATH already configured in {}", target.display());
+            return true;
+        }
+    }
+
+    let mut content = String::new();
+    if target.exists() {
+        content = std::fs::read_to_string(target).unwrap_or_default();
+    }
+
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str(&export_line);
+    content.push('\n');
+
+    if std::fs::write(target, content).is_ok() {
+        println!("✓ Added install directory to PATH in {}", target.display());
+        println!("   Start a new shell or run: source {}", target.display());
+        return true;
+    }
+
+    false
+}
+
 pub fn configure_platform_environment(install_dir: &Path, install_gui: bool) {
     if cfg!(target_os = "windows") {
         println!("\nSetting up environment PATH variable...");
@@ -100,6 +149,8 @@ pub fn configure_platform_environment(install_dir: &Path, install_gui: bool) {
                 .status();
         }
     } else if cfg!(target_os = "linux") {
+        ensure_linux_path_in_shell_rc(install_dir);
+
         if install_gui {
             if let Some(home) = std::env::var_os("HOME") {
                 let apps_dir = PathBuf::from(home)
@@ -205,5 +256,17 @@ pub fn remove_platform_environment(install_dir: &Path) {
                 println!("✓ Removed desktop entry.");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linux_path_export_line_includes_install_dir() {
+        let install_dir = PathBuf::from("/home/test-user/.local/bin");
+        let line = linux_path_export_line(&install_dir);
+        assert_eq!(line, "export PATH=\"$PATH:/home/test-user/.local/bin\"");
     }
 }

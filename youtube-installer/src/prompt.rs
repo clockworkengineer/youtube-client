@@ -32,3 +32,18 @@ pub fn get_default_install_dir() -> PathBuf {
         PathBuf::from("/usr/local/bin")
     }
 }
+
+pub fn default_install_dir_for_home(home: &str) -> PathBuf {
+    PathBuf::from(home).join(".local").join("bin")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linux_default_install_dir_for_home_uses_local_bin() {
+        let dir = default_install_dir_for_home("/tmp/test-home");
+        assert_eq!(dir, PathBuf::from("/tmp/test-home/.local/bin"));
+    }
+}

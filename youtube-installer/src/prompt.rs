@@ -33,6 +33,7 @@ pub fn get_default_install_dir() -> PathBuf {
     }
 }
 
+#[cfg(test)]
 pub fn default_install_dir_for_home(home: &str) -> PathBuf {
     PathBuf::from(home).join(".local").join("bin")
 }

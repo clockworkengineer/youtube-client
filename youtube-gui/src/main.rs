@@ -37,6 +37,7 @@ struct YoutubeGuiApp {
     playlist_title_input: String,
     playlist_desc_input: String,
     subscription_filter: String,
+    settings_form: SettingsFormState,
     volume: f32,
     muted: bool,
     audio_tx: std::sync::mpsc::Sender<PlayerCommand>,
@@ -64,9 +65,8 @@ impl YoutubeGuiApp {
 
         // Scan downloads directory for pre-existing media files
         let downloads = HashMap::new();
-        // Initial empty downloads map; directory scanned asynchronously in background
-        let cleared_video_ids =
-            load_string_set_from_file(std::path::Path::new("cleared_videos.json"));
+        let cleared_videos_path = youtube_client_lib::resolve_app_data_path("cleared_videos.json");
+        let cleared_video_ids = load_string_set_from_file(&cleared_videos_path);
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
             new_videos: None,
@@ -87,6 +87,7 @@ impl YoutubeGuiApp {
             playlist_action_status: None,
             downloads_dir: downloads_dir.clone(),
             log_file: log_file.clone(),
+            cleared_videos_path,
             toast: None,
         }));
 
@@ -123,6 +124,7 @@ impl YoutubeGuiApp {
             playlist_title_input: String::new(),
             playlist_desc_input: String::new(),
             subscription_filter: String::new(),
+            settings_form: SettingsFormState::default(),
             volume: config.volume.unwrap_or(1.0),
             muted: false,
             audio_tx,
@@ -225,6 +227,11 @@ impl eframe::App for YoutubeGuiApp {
                     );
                     if ui.selectable_label(on_playlists, "📂 Playlists").clicked() {
                         action = PendingAction::LoadPlaylists;
+                    }
+                    ui.add_space(10.0);
+                    let on_settings = matches!(current_view, View::Settings);
+                    if ui.selectable_label(on_settings, "⚙️ Settings").clicked() {
+                        action = PendingAction::GoToSettings;
                     }
                     ui.add_space(10.0);
                     let on_about = matches!(current_view, View::About);
@@ -420,6 +427,12 @@ impl eframe::App for YoutubeGuiApp {
                         action = act;
                     }
                 }
+                View::Settings => {
+                    let s = lock_state(&self.state);
+                    if let Some(act) = render_settings_view(ui, &mut self.settings_form, &s) {
+                        action = act;
+                    }
+                }
                 View::About => {
                     render_about_view(ui);
                 }
@@ -472,19 +485,15 @@ impl eframe::App for YoutubeGuiApp {
                 for id in ids_to_clear {
                     s_lock.cleared_video_ids.insert(id);
                 }
-                let _ = save_string_set_to_file(
-                    std::path::Path::new("cleared_videos.json"),
-                    &s_lock.cleared_video_ids,
-                );
+                let cleared_path = s_lock.cleared_videos_path.clone();
+                let _ = save_string_set_to_file(&cleared_path, &s_lock.cleared_video_ids);
                 s_lock.new_videos = Some(Ok(Vec::new()));
             }
             PendingAction::DismissNewVideo { video_id } => {
                 let mut s_lock = self.state.lock().unwrap();
                 s_lock.cleared_video_ids.insert(video_id.clone());
-                let _ = save_string_set_to_file(
-                    std::path::Path::new("cleared_videos.json"),
-                    &s_lock.cleared_video_ids,
-                );
+                let cleared_path = s_lock.cleared_videos_path.clone();
+                let _ = save_string_set_to_file(&cleared_path, &s_lock.cleared_video_ids);
                 if let Some(Ok(ref mut vids)) = s_lock.new_videos {
                     vids.retain(|v| v.id != video_id);
                 }
@@ -493,10 +502,8 @@ impl eframe::App for YoutubeGuiApp {
                 {
                     let mut s_lock = self.state.lock().unwrap();
                     s_lock.cleared_video_ids.clear();
-                    let _ = save_string_set_to_file(
-                        std::path::Path::new("cleared_videos.json"),
-                        &s_lock.cleared_video_ids,
-                    );
+                    let cleared_path = s_lock.cleared_videos_path.clone();
+                    let _ = save_string_set_to_file(&cleared_path, &s_lock.cleared_video_ids);
                     s_lock.new_videos = None;
                 }
                 spawn_fetch_new_videos(self.state.clone(), ctx.clone());
@@ -714,6 +721,47 @@ impl eframe::App for YoutubeGuiApp {
                     playlist_title,
                     video_id,
                 );
+            }
+            PendingAction::GoToSettings => {
+                let mut s_lock = self.state.lock().unwrap();
+                s_lock.navigate_clear_history(View::Settings);
+            }
+            PendingAction::SaveSettings {
+                player_path,
+                downloads_dir,
+                cookies_from_browser,
+            } => {
+                let mut config = youtube_client_lib::load_config();
+                config.player_path = player_path;
+                config.downloads_dir = downloads_dir.clone();
+                config.cookies_from_browser = cookies_from_browser;
+
+                if let Some(global_dir) = youtube_client_lib::get_global_config_dir() {
+                    let _ = std::fs::create_dir_all(&global_dir);
+                    let cfg_file = global_dir.join("config.json");
+                    if let Ok(json) = serde_json::to_string_pretty(&config) {
+                        let _ = std::fs::write(&cfg_file, json);
+                    }
+                }
+
+                let mut s_lock = self.state.lock().unwrap();
+                if let Some(ref d) = downloads_dir {
+                    s_lock.downloads_dir = PathBuf::from(d);
+                }
+                s_lock.set_toast("Settings saved successfully!", false);
+            }
+            PendingAction::SignOut => {
+                let token_path = youtube_client_lib::resolve_token_cache_path();
+                if token_path.exists() {
+                    let _ = std::fs::remove_file(&token_path);
+                }
+                let mut s_lock = self.state.lock().unwrap();
+                s_lock.subscriptions = None;
+                s_lock.new_videos = None;
+                s_lock.playlists = None;
+                s_lock.current_view = View::Login;
+                s_lock.view_history.clear();
+                s_lock.set_toast("Signed out successfully.", false);
             }
             PendingAction::GoToAbout => {
                 let mut s_lock = self.state.lock().unwrap();

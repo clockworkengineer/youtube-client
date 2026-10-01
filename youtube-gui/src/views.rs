@@ -11,6 +11,7 @@ pub mod new_videos_view;
 pub mod playlist_videos_view;
 pub mod playlists_view;
 pub mod search_view;
+pub mod settings_view;
 pub mod subscriptions_view;
 pub mod traits;
 
@@ -22,6 +23,7 @@ pub use new_videos_view::*;
 pub use playlist_videos_view::*;
 pub use playlists_view::*;
 pub use search_view::*;
+pub use settings_view::*;
 pub use subscriptions_view::*;
 #[allow(unused_imports)]
 pub use traits::*;
@@ -147,8 +149,18 @@ pub fn draw_video_card_with_dismiss(
                             }
                         }
                         DownloadStatus::Downloading { progress } => {
-                            ui.spinner();
-                            ui.label(progress);
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                if let Some(fraction) = parse_progress_percentage(progress) {
+                                    ui.add(
+                                        egui::ProgressBar::new(fraction)
+                                            .show_percentage()
+                                            .desired_width(100.0),
+                                    );
+                                } else {
+                                    ui.label(progress);
+                                }
+                            });
                         }
                         DownloadStatus::Finished(_) => {
                             let path_opt = match &download_status {
@@ -191,14 +203,22 @@ pub fn draw_video_card_with_dismiss(
                             }
                         }
                         DownloadStatus::Failed(err) => {
+                            let is_missing_ytdlp = err.contains("yt-dlp");
                             if ui.button("❌ Retry").clicked() {
                                 *action = PendingAction::SpawnDownload {
                                     video: video.clone(),
                                     is_audio: false,
                                 };
                             }
-                            ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED))
-                                .on_hover_text(err);
+                            let fail_text = if is_missing_ytdlp {
+                                "⚠️ yt-dlp missing (Install via winget / brew)"
+                            } else {
+                                "Failed"
+                            };
+                            ui.label(
+                                egui::RichText::new(fail_text).color(egui::Color32::LIGHT_RED),
+                            )
+                            .on_hover_text(err);
                         }
                     }
                 });
@@ -263,4 +283,16 @@ pub fn get_or_fetch_thumbnail(
         );
     }
     texture
+}
+
+/// Parse download progress percentage string (e.g. "[download]  45.2% of 12.34MiB at 2.50MiB/s").
+pub fn parse_progress_percentage(progress: &str) -> Option<f32> {
+    if let Some(percent_idx) = progress.find('%') {
+        let before = &progress[..percent_idx];
+        let num_str = before.split_whitespace().last()?;
+        if let Ok(val) = num_str.parse::<f32>() {
+            return Some((val / 100.0).clamp(0.0, 1.0));
+        }
+    }
+    None
 }

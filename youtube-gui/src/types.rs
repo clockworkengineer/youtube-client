@@ -39,6 +39,7 @@ pub enum View {
         details: Option<Result<VideoDetails, String>>,
         comments: Option<Result<Vec<Comment>, String>>,
     },
+    Settings,
     About,
 }
 
@@ -83,6 +84,7 @@ pub struct AppState {
     pub playlist_action_status: Option<Result<String, String>>,
     pub downloads_dir: PathBuf,
     pub log_file: PathBuf,
+    pub cleared_videos_path: PathBuf,
     pub toast: Option<(String, std::time::Instant, bool)>,
 }
 
@@ -222,4 +224,11 @@ pub enum PendingAction {
         playlist_id: String,
     },
     GoToAbout,
+    GoToSettings,
+    SaveSettings {
+        player_path: Option<String>,
+        downloads_dir: Option<String>,
+        cookies_from_browser: Option<String>,
+    },
+    SignOut,
 }

@@ -4,6 +4,27 @@ All notable changes to the `youtube-client` workspace are documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - Release Readiness, Robust Storage Architecture & In-App Settings
+
+### Added
+- **Application State & Data Path Architecture (`youtube-client-lib`)**:
+  - Centralized `resolve_app_data_path(file_name)` ensuring `cleared_videos.json`, `tokencache.json`, and `youtube-client.log` are stored in standard OS application data directories (`%APPDATA%/youtube-client` on Windows, `~/.config/youtube-client` on Linux/macOS) with automatic directory creation, eliminating data loss and permission errors when launched from shortcuts or non-terminal environments.
+  - Implemented `secure_sensitive_file` enforcing `0600` permissions on Unix platforms for token caches.
+  - Added `serde::Serialize` derive on `Config` struct to support dynamic configuration saving.
+- **Native Settings View & Account Management (`youtube-gui`)**:
+  - Added dedicated `Settings` view allowing graphical configuration of preferred media player (Auto, MPV, VLC, or custom path), download destination directory, YouTube cookies browser extraction (`chrome`, `firefox`, `edge`, `brave`), and active file locations.
+  - Added one-click "Sign Out & Disconnect Account" button that safely purges token cache and resets view state to Login.
+- **Media Download Progress Bar & Dependency Guidance (`youtube-gui`)**:
+  - Added real-time percentage parsing (`parse_progress_percentage`) and smooth `egui::ProgressBar` rendering in both feed cards and Video Details view.
+  - Added actionable error detection and tooltips when `yt-dlp` is missing with setup instructions (`winget install yt-dlp` / `brew install yt-dlp`).
+- **Windows Installer & Release Packaging (`dist/windows/setup.iss`)**:
+  - Added complete Inno Setup Windows installer script compiling standalone `youtube-client-setup-<version>.exe` with desktop shortcut task and PATH registration.
+  - Updated `.github/workflows/release.yml` to automatically build and attach Windows setup executables alongside portable zip packages.
+- **CI Hygiene & Build Reproducibility**:
+  - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
+  - Fixed code formatting in `youtube-installer/src/platform.rs`.
+  - Committed `Cargo.lock` to ensure deterministic builds across platforms.
+
 ## [0.1.3] - Professional Product Polish, Standalone Installer & Release Automation
 
 ### Added

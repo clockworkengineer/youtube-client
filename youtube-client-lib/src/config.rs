@@ -6,7 +6,7 @@
 use std::path::Path;
 
 /// Application configuration settings loaded from `private_config.json` or `config.json`.
-#[derive(serde::Deserialize, Clone, Debug, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, Default)]
 pub struct Config {
     /// Google OAuth2 Client ID
     pub client_id: Option<String>,
@@ -47,7 +47,7 @@ pub fn resolve_log_file_path(cli_override: Option<&Path>) -> std::path::PathBuf 
             return std::path::PathBuf::from(cfg_path.trim());
         }
     }
-    std::path::PathBuf::from("youtube-client.log")
+    resolve_app_data_path("youtube-client.log")
 }
 
 /// Resolve path to cookies file if specified via CLI, environment variable, or configuration.
@@ -186,21 +186,43 @@ pub fn get_global_config_dir() -> Option<std::path::PathBuf> {
     }
 }
 
-/// Resolve the path to `tokencache.json`.
-/// Checks current working directory first; if not present there but exists in global directory,
-/// returns the global path. Otherwise returns `PathBuf::from("tokencache.json")`.
-pub fn resolve_token_cache_path() -> std::path::PathBuf {
-    let local = std::path::PathBuf::from("tokencache.json");
+/// Resolve the path for an application state, cache, or data file.
+/// Precedence:
+/// 1. Local path if it already exists in the current working directory (preserves portability in development).
+/// 2. Global application directory if the file exists there.
+/// 3. Global application directory if available (creating parent directory if needed).
+/// 4. Local path as final fallback.
+pub fn resolve_app_data_path(file_name: &str) -> std::path::PathBuf {
+    let local = std::path::PathBuf::from(file_name);
     if local.exists() {
         return local;
     }
     if let Some(global_dir) = get_global_config_dir() {
-        let global_cache = global_dir.join("tokencache.json");
-        if global_cache.exists() {
-            return global_cache;
+        let global_file = global_dir.join(file_name);
+        if global_file.exists() {
+            return global_file;
         }
+        let _ = std::fs::create_dir_all(&global_dir);
+        return global_file;
     }
     local
+}
+
+/// Secure a sensitive file (like `tokencache.json`) by setting Unix permissions to 0600 (owner read/write only).
+pub fn secure_sensitive_file(_path: &Path) {
+    #[cfg(unix)]
+    if _path.exists() {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(_path, std::fs::Permissions::from_mode(0o600));
+    }
+}
+
+/// Resolve the path to `tokencache.json`.
+/// Checks current working directory first; if not present there, falls back to the global application directory.
+pub fn resolve_token_cache_path() -> std::path::PathBuf {
+    let path = resolve_app_data_path("tokencache.json");
+    secure_sensitive_file(&path);
+    path
 }
 
 pub fn load_config() -> Config {

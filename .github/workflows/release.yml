@@ -53,7 +53,7 @@ jobs:
       - name: Build Release Binaries
         run: cargo build --release --target ${{ matrix.target }} -p youtube-client -p youtube-gui -p youtube-installer
 
-      - name: Package Windows Archive
+      - name: Package Windows Archive & Installer
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
@@ -68,6 +68,12 @@ jobs:
           Copy-Item "README.md" $dist/
           Copy-Item "LICENSE" $dist/
           Compress-Archive -Path "$dist/*" -DestinationPath "$dist.zip"
+
+          # Compile Inno Setup installer
+          if (Get-Command iscc -ErrorAction SilentlyContinue) {
+              $ver = $tag.TrimStart("v")
+              iscc "/DMyAppVersion=$ver" dist/windows/setup.iss
+          }
 
       - name: Package Unix Archive
         if: matrix.os != 'windows-latest'
@@ -87,7 +93,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: package-${{ matrix.target }}
-          path: youtube-client-${{ github.ref_name }}-${{ matrix.target }}.*
+          path: |
+            youtube-client-${{ github.ref_name }}-${{ matrix.target }}.*
+            dist/*.exe
 
   publish:
     name: Publish GitHub Release

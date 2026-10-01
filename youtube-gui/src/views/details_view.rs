@@ -164,8 +164,20 @@ pub fn render_details_view(
                         }
                     }
                     DownloadStatus::Downloading { progress } => {
-                        ui.spinner();
-                        ui.label(progress);
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            if let Some(fraction) =
+                                crate::views::parse_progress_percentage(progress)
+                            {
+                                ui.add(
+                                    egui::ProgressBar::new(fraction)
+                                        .show_percentage()
+                                        .desired_width(120.0),
+                                );
+                            } else {
+                                ui.label(progress);
+                            }
+                        });
                     }
                     DownloadStatus::Finished(_) => {
                         let path_opt = match &download_status {
@@ -222,6 +234,7 @@ pub fn render_details_view(
                         }
                     }
                     DownloadStatus::Failed(err) => {
+                        let is_missing_ytdlp = err.contains("yt-dlp");
                         if ui.button("❌ Retry Video").clicked() {
                             action = Some(PendingAction::SpawnDownload {
                                 video: video.clone(),
@@ -234,7 +247,12 @@ pub fn render_details_view(
                                 is_audio: true,
                             });
                         }
-                        ui.label(egui::RichText::new("Failed").color(egui::Color32::LIGHT_RED))
+                        let fail_text = if is_missing_ytdlp {
+                            "⚠️ yt-dlp missing (Install via winget / brew)"
+                        } else {
+                            "Failed"
+                        };
+                        ui.label(egui::RichText::new(fail_text).color(egui::Color32::LIGHT_RED))
                             .on_hover_text(err);
                     }
                 }

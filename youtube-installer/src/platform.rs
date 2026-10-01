@@ -24,7 +24,10 @@ fn ensure_linux_path_in_shell_rc(install_dir: &Path) -> bool {
         .unwrap_or(&profiles[0]);
 
     if let Ok(existing) = std::fs::read_to_string(target) {
-        if existing.lines().any(|line| line.trim() == export_line.trim()) {
+        if existing
+            .lines()
+            .any(|line| line.trim() == export_line.trim())
+        {
             println!("✓ PATH already configured in {}", target.display());
             return true;
         }

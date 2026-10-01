@@ -24,6 +24,9 @@ pub async fn execute_details(ctx: &CliContext, video_id: String, json: bool) -> 
     );
     println!("  Views:           {}", details.view_count);
     println!("  Likes:           {}", details.like_count);
+    if let Some(dislikes) = details.dislike_count {
+        println!("  Dislikes (RYD):  {dislikes}");
+    }
     println!("  Comments:        {}", details.comment_count);
     if !details.tags.is_empty() {
         println!("  Tags:            {}", details.tags.join(", "));

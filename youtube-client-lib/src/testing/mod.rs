@@ -97,6 +97,7 @@ impl VideoService for MockYoutubeClient {
             duration_seconds: 300,
             duration_formatted: "5:00".to_string(),
             tags: vec!["mock".to_string(), "video".to_string()],
+            dislike_count: Some(12),
         })
     }
 }

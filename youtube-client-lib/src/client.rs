@@ -371,6 +371,7 @@ impl YoutubeClient {
         let duration_iso = content_details.duration.unwrap_or_default();
         let duration_seconds = VideoDetails::parse_iso8601_duration(&duration_iso);
         let duration_formatted = VideoDetails::format_duration(duration_seconds);
+        let dislike_count = crate::utils::fetch_dislike_count(video_id).await;
 
         Ok(VideoDetails {
             id: video_id.to_string(),
@@ -386,6 +387,7 @@ impl YoutubeClient {
             duration_seconds,
             duration_formatted,
             tags,
+            dislike_count,
         })
     }
 

@@ -386,3 +386,23 @@ pub fn append_to_log(path: &Path, prefix: &str, message: &str) {
         let _ = writeln!(file, "[{now}] [{prefix}] {message}");
     }
 }
+
+/// Query the public Return YouTube Dislike (RYD) API for estimated video dislike counts.
+pub async fn fetch_dislike_count(video_id: &str) -> Option<u64> {
+    let url = format!("https://returnyoutubedislikeapi.com/votes?videoId={video_id}");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .ok()?;
+    let resp = client.get(&url).send().await.ok()?;
+    if resp.status().is_success() {
+        #[derive(serde::Deserialize)]
+        struct RydResponse {
+            dislikes: Option<u64>,
+        }
+        if let Ok(ryd) = resp.json::<RydResponse>().await {
+            return ryd.dislikes;
+        }
+    }
+    None
+}

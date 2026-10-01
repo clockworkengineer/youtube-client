@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows Installer & Release Packaging (`dist/windows/setup.iss`)**:
   - Added complete Inno Setup Windows installer script compiling standalone `youtube-client-setup-<version>.exe` with desktop shortcut task and PATH registration.
   - Updated `.github/workflows/release.yml` to automatically build and attach Windows setup executables alongside portable zip packages.
+- **Return YouTube Dislike (RYD) Public API Integration**:
+  - Integrated public `returnyoutubedislikeapi.com` API in `youtube-client-lib` with non-blocking async lookup and 3s connection timeout fallback.
+  - Added `dislike_count` field to `VideoDetails` model across `youtube-client-lib`, mock testing fixtures, CLI `details` command, and GUI video details panel.
+  - Restored community dislike metrics and dislike count display with explanatory hover tooltip in the GUI.
+- **Audio Dock Interactive Seek & Scrubber (`youtube-gui`)**:
+  - Upgraded embedded Rodio audio player thread with precise timeline tracking (`position_secs`, `duration_secs`) and `Seek`/`Skip` command handling.
+  - Added interactive playback scrubber slider in bottom audio dock allowing instant drag-and-drop timeline scrubbing.
+  - Added `⏪ 10s` and `⏩ 10s` instant skip buttons and elapsed/total duration readout (`MM:SS / MM:SS`).
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

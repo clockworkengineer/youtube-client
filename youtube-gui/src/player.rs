@@ -38,12 +38,19 @@ pub fn spawn_audio_worker(
                                     if let Ok(source) =
                                         rodio::Decoder::new(std::io::BufReader::new(file))
                                     {
+                                        use rodio::Source;
+                                        let duration_secs = source
+                                            .total_duration()
+                                            .map(|d| d.as_secs_f32())
+                                            .unwrap_or(0.0);
                                         let mut s = state.lock().unwrap();
                                         sink.set_volume(s.player_state.volume);
                                         sink.append(source);
                                         sink.play();
                                         s.player_state.current_title = title;
                                         s.player_state.playing = true;
+                                        s.player_state.duration_secs = duration_secs;
+                                        s.player_state.position_secs = 0.0;
                                     }
                                 }
                             }
@@ -68,6 +75,8 @@ pub fn spawn_audio_worker(
                                 let mut s = state.lock().unwrap();
                                 s.player_state.playing = false;
                                 s.player_state.current_title = String::new();
+                                s.player_state.position_secs = 0.0;
+                                s.player_state.duration_secs = 0.0;
                             }
                         }
                         PlayerCommand::SetVolume(vol) => {
@@ -76,6 +85,28 @@ pub fn spawn_audio_worker(
                             }
                             let mut s = state.lock().unwrap();
                             s.player_state.volume = vol;
+                        }
+                        PlayerCommand::Seek(dest) => {
+                            if let Some(sink) = &sink_opt {
+                                let _ = sink.try_seek(dest);
+                                let mut s = state.lock().unwrap();
+                                s.player_state.position_secs = dest.as_secs_f32();
+                            }
+                        }
+                        PlayerCommand::Skip(secs) => {
+                            if let Some(sink) = &sink_opt {
+                                let cur = sink.get_pos();
+                                let new_pos = if secs >= 0 {
+                                    cur + std::time::Duration::from_secs(secs as u64)
+                                } else {
+                                    cur.saturating_sub(std::time::Duration::from_secs(
+                                        (-secs) as u64,
+                                    ))
+                                };
+                                let _ = sink.try_seek(new_pos);
+                                let mut s = state.lock().unwrap();
+                                s.player_state.position_secs = new_pos.as_secs_f32();
+                            }
                         }
                     }
                     ctx.request_repaint();
@@ -89,10 +120,19 @@ pub fn spawn_audio_worker(
                                 if s.player_state.playing {
                                     s.player_state.playing = false;
                                     s.player_state.current_title = String::new();
+                                    s.player_state.position_secs = 0.0;
+                                    s.player_state.duration_secs = 0.0;
                                     updated = true;
                                 }
                             }
                             if updated {
+                                ctx.request_repaint();
+                            }
+                        } else {
+                            let pos = sink.get_pos().as_secs_f32();
+                            let mut s = state.lock().unwrap();
+                            if s.player_state.playing {
+                                s.player_state.position_secs = pos;
                                 ctx.request_repaint();
                             }
                         }

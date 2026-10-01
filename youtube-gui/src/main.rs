@@ -82,6 +82,8 @@ impl YoutubeGuiApp {
                 current_title: String::new(),
                 playing: false,
                 volume: 1.0,
+                position_secs: 0.0,
+                duration_secs: 0.0,
             },
             playlists: None,
             playlist_action_status: None,
@@ -134,24 +136,34 @@ impl YoutubeGuiApp {
 
 impl eframe::App for YoutubeGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let (current_view, is_login, player_title, player_playing) = {
+        let (current_view, is_login, player_title, player_playing, player_pos, player_dur) = {
             let s = lock_state(&self.state);
             (
                 s.current_view.clone(),
                 matches!(s.current_view, View::Login),
                 s.player_state.current_title.clone(),
                 s.player_state.playing,
+                s.player_state.position_secs,
+                s.player_state.duration_secs,
             )
         };
         let mut action = PendingAction::None;
 
         if !is_login && !player_title.is_empty() {
+            if player_playing {
+                ctx.request_repaint_after(std::time::Duration::from_millis(250));
+            }
+
             egui::TopBottomPanel::bottom("audio_player").show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("🎵 Playing:").strong());
                     ui.label(&player_title);
 
-                    ui.add_space(20.0);
+                    ui.add_space(15.0);
+
+                    if ui.button("⏪ 10s").clicked() {
+                        let _ = self.audio_tx.send(PlayerCommand::Skip(-10));
+                    }
 
                     if player_playing {
                         if ui.button("⏸ Pause").clicked() {
@@ -161,11 +173,44 @@ impl eframe::App for YoutubeGuiApp {
                         let _ = self.audio_tx.send(PlayerCommand::Resume);
                     }
 
+                    if ui.button("⏩ 10s").clicked() {
+                        let _ = self.audio_tx.send(PlayerCommand::Skip(10));
+                    }
+
                     if ui.button("⏹ Stop").clicked() {
                         let _ = self.audio_tx.send(PlayerCommand::Stop);
                     }
 
-                    ui.add_space(20.0);
+                    ui.add_space(15.0);
+
+                    // Scrubber and time
+                    let format_time = |secs: f32| -> String {
+                        let total = secs.max(0.0) as u32;
+                        let m = total / 60;
+                        let s = total % 60;
+                        format!("{m:02}:{s:02}")
+                    };
+
+                    let time_label = if player_dur > 0.0 {
+                        format!("{} / {}", format_time(player_pos), format_time(player_dur))
+                    } else {
+                        format_time(player_pos)
+                    };
+                    ui.label(egui::RichText::new(time_label).monospace());
+
+                    if player_dur > 0.0 {
+                        let mut seek_pos = player_pos.clamp(0.0, player_dur);
+                        let slider = ui.add(
+                            egui::Slider::new(&mut seek_pos, 0.0..=player_dur).show_value(false),
+                        );
+                        if slider.drag_released() || (slider.changed() && !slider.dragged()) {
+                            let _ = self.audio_tx.send(PlayerCommand::Seek(
+                                std::time::Duration::from_secs_f32(seek_pos),
+                            ));
+                        }
+                    }
+
+                    ui.add_space(15.0);
                     ui.label("🔊");
                     let mut vol = self.volume;
                     if ui

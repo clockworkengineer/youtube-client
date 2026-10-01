@@ -31,6 +31,9 @@ pub struct VideoDetails {
     pub duration_formatted: String,
     /// Topic and content tags
     pub tags: Vec<String>,
+    /// Estimated dislike count from Return YouTube Dislike (RYD) API
+    #[serde(default)]
+    pub dislike_count: Option<u64>,
 }
 
 impl VideoDetails {

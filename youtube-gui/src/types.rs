@@ -48,6 +48,8 @@ pub struct PlayerState {
     pub current_title: String,
     pub playing: bool,
     pub volume: f32,
+    pub position_secs: f32,
+    pub duration_secs: f32,
 }
 
 impl Default for PlayerState {
@@ -56,6 +58,8 @@ impl Default for PlayerState {
             current_title: String::new(),
             playing: false,
             volume: 1.0,
+            position_secs: 0.0,
+            duration_secs: 0.0,
         }
     }
 }
@@ -66,6 +70,8 @@ pub enum PlayerCommand {
     Resume,
     Stop,
     SetVolume(f32),
+    Seek(std::time::Duration),
+    Skip(i32),
 }
 
 pub struct AppState {

@@ -114,6 +114,15 @@ pub fn render_details_view(
                             .size(12.0)
                             .color(egui::Color32::from_rgb(200, 200, 210)),
                     );
+                    if let Some(dislikes) = d.dislike_count {
+                        ui.separator();
+                        ui.label(
+                            egui::RichText::new(format!("👎 {dislikes} dislikes"))
+                                .size(12.0)
+                                .color(egui::Color32::from_rgb(200, 200, 210)),
+                        )
+                        .on_hover_text("Crowd-sourced from Return YouTube Dislike (RYD) API");
+                    }
                     ui.separator();
                     ui.label(
                         egui::RichText::new(format!("⏱ {}", d.duration_formatted))

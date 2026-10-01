@@ -77,3 +77,15 @@ fn test_string_set_persistence() {
     let loaded = load_string_set_from_file(&file_path);
     assert_eq!(original, loaded);
 }
+
+#[test]
+fn test_ryd_response_parsing() {
+    let raw_json = r#"{"id":"dQw4w9WgXcQ","dateCreated":"2021-12-05T00:00:00Z","likes":16000000,"dislikes":420000,"rating":4.87,"viewCount":1500000000}"#;
+    #[derive(serde::Deserialize)]
+    struct RydResponse {
+        dislikes: Option<u64>,
+    }
+    let parsed: Result<RydResponse, _> = serde_json::from_str(raw_json);
+    assert!(parsed.is_ok());
+    assert_eq!(parsed.unwrap().dislikes, Some(420_000));
+}

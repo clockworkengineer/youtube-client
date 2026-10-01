@@ -5901,6 +5901,7 @@ dependencies = [
  "google-youtube3",
  "open",
  "rand 0.8.8",
+ "reqwest",
  "rodio",
  "serde",
  "serde_json",

@@ -126,6 +126,7 @@ impl YoutubeGuiApp {
             playback_positions,
             quota_tracker,
             quota_path,
+            mock_backend: None,
             toast: None,
         }));
 

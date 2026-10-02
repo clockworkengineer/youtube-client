@@ -284,6 +284,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         log_file: cli.log_file,
         cookies_file: cli.cookies,
         cookies_from_browser: cli.cookies_from_browser,
+        mock_client: None,
     };
 
     match cli.command {

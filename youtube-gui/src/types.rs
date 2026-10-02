@@ -102,6 +102,7 @@ pub struct AppState {
     pub playback_positions: HashMap<String, youtube_client_lib::utils::PlaybackProgress>,
     pub quota_tracker: Arc<youtube_client_lib::QuotaTracker>,
     pub quota_path: PathBuf,
+    pub mock_backend: Option<youtube_client_lib::MockYoutubeClient>,
     pub toast: Option<(String, std::time::Instant, bool)>,
 }
 

@@ -345,3 +345,64 @@ fn test_completions_command_parsing() {
         _ => panic!("Expected Completions command"),
     }
 }
+
+#[tokio::test]
+async fn test_mock_backend_injection_and_execution() {
+    use youtube_client::commands::{
+        CliContext, execute_playlist_create, execute_playlist_delete, execute_rate,
+        execute_subscribe, execute_unsubscribe,
+    };
+    use youtube_client_lib::MockYoutubeClient;
+    use youtube_client_lib::models::Rating;
+
+    let mock = MockYoutubeClient::new();
+    let ctx = CliContext::with_mock(mock.clone());
+
+    // 1. Verify get_client returns Mock backend
+    let backend = ctx.get_client().await.expect("Failed to get backend");
+    assert!(backend.is_mock());
+
+    // 2. Test subscribe and unsubscribe through command dispatch
+    execute_subscribe(&ctx, "UC_rust_lang".to_string())
+        .await
+        .expect("Subscribe failed");
+    assert_eq!(mock.subscriptions.lock().unwrap().len(), 1);
+    assert_eq!(
+        mock.subscriptions.lock().unwrap()[0].channel_id,
+        "UC_rust_lang"
+    );
+
+    execute_unsubscribe(&ctx, "sub_UC_rust_lang".to_string())
+        .await
+        .expect("Unsubscribe failed");
+    assert_eq!(mock.subscriptions.lock().unwrap().len(), 0);
+
+    // 3. Test rating through command dispatch
+    execute_rate(&ctx, "video_999".to_string(), Rating::Like)
+        .await
+        .expect("Rate failed");
+    assert_eq!(
+        mock.video_ratings.lock().unwrap().get("video_999"),
+        Some(&"like".to_string())
+    );
+
+    // 4. Test playlist create and delete through command dispatch
+    execute_playlist_create(
+        &ctx,
+        "Rust Tutorials".to_string(),
+        Some("Curated guides".to_string()),
+    )
+    .await
+    .expect("Create playlist failed");
+    let playlist_id = {
+        let pls = mock.playlists.lock().unwrap();
+        assert_eq!(pls.len(), 1);
+        assert_eq!(pls[0].title, "Rust Tutorials");
+        pls[0].id.clone()
+    };
+
+    execute_playlist_delete(&ctx, playlist_id)
+        .await
+        .expect("Delete playlist failed");
+    assert_eq!(mock.playlists.lock().unwrap().len(), 0);
+}

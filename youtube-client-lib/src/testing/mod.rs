@@ -5,7 +5,7 @@
 //! and CLI commands without real YouTube credentials or network access.
 
 use crate::error::Result;
-use crate::models::{Comment, Playlist, Subscription, Video, VideoDetails};
+use crate::models::{ChannelDetails, Comment, Playlist, Subscription, Video, VideoDetails};
 use crate::traits::{
     CommentService, MediaDownloader, PlaylistService, SubscriptionService, VideoService,
 };
@@ -14,7 +14,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 /// An in-memory mock client that implements all library service traits.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct MockYoutubeClient {
     pub subscriptions: Arc<Mutex<Vec<Subscription>>>,
     pub videos_by_channel: Arc<Mutex<HashMap<String, Vec<Video>>>>,
@@ -28,6 +28,20 @@ pub struct MockYoutubeClient {
 impl MockYoutubeClient {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Fetch channel profile and subscriber statistics mock.
+    pub async fn get_channel_details(&self, channel_id: &str) -> Result<ChannelDetails> {
+        Ok(ChannelDetails {
+            id: channel_id.to_string(),
+            title: format!("Channel {channel_id}"),
+            description: "Mock channel description".to_string(),
+            custom_url: Some(format!("@{channel_id}")),
+            thumbnail_url: String::new(),
+            subscriber_count: 100_000,
+            video_count: 42,
+            view_count: 1_000_000,
+        })
     }
 }
 

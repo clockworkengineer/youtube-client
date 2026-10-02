@@ -1,11 +1,19 @@
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 use youtube_client_lib::utils::{DownloadStatus, get_download_path};
-use youtube_client_lib::{Comment, Video, VideoDetails, YoutubeClient};
+use youtube_client_lib::{Comment, Video, VideoDetails, YoutubeBackend, YoutubeClient};
 
 use crate::types::{AppState, View};
 
-pub async fn get_client_async() -> Result<YoutubeClient, String> {
+pub async fn get_client_async(state: &Arc<Mutex<AppState>>) -> Result<YoutubeBackend, String> {
+    let mock_opt = {
+        let s = state.lock().unwrap();
+        s.mock_backend.clone()
+    };
+    if let Some(mock) = mock_opt {
+        return Ok(YoutubeBackend::mock(mock));
+    }
+
     let (client_id, client_secret) =
         youtube_client_lib::resolve_credentials(None, None, std::path::Path::new("config.json"))
             .map_err(|e| e.to_string())?;
@@ -40,7 +48,7 @@ pub async fn get_client_async() -> Result<YoutubeClient, String> {
         .await
         .map_err(|e| format!("Authentication failed: {e}"))?;
 
-    Ok(client)
+    Ok(YoutubeBackend::live(client))
 }
 
 pub fn spawn_client_action<F, Fut, T>(
@@ -50,14 +58,14 @@ pub fn spawn_client_action<F, Fut, T>(
     f: F,
     on_complete: impl FnOnce(Result<T, String>, &mut AppState, &egui::Context) + Send + 'static,
 ) where
-    F: FnOnce(YoutubeClient) -> Fut + Send + 'static,
+    F: FnOnce(YoutubeBackend) -> Fut + Send + 'static,
     Fut: std::future::Future<Output = Result<T, String>> + Send + 'static,
     T: Send + 'static,
 {
     let state_clone = state.clone();
     tokio::spawn(async move {
         let res = async {
-            let client = get_client_async().await?;
+            let client = get_client_async(&state_clone).await?;
             f(client).await
         }
         .await;
@@ -308,7 +316,9 @@ pub fn spawn_download(
                 }
             }
 
-            let client = get_client_async().await.map_err(|e| e.to_string())?;
+            let client = get_client_async(&state_clone)
+                .await
+                .map_err(|e| e.to_string())?;
 
             let format = if is_audio {
                 youtube_client_lib::download::DownloadFormat::Mp3

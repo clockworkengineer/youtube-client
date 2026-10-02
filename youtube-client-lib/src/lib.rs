@@ -42,6 +42,7 @@
 
 pub mod audio;
 pub mod auth;
+pub mod backend;
 pub mod builder;
 pub mod cache;
 pub mod client;
@@ -59,6 +60,7 @@ pub mod utils;
 
 pub use audio::*;
 pub use auth::*;
+pub use backend::*;
 pub use builder::YoutubeClientBuilder;
 pub use cache::*;
 pub use client::*;
@@ -69,6 +71,7 @@ pub use importers::*;
 pub use models::*;
 pub use quota::*;
 pub use rss::*;
+pub use testing::MockYoutubeClient;
 pub use traits::*;
 
 #[cfg(test)]

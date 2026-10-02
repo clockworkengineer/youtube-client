@@ -11,3 +11,14 @@ pub use downloader::MediaDownloader;
 pub use playlist_service::PlaylistService;
 pub use subscription_service::SubscriptionService;
 pub use video_service::VideoService;
+
+/// Composite service trait combining all YouTube client domain capabilities.
+pub trait YoutubeApiService:
+    VideoService + SubscriptionService + PlaylistService + CommentService + Send + Sync
+{
+}
+
+impl<T> YoutubeApiService for T where
+    T: VideoService + SubscriptionService + PlaylistService + CommentService + Send + Sync
+{
+}

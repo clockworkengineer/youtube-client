@@ -51,6 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Zero-Quota Public Channel RSS Feed Fallback (`youtube-client-lib` & `youtube-gui`)**:
   - Added `fetch_channel_videos_via_rss` and `parse_youtube_rss_xml` parsing YouTube's public Atom/RSS XML feeds for channel uploads with zero API keys and 0 quota units.
   - Automatic fallback in GUI channel browsing if API requests fail or quota limits are reached.
+- **SOLID Architecture Phase 1: Dependency Inversion in GUI & CLI Clients (`youtube-client-lib`, `youtube-gui`, `youtube-client`)**:
+  - Introduced composite `YoutubeApiService` trait combining domain service abstractions (`VideoService + SubscriptionService + PlaylistService + CommentService + Send + Sync`) with blanket implementation.
+  - Introduced `YoutubeBackend` (`Live(Arc<YoutubeClient>)` vs `Mock(MockYoutubeClient)`) adapter implementing all service traits, pagination, and media downloading, enabling full Liskov substitution without runtime trait boxing.
+  - Decoupled `CliContext` in `youtube-client` to vend `YoutubeBackend` and added `with_mock(...)` constructor for offline integration testing without live credentials.
+  - Decoupled GUI asynchronous client actions (`get_client_async` and `spawn_client_action`) to operate on `YoutubeBackend`, with pluggable `mock_backend` injection support in `AppState`.
+  - Added end-to-end integration tests verifying mock backend injection and CLI command dispatching.
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

@@ -5,7 +5,7 @@ edition = "2024"
 description = "CLI application for interacting with YouTube, managing playlists, subscriptions, and downloading videos."
 license = "MIT"
 repository = "https://github.com/clockworkengineer/youtube-client"
-readme = "../README.md"
+readme = "README.md"
 
 [dependencies]
 anyhow.workspace = true

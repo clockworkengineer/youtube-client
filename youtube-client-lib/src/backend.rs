@@ -4,7 +4,7 @@
 //! a live Google API client ([`YoutubeClient`]) or an in-memory mock ([`MockYoutubeClient`]).
 //!
 //! Implements [`VideoService`], [`SubscriptionService`], [`PlaylistService`], [`CommentService`],
-//! and [`YoutubeApiService`].
+//! and [`YoutubeApiService`](crate::traits::YoutubeApiService).
 
 use std::sync::Arc;
 

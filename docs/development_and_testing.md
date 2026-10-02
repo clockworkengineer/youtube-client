@@ -1,6 +1,6 @@
-# Developer & Testing Guide
+# Developer & Testing Guide (v0.2.0)
 
-This guide provides setup instructions, testing conventions, mocking architectures, and CI guidelines for developers contributing to the `youtube-client` workspace.
+This guide provides setup instructions, testing conventions, mocking architectures, static analysis requirements, and CI guidelines for developers contributing to the `youtube-client` workspace.
 
 ---
 
@@ -9,11 +9,14 @@ This guide provides setup instructions, testing conventions, mocking architectur
 1. [Development Environment Setup](#development-environment-setup)
 2. [Building the Workspace](#building-the-workspace)
 3. [Testing Strategy & Test Suites](#testing-strategy--test-suites)
-   - [Unit Testing](#unit-testing)
-   - [CLI Integration Tests](#cli-integration-tests)
-   - [In-Memory Mocking with `MockYoutubeClient`](#in-memory-mocking-with-mockyoutubeclient)
+   - [Overview of the 67 Test Suites](#overview-of-the-67-test-suites)
+   - [Core Unit Testing](#core-unit-testing)
+   - [CLI Integration & Parser Testing](#cli-integration--parser-testing)
+   - [In-Memory Mocking & `YoutubeBackend` Injection](#in-memory-mocking--youtubebackend-injection)
+   - [OutputFormatter Testing](#outputformatter-testing)
 4. [Static Analysis & Code Quality](#static-analysis--code-quality)
-5. [Documentation Generation](#documentation-generation)
+5. [SOLID Contribution Standards](#solid-contribution-standards)
+6. [Documentation Generation](#documentation-generation)
 
 ---
 
@@ -51,76 +54,91 @@ cargo build -p youtube-installer
 
 ## Testing Strategy & Test Suites
 
-The workspace uses a multi-layered testing strategy combining unit tests, simulated in-memory mocks, and automated CLI command parser checks.
+The workspace employs an exhaustive testing hierarchy combining isolated unit tests, in-memory simulated mocks, end-to-end command parser validations, and format serialization tests.
 
-### 1. Unit Testing
+### Overview of the 67 Test Suites
 
-Execute all workspace tests:
+The test matrix consists of **67 passing tests** with 0 network or credentials dependencies:
+* **`youtube-client-lib` (31 unit tests):** Quota tracker, daily UTC rollover, TTL cache insertion/expiration/prune, PlayOptions builder, PlayerRegistry auto-discovery, RSS Atom XML parser, retry logic, sanitization, token cache scope checks, and window state serialization.
+* **`youtube-client` (4 unit tests):** `JsonFormatter`, `CsvFormatter`, `TableFormatter`, and paginated page token layout.
+* **`cli_tests.rs` (15 integration tests):** Clap debug assert, all 17 subcommand parser validations, and mock backend command dispatch.
+* **`utils.rs` (8 tests):** Video ID extraction, filename sanitization, RYD API deserialization, downloads directory scanner, playback positions persistence, and string table formatting.
+* **`sanitization_tests.rs` (5 tests):** Windows reserved names (`CON`, `PRN`, `NUL`), length truncation, leading dashes, Unicode, and edge cases.
+* **`pagination_tests.rs` (1 test):** Page lifecycle and resumption token chaining.
+* **`youtube-installer` (2 tests):** Linux path export line generation and default directory resolution.
+* **Doc-tests (1 test):** Executable quickstart verification in `youtube-client-lib/src/lib.rs`.
+
+Run all tests across the workspace:
 ```bash
 cargo test --workspace
 ```
 
-Run tests for the core library:
-```bash
-cargo test -p youtube-client-lib
-```
-
-Key unit test modules:
-* `youtube-client-lib/src/retry.rs`: Validates retry logic, jitter calculation, and error classification.
-* `youtube-client-lib/src/utils.rs`: Validates Windows reserved name sanitization, leading dash stripping, and atomic file replacement.
-* `youtube-client-lib/src/config.rs`: Validates token cache scope checks and configuration fallback directories.
-
 ---
 
-### 2. CLI Integration Tests
+### In-Memory Mocking & `YoutubeBackend` Injection
 
-The CLI crate includes automated integration tests in [`youtube-client/tests/cli_tests.rs`](file:///c:/Projects/youtube-client/youtube-client/tests/cli_tests.rs).
+`youtube-client-lib` provides [`MockYoutubeClient`](file:///c:/Projects/youtube-client/youtube-client-lib/src/testing/mod.rs), an in-memory test double implementing `YoutubeApiService`.
 
-Run CLI integration tests:
-```bash
-cargo test -p youtube-client --test cli_tests
-```
+#### Testing CLI Commands with Mock Backend
+You can test CLI commands end-to-end without network access using `CliContext::with_mock`:
 
-#### What `cli_tests.rs` Validates:
-* **`clap::Command::debug_assert()`**: Validates that all clap command definitions, argument types, value enums, and subcommands have valid syntax without conflicts.
-* **All 16 Subcommands**: Tests invocation syntax, flag validation, and default value propagation for:
-  `login`, `subscriptions`, `videos`, `search`, `rate`, `playlists`, `download`, `play`, `details`, `channel`, `comments`, `comment-post`, `subscribe`, `unsubscribe`, `playlist-create`, and `playlist-delete`.
-* **JSON Output Handling**: Ensures `--json` flags parse correctly across all query commands.
-
----
-
-### 3. In-Memory Mocking with `MockYoutubeClient`
-
-To test API-dependent features without hitting Google API servers or consuming quota, use [`MockYoutubeClient`](file:///c:/Projects/youtube-client/youtube-client-lib/src/testing/mod.rs).
-
-`MockYoutubeClient` implements all segregated service traits:
-* `VideoService`
-* `SubscriptionService`
-* `PlaylistService`
-* `CommentService`
-* `MediaDownloader`
-
-#### Example Usage in Tests:
 ```rust
-use youtube_client_lib::testing::MockYoutubeClient;
-use youtube_client_lib::traits::{VideoService, PlaylistService};
+use youtube_client::commands::{CliContext, execute_subscribe, execute_rate};
+use youtube_client_lib::MockYoutubeClient;
 use youtube_client_lib::models::Rating;
 
 #[tokio::test]
-async fn test_mock_video_operations() {
+async fn test_cli_mock_execution() {
     let mock = MockYoutubeClient::new();
+    let ctx = CliContext::with_mock(mock.clone());
 
-    // Query mock videos
-    let videos = mock.list_videos("channel_123", 10).await.unwrap();
-    assert!(!videos.is_empty());
+    // Execute subscribe subcommand
+    execute_subscribe(&ctx, "UC_rust_lang".to_string()).await.unwrap();
+    assert_eq!(mock.subscriptions.lock().unwrap().len(), 1);
 
-    // Test rating
-    let rate_res = mock.rate_video("video_abc", Rating::Like).await;
-    assert!(rate_res.is_ok());
+    // Execute rate subcommand
+    execute_rate(&ctx, "video_999".to_string(), Rating::Like).await.unwrap();
+    assert_eq!(
+        mock.video_ratings.lock().unwrap().get("video_999"),
+        Some(&"like".to_string())
+    );
+}
+```
 
-    // Test playlists
-    let playlists = mock.list_playlists(10).await.unwrap();
-    assert!(!playlists.is_empty());
+#### Testing GUI State with Mock Backend
+In `youtube-gui`, inject the mock backend directly into `AppState`:
+```rust
+let mock = MockYoutubeClient::new();
+let state = AppState::with_mock_backend(mock);
+assert!(state.backend.is_mock());
+```
+
+---
+
+### OutputFormatter Testing
+
+Formatters implement the [`OutputFormatter<T>`](file:///c:/Projects/youtube-client/youtube-client/src/formatters.rs) trait, allowing pure string assertion tests without stdout capture:
+
+```rust
+use youtube_client::formatters::{select_formatter, JsonFormatter, CsvFormatter, TableFormatter};
+use youtube_client_lib::models::Video;
+
+#[test]
+fn test_video_table_formatter() {
+    let video = Video {
+        id: "vid_1".to_string(),
+        title: "Test".to_string(),
+        description: "Desc".to_string(),
+        published_at: "2026-01-01".to_string(),
+        thumbnail_url: "http://thumb.jpg".to_string(),
+        channel_title: "Rust".to_string(),
+    };
+
+    let formatter = TableFormatter;
+    let table = formatter.format_list(&[video]);
+    assert!(table.contains("Index"));
+    assert!(table.contains("Title"));
+    assert!(table.contains("Video ID"));
 }
 ```
 
@@ -133,16 +151,31 @@ Ensure all files adhere to rustfmt style standards:
 ```bash
 cargo fmt --all -- --check
 ```
-Auto-format files:
+
+Auto-format all code:
 ```bash
 cargo fmt --all
 ```
 
 ### Linter (Clippy)
-Run clippy across all workspace members, tests, and examples:
+All PRs and workspace builds enforce **zero warnings** with `-D warnings`:
 ```bash
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+---
+
+## SOLID Contribution Standards
+
+When adding new features or refactoring existing modules:
+1. **Single Responsibility (SRP):** Keep domain handlers focused. Place new UI actions into [`youtube-gui/src/handlers/`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/), not in `main.rs`.
+2. **Open/Closed (OCP):**
+   - Add new media players by implementing [`MediaPlayer`](file:///c:/Projects/youtube-client/youtube-client-lib/src/player.rs).
+   - Add new subscription file formats by implementing [`SubscriptionFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs).
+   - Add new terminal formats by implementing [`OutputFormatter<T>`](file:///c:/Projects/youtube-client/youtube-client/src/formatters.rs).
+3. **Liskov Substitution (LSP):** Ensure any new operations added to `YoutubeApiService` are implemented identically by both `YoutubeClient` and `MockYoutubeClient`.
+4. **Interface Segregation (ISP):** Avoid loose, sprawling function parameter lists. Group view rendering data into cohesive context objects (like `VideoDetailsContext`).
+5. **Dependency Inversion (DIP):** Consumer crates must depend on `YoutubeBackend` or service traits, never on concrete Google API network structs.
 
 ---
 
@@ -153,4 +186,4 @@ Build complete HTML documentation with rustdoc:
 cargo doc --workspace --no-deps --open
 ```
 
-Ensure all doc comments compile cleanly and intra-doc links resolve without broken references.
+Ensure all doc comments compile cleanly and intra-doc links resolve without warnings.

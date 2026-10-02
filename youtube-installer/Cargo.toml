@@ -5,7 +5,7 @@ edition = "2024"
 description = "Installer and setup utility for YouTube client application suite."
 license = "MIT"
 repository = "https://github.com/clockworkengineer/youtube-client"
-readme = "../README.md"
+readme = "README.md"
 
 [dependencies]
 anyhow.workspace = true

@@ -25,8 +25,10 @@
    - [unsubscribe](#14-unsubscribe)
    - [playlist-create](#15-playlist-create)
    - [playlist-delete](#16-playlist-delete)
-4. [Shell Scripting & JSON Pipelining Recipes](#shell-scripting--json-pipelining-recipes)
-5. [Exit Codes & Error Handling](#exit-codes--error-handling)
+   - [completions](#17-completions)
+4. [Output Formatting Engine (Table, JSON, CSV)](#output-formatting-engine-table-json-csv)
+5. [Shell Scripting & JSON Pipelining Recipes](#shell-scripting--json-pipelining-recipes)
+6. [Exit Codes & Error Handling](#exit-codes--error-handling)
 
 ---
 
@@ -221,7 +223,7 @@ youtube-client play --file <PATH> [OPTIONS]
 
 ### 9. `details`
 
-Fetches detailed metrics and metadata for a video, including view count, like count, comment count, ISO duration, and topic tags.
+Fetches detailed metrics and metadata for a video, including view count, like count, community dislike count (via Return YouTube Dislike API integration), comment count, ISO duration, and topic tags.
 
 ```bash
 youtube-client details --video-id <VIDEO_ID> [OPTIONS]
@@ -229,7 +231,7 @@ youtube-client details --video-id <VIDEO_ID> [OPTIONS]
 
 #### Options:
 * `-v, --video-id <ID>`: Target YouTube Video ID.
-* `--json`: Output structured JSON.
+* `--json`: Output structured JSON (includes `dislike_count` field).
 
 ---
 
@@ -337,7 +339,25 @@ youtube-client completions <SHELL>
 
 ---
 
-## Shell Scripting & JSON Pipelining Recipes
+## 4. Output Formatting Engine (Table, JSON, CSV)
+
+`youtube-client` utilizes an extensible `OutputFormatter<T>` engine that cleanly separates API data retrieval from terminal presentation:
+
+### Available Formatting Strategies
+
+1. **Table / Card Formatter (Default):**
+   - Automatically formats tabular data (`subscriptions`, `videos`, `search`, `playlists`, `comments`) with aligned columns, headers, and separator rules.
+   - Formats single items (`details`, `channel`) into clear ASCII summary cards.
+   - Appends continuation pagination instructions automatically if a `next_page_token` exists.
+2. **JSON Formatter (`--json`):**
+   - Serializes complete domain models or paginated `Page<T>` containers into formatted, pretty-printed JSON.
+   - Ideal for piping into `jq`, automated testing, or scripting.
+3. **CSV Formatter:**
+   - Available via the `CsvFormatter` strategy in `youtube_client::formatters`, generating RFC-4180 compliant comma-separated values with quotation escaping for spreadsheets and data science pipelines.
+
+---
+
+## 5. Shell Scripting & JSON Pipelining Recipes
 
 ### 1. Extract All Subscribed Channel Titles & IDs
 ```bash
@@ -363,7 +383,7 @@ done
 
 ---
 
-## Exit Codes & Error Handling
+## 6. Exit Codes & Error Handling
 
 * **`0`**: Command executed successfully.
 * **`1`**: General runtime error (e.g. invalid input arguments, file not found).

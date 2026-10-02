@@ -376,7 +376,7 @@ pub fn get_or_fetch_thumbnail(
     texture
 }
 
-/// Parse download progress percentage string (e.g. "[download]  45.2% of 12.34MiB at 2.50MiB/s").
+/// Parse download progress percentage string (e.g. `"[download]  45.2% of 12.34MiB at 2.50MiB/s"`).
 pub fn parse_progress_percentage(progress: &str) -> Option<f32> {
     if let Some(percent_idx) = progress.find('%') {
         let before = &progress[..percent_idx];

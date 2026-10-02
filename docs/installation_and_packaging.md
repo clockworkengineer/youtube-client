@@ -1,103 +1,121 @@
-# Installation, Packaging & Lifecycle Guide (`youtube-installer`)
+# Installation, Packaging & Lifecycle Guide (v0.2.0)
 
-This guide explains how to build, install, verify, and uninstall the YouTube Client suite (`youtube-client` and `youtube-gui`) using the native `youtube-installer` utility or manual Cargo commands.
+This guide explains how to build, install, verify, package, and uninstall the YouTube Client suite (`youtube-client`, `youtube-gui`, and `youtube-installer`) using the native `youtube-installer` utility, the Inno Setup Windows installer, or GitHub Actions release artifacts.
 
 ---
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-2. [Interactive Installation](#interactive-installation)
-3. [Unattended / Automated Installation](#unattended--automated-installation)
-4. [System Integration Details](#system-integration-details)
-5. [Verifying an Installation (`--verify`)](#verifying-an-installation---verify)
-6. [Clean Uninstallation (`--uninstall`)](#clean-uninstallation---uninstall)
-7. [Manual Building & Packaging](#manual-building--packaging)
+2. [Distribution & Installation Options](#distribution--installation-options)
+   - [Option A: Inno Setup Windows Installer (`setup.exe`)](#option-a-inno-setup-windows-installer-setupexe)
+   - [Option B: Native `youtube-installer` Utility](#option-b-native-youtube-installer-utility)
+   - [Option C: GitHub Actions Pre-Compiled Releases](#option-c-github-actions-pre-compiled-releases)
+3. [System Integration Details](#system-integration-details)
+4. [Verifying an Installation (`--verify`)](#verifying-an-installation---verify)
+5. [Clean Uninstallation (`--uninstall`)](#clean-uninstallation---uninstall)
+6. [Manual Compilation & Optimization](#manual-compilation--optimization)
 
 ---
 
 ## Prerequisites
 
-* **Rust Toolchain:** Stable Rust (1.80+) and Cargo.
+* **Rust Toolchain:** Stable Rust (1.80+) and Cargo (for building from source).
 * **C Compiler / Build Essentials:**
   * **Windows:** MSVC C++ build tools (Visual Studio or Build Tools for Visual Studio).
   * **Linux:** `build-essential`, `pkg-config`, `libasound2-dev` (for Rodio audio).
   * **macOS:** Xcode Command Line Tools (`xcode-select --install`).
-* **Optional Runtime Tools:**
-  * `yt-dlp`: Required for media downloading and MPV YouTube streaming.
-  * `mpv` or `vlc`: For native video playback.
+* **Runtime Tools:**
+  * `yt-dlp`: Required for media downloading and external streaming.
+  * `mpv` or `vlc`: For native external video playback.
 
 ---
 
-## Interactive Installation
+## Distribution & Installation Options
 
-The repository includes a dedicated installer crate (`youtube-installer`) that automates release compilation, binary copying, configuration setup, and desktop integration:
+### Option A: Inno Setup Windows Installer (`setup.exe`)
 
+For Windows users, the repository provides an Inno Setup script ([`dist/windows/setup.iss`](file:///c:/Projects/youtube-client/dist/windows/setup.iss)) that compiles a single-file, professional installer: `youtube-client-setup-0.2.0.exe`.
+
+#### Features:
+* Automatic architecture detection (x86_64).
+* Destination directory selection (defaults to `C:\Program Files\YouTube Client`).
+* Desktop and Start Menu shortcut tasks.
+* Automatic `PATH` registration.
+* Standard Windows Add/Remove Programs registration with uninstaller.
+
+#### Compiling the Installer:
+1. Build release binaries:
+   ```powershell
+   cargo build --workspace --release
+   ```
+2. Run Inno Setup Compiler:
+   ```powershell
+   iscc dist\windows\setup.iss
+   ```
+   The compiled setup executable is generated in `dist\windows\Output\youtube-client-setup-0.2.0.exe`.
+
+---
+
+### Option B: Native `youtube-installer` Utility
+
+The repository includes a dedicated cross-platform installer crate (`youtube-installer`):
+
+#### 1. Interactive Installation
 ```bash
 cargo run --bin youtube-installer
 ```
+* Prompts for installation directory (defaults: `%LOCALAPPDATA%\Programs\YouTubeClient` on Windows, `~/.local/bin` on Linux/macOS).
+* Compiles release binaries automatically.
+* Adds destination to user `PATH` (`~/.bashrc`, `~/.zshrc`, or Windows Registry).
+* Deploys desktop shortcuts and `.desktop` application entries.
+* Configures global `config.json`.
 
-### Installation Steps
-1. The installer prompts for an installation destination directory.
-   * **Default Windows:** `%LOCALAPPDATA%\Programs\YouTubeClient`
-   * **Default Linux / macOS:** `~/.local/bin` or `~/bin`
-2. Prompts to build release binaries (`youtube-client` and `youtube-gui`).
-3. Prompts to add the destination folder to your user `PATH`.
-4. Prompts to create Start Menu and Desktop shortcuts (Windows) or `.desktop` application entries (Linux).
-5. Prompts to set up global `config.json` with your Google Client credentials.
-
----
-
-## Unattended / Automated Installation
-
-For scripted setups, headless systems, or automated deployment scripts, `youtube-installer` supports unattended mode flags:
-
+#### 2. Unattended / Automated Installation (`--yes`)
+For headless systems, containers, or scripted setup:
 ```bash
 cargo run --bin youtube-installer -- --yes --target-dir "C:\Tools\YouTubeClient"
 ```
 
-### Unattended Flags
+---
 
-| Flag | Description |
-| :--- | :--- |
-| `-y, --yes` | Accept all default prompts automatically without interactive prompts. |
-| `--target-dir <DIR>` | Specify target installation directory directly. |
+### Option C: GitHub Actions Pre-Compiled Releases
+
+The project includes an automated release workflow ([`.github/workflows/release.yml`](file:///c:/Projects/youtube-client/.github/workflows/release.yml)) triggered on version tags (`v*`):
+* Compiles release binaries across `windows-latest`, `ubuntu-latest`, and `macos-latest`.
+* Packages portable `.zip` archives containing `youtube-client`, `youtube-gui`, `youtube-installer`, and documentation.
+* Compiles `youtube-client-setup-<version>.exe` on Windows.
+* Generates SHA256 cryptographic checksums for all release artifacts.
+* Publishes assets directly to the GitHub Release page.
 
 ---
 
 ## System Integration Details
 
 ### Windows Integration
-* **Standalone Installation:** Automatically detects pre-built binaries when extracted from a GitHub Release archive, requiring zero developer tools or dependencies.
-* **Application Icons:** Installs high-resolution multi-format `icon.ico` and `icon.png` to the installation folder and embeds the custom icon in `youtube-gui.exe`.
-* **Windows Installed Apps (Add/Remove Programs):** Registers the application in `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\YouTubeClient` with publisher, version, icon, and direct uninstaller link in Windows Settings > Installed Apps.
-* **Local Uninstaller Utility:** Copies `youtube-installer.exe` into the installation directory for offline maintenance and clean removal.
-* **User PATH Modification:** Adds the installation directory to `HKCU\Environment\Path` in the Windows Registry and broadcasts `WM_SETTINGCHANGE` so new terminals immediately recognize `youtube-client` without requiring a reboot.
-* **Start Menu Shortcut:** Creates `YouTube Client GUI.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs` configured with the custom icon.
-* **Desktop Shortcut:** Creates `YouTube Client GUI.lnk` on the user's Desktop with the custom application icon for instant access.
+* **Executable Location:** Copied to target directory alongside icons.
+* **Shortcuts:** Created in Start Menu (`YouTube Client`) and Desktop.
+* **Registry:** Registered in `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\YouTubeClient`.
+* **User PATH:** Appended to `HKCU\Environment\PATH`.
 
-### Linux / macOS Integration
-* **Application Icons:** Installs `icon.png` into the installation directory.
+### Linux & macOS Integration
+* **Application Icons:** Installs `icon.png` into target directory.
 * **User PATH:** Appends `export PATH="<INSTALL_DIR>:$PATH"` to `~/.bashrc`, `~/.zshrc`, or `~/.profile`.
-* **Desktop Entry:** Writes `~/.local/share/applications/youtube-gui.desktop` linked to the custom icon for seamless integration with desktop application menus (GNOME, KDE, XFCE).
+* **Desktop Entry:** Writes `~/.local/share/applications/youtube-gui.desktop` linked to the custom icon for desktop menu integration (GNOME, KDE, XFCE).
 
 ---
 
 ## Verifying an Installation (`--verify`)
 
-To verify that your installation is intact, binaries are executable, and configuration is accessible, run:
+To verify that your installation is intact and binaries execute properly:
 
 ```bash
 youtube-installer --verify
 ```
-Or via cargo:
-```bash
-cargo run --bin youtube-installer -- --verify
-```
 
 ### Verification Checks Performed:
 * ✓ CLI binary presence in target installation directory.
-* ✓ CLI `--help` invocation test (verifies execution and dynamic linker).
+* ✓ CLI `--help` invocation test (verifies dynamic linking and clap setup).
 * ✓ GUI binary presence in target installation directory.
 * ✓ Installer / Uninstaller utility presence in target installation directory.
 * ✓ Custom application icon files (`icon.ico`, `icon.png`).
@@ -107,36 +125,23 @@ cargo run --bin youtube-installer -- --verify
 
 ## Clean Uninstallation (`--uninstall`)
 
-The installer provides complete uninstallation capability, removing all deployed artifacts:
+The installer provides complete uninstallation capability:
 
 ```bash
-# Directly from the installed directory or Windows Settings
 youtube-installer --uninstall
 ```
-Or with custom target directory:
-```bash
-youtube-installer --uninstall --target-dir "C:\Tools\YouTubeClient"
-```
 
-### Actions Performed During Uninstallation:
+### Actions Performed:
 1. Deletes `youtube-client`, `youtube-gui`, and `youtube-installer` executables.
 2. Deletes `icon.ico` and `icon.png`.
 3. Removes Windows Add/Remove Programs registry entry.
 4. Removes Desktop and Start Menu shortcuts.
-5. Cleans the target directory from user `PATH` (Windows Registry or Unix shell rc files).
-6. Deletes the installation directory if it is empty.
+5. Cleans the target directory from user `PATH`.
+6. Removes empty parent directories.
 
 ---
 
-## Manual Building & Packaging
-
-If you prefer building standalone binaries without the installer:
-
-```bash
-cargo build --workspace --release
-```
-
-### Compiler Optimization Profiles
+## Manual Compilation & Optimization
 
 The root `Cargo.toml` specifies aggressive size and performance optimizations for release builds:
 
@@ -149,7 +154,11 @@ panic = "abort"     # Remove unwinding tables for smaller binary footprint
 strip = true        # Strip debug symbols automatically
 ```
 
-Binaries will be output to `target/release/`:
+To compile release binaries manually:
+```bash
+cargo build --workspace --release
+```
+Binaries are placed in `target/release/`:
 * `target/release/youtube-client` (CLI)
 * `target/release/youtube-gui` (GUI)
 * `target/release/youtube-installer` (Installer)

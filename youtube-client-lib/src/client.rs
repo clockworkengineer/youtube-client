@@ -875,7 +875,7 @@ impl YoutubeClient {
         crate::download::download_video_direct(video_id, output_path, on_progress).await
     }
 
-    /// Download a YouTube video by ID to the target path with custom [`DownloadOptions`].
+    /// Download a YouTube video by ID to the target path with custom [`DownloadOptions`](crate::download::DownloadOptions).
     pub async fn download_video_with_options<F>(
         &self,
         video_id: &str,

@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Decoupled `CliContext` in `youtube-client` to vend `YoutubeBackend` and added `with_mock(...)` constructor for offline integration testing without live credentials.
   - Decoupled GUI asynchronous client actions (`get_client_async` and `spawn_client_action`) to operate on `YoutubeBackend`, with pluggable `mock_backend` injection support in `AppState`.
   - Added end-to-end integration tests verifying mock backend injection and CLI command dispatching.
+- **SOLID Architecture Phase 2: Pluggable Media Players & Registry (Open/Closed Principle) (`youtube-client-lib`)**:
+  - Introduced the [`MediaPlayer`](file:///c:/Projects/youtube-client/youtube-client-lib/src/player.rs) trait and [`PlayOptions`](file:///c:/Projects/youtube-client/youtube-client-lib/src/player.rs) struct, encapsulating player-specific command-line arguments, start offsets, cookies, and process logging.
+  - Provided pluggable implementations for `MpvPlayer`, `VlcPlayer`, `IinaPlayer`, `CustomExecutablePlayer`, and `SystemDefaultPlayer`.
+  - Introduced [`PlayerRegistry`](file:///c:/Projects/youtube-client/youtube-client-lib/src/player.rs) for prioritized player auto-discovery and extensible registration without modifying library dispatch code.
+  - Refactored `launch_external_player_with_options` in `utils.rs` to delegate completely to `PlayerRegistry`, eliminating hardcoded string matching.
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

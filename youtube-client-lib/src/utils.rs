@@ -130,6 +130,37 @@ pub fn truncate(s: &str, max_chars: usize) -> Cow<'_, str> {
     }
 }
 
+/// Format tabular data into an aligned, column-padded String.
+pub fn format_table<T>(
+    headers: &[&str],
+    widths: &[usize],
+    items: &[T],
+    row_formatter: impl Fn(&T, usize) -> Vec<String>,
+) -> String {
+    if items.is_empty() {
+        return "No items found.".to_string();
+    }
+
+    let mut out = String::new();
+    for (i, header) in headers.iter().enumerate() {
+        out.push_str(&format!("{:<width$} ", header, width = widths[i]));
+    }
+    out.push('\n');
+
+    let total_width: usize = widths.iter().sum::<usize>() + widths.len() - 1;
+    out.push_str(&"-".repeat(total_width));
+    out.push('\n');
+
+    for (idx, item) in items.iter().enumerate() {
+        let cols = row_formatter(item, idx);
+        for (i, col) in cols.iter().enumerate() {
+            out.push_str(&format!("{:<width$} ", col, width = widths[i]));
+        }
+        out.push('\n');
+    }
+    out.trim_end_matches('\n').to_string()
+}
+
 /// Format and print tabular data to stdout.
 pub fn print_table<T>(
     headers: &[&str],
@@ -137,26 +168,7 @@ pub fn print_table<T>(
     items: &[T],
     row_formatter: impl Fn(&T, usize) -> Vec<String>,
 ) {
-    if items.is_empty() {
-        println!("No items found.");
-        return;
-    }
-
-    for (i, header) in headers.iter().enumerate() {
-        print!("{:<width$} ", header, width = widths[i]);
-    }
-    println!();
-
-    let total_width: usize = widths.iter().sum::<usize>() + widths.len() - 1;
-    println!("{}", "-".repeat(total_width));
-
-    for (idx, item) in items.iter().enumerate() {
-        let cols = row_formatter(item, idx);
-        for (i, col) in cols.iter().enumerate() {
-            print!("{:<width$} ", col, width = widths[i]);
-        }
-        println!();
-    }
+    println!("{}", format_table(headers, widths, items, row_formatter));
 }
 
 /// Construct the expected file path for a downloaded video/audio file.

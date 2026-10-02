@@ -1,4 +1,6 @@
 use crate::commands::context::CliContext;
+use crate::formatters::select_formatter;
+use youtube_client_lib::models::ChannelDetails;
 
 pub async fn execute_channel(
     ctx: &CliContext,
@@ -8,26 +10,8 @@ pub async fn execute_channel(
     let client = ctx.get_client().await?;
     let details = client.get_channel_details(&channel_id).await?;
 
-    if json {
-        println!("{}", serde_json::to_string_pretty(&details)?);
-        return Ok(());
-    }
-
-    println!("==================================================");
-    println!("  📺 {}", details.title);
-    if let Some(handle) = &details.custom_url {
-        println!("  Handle:          {handle}");
-    }
-    println!("==================================================");
-    println!("  Channel ID:      {}", details.id);
-    println!("  Subscribers:     {}", details.subscriber_count);
-    println!("  Total Videos:    {}", details.video_count);
-    println!("  Lifetime Views:  {}", details.view_count);
-    if !details.description.is_empty() {
-        println!("--------------------------------------------------");
-        println!("About:\n{}", details.description);
-    }
-    println!("==================================================");
+    let formatter = select_formatter::<ChannelDetails>(json);
+    println!("{}", formatter.format_item(&details));
 
     Ok(())
 }

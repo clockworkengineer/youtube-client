@@ -6,7 +6,9 @@ use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 pub mod commands;
+pub mod formatters;
 pub use commands::*;
+pub use formatters::*;
 
 #[derive(Parser, Debug)]
 #[command(

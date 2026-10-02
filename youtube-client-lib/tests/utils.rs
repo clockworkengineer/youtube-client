@@ -114,3 +114,27 @@ fn test_playback_positions_persistence() {
     let loaded = load_playback_positions_from_file(&file_path);
     assert_eq!(loaded, map);
 }
+
+#[test]
+fn test_format_table() {
+    use youtube_client_lib::utils::format_table;
+
+    let items = vec![("Item A", 10), ("Item B", 25)];
+    let table = format_table(
+        &["Name", "Count"],
+        &[10, 8],
+        &items,
+        |(name, count), _idx| vec![name.to_string(), count.to_string()],
+    );
+
+    assert!(table.contains("Name"));
+    assert!(table.contains("Count"));
+    assert!(table.contains("Item A"));
+    assert!(table.contains("Item B"));
+    assert!(table.contains("10"));
+    assert!(table.contains("25"));
+
+    let empty: Vec<(&str, i32)> = vec![];
+    let empty_table = format_table(&["Name"], &[10], &empty, |(n, _), _| vec![n.to_string()]);
+    assert_eq!(empty_table, "No items found.");
+}

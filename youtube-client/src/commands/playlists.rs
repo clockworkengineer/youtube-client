@@ -1,5 +1,6 @@
 use crate::commands::context::CliContext;
-use youtube_client_lib::utils::{print_table, truncate};
+use crate::formatters::select_formatter;
+use youtube_client_lib::models::{Playlist, Video};
 
 pub async fn execute_playlists(
     ctx: &CliContext,
@@ -10,49 +11,19 @@ pub async fn execute_playlists(
     let client = ctx.get_client().await?;
 
     if let Some(pid) = playlist_id {
-        println!("Fetching videos for playlist {pid} (limit: {limit})...");
+        if !json {
+            println!("Fetching videos for playlist {pid} (limit: {limit})...");
+        }
         let videos = client.list_playlist_videos(&pid, limit).await?;
-
-        if json {
-            println!("{}", serde_json::to_string_pretty(&videos)?);
-            return Ok(());
-        }
-
-        print_table(
-            &["Index", "Title", "Video ID", "Published At"],
-            &[5, 40, 15, 15],
-            &videos,
-            |vid, idx| {
-                vec![
-                    (idx + 1).to_string(),
-                    truncate(&vid.title, 38).into_owned(),
-                    vid.id.clone(),
-                    truncate(&vid.published_at, 10).into_owned(),
-                ]
-            },
-        );
+        let formatter = select_formatter::<Video>(json);
+        println!("{}", formatter.format_list(&videos));
     } else {
-        println!("Fetching playlists (limit: {limit})...");
-        let playlists = client.list_playlists(limit).await?;
-
-        if json {
-            println!("{}", serde_json::to_string_pretty(&playlists)?);
-            return Ok(());
+        if !json {
+            println!("Fetching playlists (limit: {limit})...");
         }
-
-        print_table(
-            &["Index", "Title", "Playlist ID", "Item Count"],
-            &[5, 40, 30, 12],
-            &playlists,
-            |pl, idx| {
-                vec![
-                    (idx + 1).to_string(),
-                    truncate(&pl.title, 38).into_owned(),
-                    pl.id.clone(),
-                    pl.video_count.to_string(),
-                ]
-            },
-        );
+        let playlists = client.list_playlists(limit).await?;
+        let formatter = select_formatter::<Playlist>(json);
+        println!("{}", formatter.format_list(&playlists));
     }
 
     Ok(())

@@ -78,6 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Replaced the 12-parameter function signature of `render_details_view` with a cohesive [`VideoDetailsContext`](file:///c:/Projects/youtube-client/youtube-gui/src/views/details_view.rs), eliminating parameter sprawl and adhering to Interface Segregation.
   - Derived `PartialEq` and `Eq` across core models ([`Video`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/video.rs), [`Subscription`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/subscription.rs), [`Playlist`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/playlist.rs), [`Comment`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/comment.rs)) in `youtube-client-lib` for model consistency.
   - Re-exported `utils` at `youtube-client-lib` crate root.
+- **SOLID Architecture Phase 5: CLI Output Formatting & Command Handler Decoupling (Open/Closed & Single Responsibility Principles) (`youtube-client` & `youtube-client-lib`)**:
+  - Introduced [`OutputFormatter<T>`](file:///c:/Projects/youtube-client/youtube-client/src/formatters.rs) trait in `youtube-client/src/formatters.rs` defining clean contracts for rendering individual items, lists, and paginated pages with continuation tokens.
+  - Implemented pluggable format strategies:
+    - [`JsonFormatter`](file:///c:/Projects/youtube-client/youtube-client/src/formatters.rs): Generic pretty-printed JSON serialization for any `serde::Serialize` model.
+    - [`CsvFormatter`](file:///c:/Projects/youtube-client/youtube-client/src/formatters.rs): RFC-4180 compliant CSV output with escaping for `Video`, `Subscription`, `Playlist`, and `Comment`.
+    - [`TableFormatter`](file:///c:/Projects/youtube-client/youtube-client/src/formatters.rs): Aligned tabular layouts and cards for `Video`, `Subscription`, `Playlist`, `Comment`, `VideoDetails`, and `ChannelDetails`.
+  - Added pure string table formatter [`format_table`](file:///c:/Projects/youtube-client/youtube-client-lib/src/utils.rs) in `youtube-client-lib/src/utils.rs` separating formatting from terminal stdout printing.
+  - Refactored CLI commands (`subscriptions`, `videos`, `search`, `details`, `channel`, `comments`, `playlists`) to delegate rendering to formatters via `select_formatter`, reducing command boilerplate and isolating terminal presentation from API queries.
+  - Added unit test suite covering JSON, CSV, Table, and paginated rendering strategies.
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

@@ -1,5 +1,6 @@
 use crate::commands::context::CliContext;
-use youtube_client_lib::utils::{print_table, truncate};
+use crate::formatters::select_formatter;
+use youtube_client_lib::models::Comment;
 
 pub async fn execute_comments(
     ctx: &CliContext,
@@ -10,34 +11,20 @@ pub async fn execute_comments(
     let client = ctx.get_client().await?;
     let comments = client.fetch_comments(&video_id).await?;
 
-    if json {
-        println!("{}", serde_json::to_string_pretty(&comments)?);
-        return Ok(());
+    if !json {
+        if comments.is_empty() {
+            println!("No comments found for video {video_id}.");
+            return Ok(());
+        }
+        println!(
+            "Comments for video {} ({} comments):",
+            video_id,
+            comments.len()
+        );
     }
 
-    if comments.is_empty() {
-        println!("No comments found for video {video_id}.");
-        return Ok(());
-    }
-
-    println!(
-        "Comments for video {} ({} comments):",
-        video_id,
-        comments.len()
-    );
-    print_table(
-        &["Author", "Comment", "Likes", "Published At"],
-        &[20, 50, 8, 12],
-        &comments,
-        |c, _idx| {
-            vec![
-                truncate(&c.author_name, 18).into_owned(),
-                truncate(&c.text_display.replace('\n', " "), 48).into_owned(),
-                c.like_count.to_string(),
-                truncate(&c.published_at, 10).into_owned(),
-            ]
-        },
-    );
+    let formatter = select_formatter::<Comment>(json);
+    println!("{}", formatter.format_list(&comments));
 
     Ok(())
 }

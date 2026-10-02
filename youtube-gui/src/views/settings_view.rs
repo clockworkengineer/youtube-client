@@ -6,6 +6,7 @@ pub struct SettingsFormState {
     pub downloads_dir: String,
     pub cookies_from_browser: String,
     pub cookies_file: String,
+    pub import_file_path: String,
 }
 
 impl Default for SettingsFormState {
@@ -18,6 +19,7 @@ impl Default for SettingsFormState {
                 .unwrap_or_else(|| "downloads".to_string()),
             cookies_from_browser: config.cookies_from_browser.unwrap_or_default(),
             cookies_file: config.cookies_file.unwrap_or_default(),
+            import_file_path: String::new(),
         }
     }
 }
@@ -296,6 +298,27 @@ pub fn render_settings_view(
                     .clicked()
                 {
                     action = Some(PendingAction::ExportSubscriptionsOpml);
+                }
+            });
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.label("Import File (OPML / CSV):");
+                ui.text_edit_singleline(&mut form_state.import_file_path);
+                if ui
+                    .button(
+                        egui::RichText::new("📥 Import")
+                            .color(egui::Color32::from_rgb(100, 255, 150))
+                            .strong(),
+                    )
+                    .clicked()
+                {
+                    let trimmed = form_state.import_file_path.trim();
+                    if !trimmed.is_empty() {
+                        action = Some(PendingAction::ImportSubscriptionsFile {
+                            path: std::path::PathBuf::from(trimmed),
+                        });
+                    }
                 }
             });
         });

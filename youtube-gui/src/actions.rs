@@ -31,14 +31,14 @@ pub async fn get_client_async() -> Result<YoutubeClient, String> {
         );
     }
 
-    let client = YoutubeClient::new_oauth_with_scopes(
-        &client_id,
-        &client_secret,
-        &token_cache_path,
-        youtube_client_lib::YOUTUBE_SCOPES,
-    )
-    .await
-    .map_err(|e| format!("Authentication failed: {e}"))?;
+    let client = YoutubeClient::builder()
+        .with_credentials(&client_id, &client_secret)
+        .with_token_cache(&token_cache_path)
+        .with_scopes(youtube_client_lib::YOUTUBE_SCOPES)
+        .with_default_cache()
+        .build()
+        .await
+        .map_err(|e| format!("Authentication failed: {e}"))?;
 
     Ok(client)
 }
@@ -365,10 +365,20 @@ pub fn fetch_videos(
         ctx,
         "fetch_videos",
         move |client| async move {
-            client
-                .list_videos(&channel_id, 20)
-                .await
-                .map_err(|e| format!("Failed to fetch videos: {e}"))
+            match client.list_videos(&channel_id, 20).await {
+                Ok(vids) => Ok(vids),
+                Err(err) => {
+                    let http = reqwest::Client::new();
+                    if let Ok(rss_vids) =
+                        youtube_client_lib::fetch_channel_videos_via_rss(&http, &channel_id).await
+                    {
+                        if !rss_vids.is_empty() {
+                            return Ok(rss_vids);
+                        }
+                    }
+                    Err(format!("Failed to fetch videos: {err}"))
+                }
+            }
         },
         move |res, s, ctx| {
             if let View::ChannelVideos {

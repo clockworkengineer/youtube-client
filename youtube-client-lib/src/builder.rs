@@ -1,9 +1,12 @@
 //! # Fluent Builder for [`YoutubeClient`]
 
 use crate::auth::delegate::OpenBrowserFlowDelegate;
+use crate::cache::MetadataCache;
 use crate::client::{YOUTUBE_SCOPES, YoutubeClient};
 use crate::error::Result;
+use crate::quota::QuotaTracker;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use yup_oauth2::InstalledFlowReturnMethod;
 use yup_oauth2::authenticator_delegate::InstalledFlowDelegate;
 
@@ -16,6 +19,8 @@ pub struct YoutubeClientBuilder {
     scopes: Vec<String>,
     return_method: InstalledFlowReturnMethod,
     flow_delegate: Option<Box<dyn InstalledFlowDelegate>>,
+    cache: Option<Arc<MetadataCache>>,
+    quota_tracker: Option<Arc<QuotaTracker>>,
 }
 
 impl Default for YoutubeClientBuilder {
@@ -28,6 +33,8 @@ impl Default for YoutubeClientBuilder {
             scopes: YOUTUBE_SCOPES.iter().map(|s| s.to_string()).collect(),
             return_method: InstalledFlowReturnMethod::HTTPRedirect,
             flow_delegate: None,
+            cache: None,
+            quota_tracker: None,
         }
     }
 }
@@ -79,6 +86,24 @@ impl YoutubeClientBuilder {
         self
     }
 
+    /// Attach an in-memory metadata cache with TTL to the built client.
+    pub fn with_cache(mut self, cache: Arc<MetadataCache>) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
+    /// Enable the default in-memory metadata cache (30m video TTL, 2h channel TTL).
+    pub fn with_default_cache(mut self) -> Self {
+        self.cache = Some(Arc::new(MetadataCache::new()));
+        self
+    }
+
+    /// Attach a persistent quota budget tracker to the built client.
+    pub fn with_quota_tracker(mut self, tracker: Arc<QuotaTracker>) -> Self {
+        self.quota_tracker = Some(tracker);
+        self
+    }
+
     /// Build and authenticate the [`YoutubeClient`].
     pub async fn build(self) -> Result<YoutubeClient> {
         let (client_id, client_secret) = match (self.client_id, self.client_secret) {
@@ -100,7 +125,7 @@ impl YoutubeClientBuilder {
             .flow_delegate
             .unwrap_or_else(|| Box::new(OpenBrowserFlowDelegate));
 
-        YoutubeClient::construct_with_params(
+        let mut client = YoutubeClient::construct_with_params(
             &client_id,
             &client_secret,
             &resolved_token_cache,
@@ -108,6 +133,15 @@ impl YoutubeClientBuilder {
             self.return_method,
             delegate,
         )
-        .await
+        .await?;
+
+        if let Some(cache) = self.cache {
+            client = client.with_cache(cache);
+        }
+        if let Some(tracker) = self.quota_tracker {
+            client = client.with_quota_tracker(tracker);
+        }
+
+        Ok(client)
     }
 }

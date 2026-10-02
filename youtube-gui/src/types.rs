@@ -259,4 +259,7 @@ pub enum PendingAction {
     },
     SignOut,
     ExportSubscriptionsOpml,
+    ImportSubscriptionsFile {
+        path: PathBuf,
+    },
 }

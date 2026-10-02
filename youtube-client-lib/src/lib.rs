@@ -52,6 +52,7 @@ pub mod importers;
 pub mod models;
 pub mod quota;
 pub mod retry;
+pub mod rss;
 pub mod testing;
 pub mod traits;
 pub mod utils;
@@ -67,6 +68,7 @@ pub use error::*;
 pub use importers::*;
 pub use models::*;
 pub use quota::*;
+pub use rss::*;
 pub use traits::*;
 
 #[cfg(test)]

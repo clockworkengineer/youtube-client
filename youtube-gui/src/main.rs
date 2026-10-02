@@ -976,6 +976,69 @@ impl eframe::App for YoutubeGuiApp {
                     s_lock.set_toast("No subscriptions loaded yet to export.", true);
                 }
             }
+            PendingAction::ImportSubscriptionsFile { path } => {
+                let mut s_lock = self.state.lock().unwrap();
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        let parsed = if path.extension().map(|e| e == "csv").unwrap_or(false)
+                            || content
+                                .lines()
+                                .next()
+                                .map(|l| l.to_lowercase().contains("channel id"))
+                                .unwrap_or(false)
+                        {
+                            youtube_client_lib::import_subscriptions_from_takeout_csv(&content)
+                        } else if content.trim_start().starts_with('{') {
+                            youtube_client_lib::import_subscriptions_from_newpipe_json(&content)
+                        } else {
+                            youtube_client_lib::import_subscriptions_from_opml(&content)
+                        };
+
+                        match parsed {
+                            Ok(imported) => {
+                                let count = imported.len();
+                                if count == 0 {
+                                    s_lock.set_toast("No channels found in file.", true);
+                                } else {
+                                    let mut current = match s_lock.subscriptions.take() {
+                                        Some(Ok(subs)) => subs,
+                                        _ => Vec::new(),
+                                    };
+                                    for imp in imported {
+                                        if !current.iter().any(|s| s.channel_id == imp.channel_id) {
+                                            current.push(youtube_client_lib::Subscription {
+                                                id: format!("import_{}", imp.channel_id),
+                                                title: imp.channel_title,
+                                                description: String::new(),
+                                                channel_id: imp.channel_id,
+                                                thumbnail_url: String::new(),
+                                            });
+                                        }
+                                    }
+                                    s_lock.subscriptions = Some(Ok(current));
+                                    s_lock.set_toast(
+                                        format!(
+                                            "Imported {count} subscriptions from {}",
+                                            path.file_name().unwrap_or_default().to_string_lossy()
+                                        ),
+                                        false,
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                s_lock
+                                    .set_toast(format!("Failed to parse subscriptions: {e}"), true);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        s_lock.set_toast(
+                            format!("Could not read file {}: {e}", path.display()),
+                            true,
+                        );
+                    }
+                }
+            }
             PendingAction::GoToAbout => {
                 let mut s_lock = self.state.lock().unwrap();
                 s_lock.navigate_clear_history(View::About);

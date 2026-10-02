@@ -2,16 +2,19 @@
 
 use google_youtube3::{YouTube, hyper_rustls, hyper_util};
 use std::path::Path;
+use std::sync::Arc;
 use yup_oauth2::authenticator_delegate::InstalledFlowDelegate;
 use yup_oauth2::{ApplicationSecret, InstalledFlowAuthenticator, InstalledFlowReturnMethod};
 
 use crate::auth::delegate::OpenBrowserFlowDelegate;
 use crate::builder::YoutubeClientBuilder;
+use crate::cache::MetadataCache;
 use crate::config::resolve_credentials;
 use crate::error::{Result, YoutubeError};
 use crate::models::{
     ChannelDetails, Comment, Page, Playlist, Rating, Subscription, Video, VideoDetails,
 };
+use crate::quota::QuotaTracker;
 use crate::retry::retry_api_call;
 use crate::traits::{
     CommentService, MediaDownloader, PlaylistService, SubscriptionService, VideoService,
@@ -43,12 +46,36 @@ fn extract_thumbnail_url(thumbnails: Option<google_youtube3::api::ThumbnailDetai
 /// The primary client for interacting with the YouTube API v3.
 pub struct YoutubeClient {
     hub: YouTube<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>,
+    cache: Option<Arc<MetadataCache>>,
+    quota_tracker: Option<Arc<QuotaTracker>>,
 }
 
 impl YoutubeClient {
     /// Create a fluent builder for configuring and instantiating a [`YoutubeClient`].
     pub fn builder() -> YoutubeClientBuilder {
         YoutubeClientBuilder::new()
+    }
+
+    /// Attach an in-memory metadata cache with TTL to this client.
+    pub fn with_cache(mut self, cache: Arc<MetadataCache>) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
+    /// Attach a quota tracker to this client to record API operation costs.
+    pub fn with_quota_tracker(mut self, tracker: Arc<QuotaTracker>) -> Self {
+        self.quota_tracker = Some(tracker);
+        self
+    }
+
+    /// Access the attached metadata cache, if any.
+    pub fn cache(&self) -> Option<&Arc<MetadataCache>> {
+        self.cache.as_ref()
+    }
+
+    /// Access the attached quota tracker, if any.
+    pub fn quota_tracker(&self) -> Option<&Arc<QuotaTracker>> {
+        self.quota_tracker.as_ref()
     }
 
     /// Create a new `YoutubeClient` with read-only OAuth scopes.
@@ -123,7 +150,11 @@ impl YoutubeClient {
 
         let hub = YouTube::new(client, auth);
 
-        Ok(Self { hub })
+        Ok(Self {
+            hub,
+            cache: None,
+            quota_tracker: None,
+        })
     }
 
     /// List a page of the authenticated user's subscriptions.
@@ -292,6 +323,10 @@ impl YoutubeClient {
         })
         .await?;
 
+        if let Some(q) = &self.quota_tracker {
+            q.record_search();
+        }
+
         let next_page_token = search_res.next_page_token;
         let mut videos = Vec::new();
         if let Some(items) = search_res.items {
@@ -330,6 +365,12 @@ impl YoutubeClient {
 
     /// Fetch comprehensive video details including engagement metrics, duration, and tags.
     pub async fn fetch_video_details(&self, video_id: &str) -> Result<VideoDetails> {
+        if let Some(cache) = &self.cache {
+            if let Some(cached) = cache.get_video(video_id) {
+                return Ok(cached);
+            }
+        }
+
         let (_resp, video_res) = retry_api_call(|| async {
             self.hub
                 .videos()
@@ -343,6 +384,10 @@ impl YoutubeClient {
                 .await
         })
         .await?;
+
+        if let Some(q) = &self.quota_tracker {
+            q.record_read();
+        }
 
         let item = video_res
             .items
@@ -373,7 +418,7 @@ impl YoutubeClient {
         let duration_formatted = VideoDetails::format_duration(duration_seconds);
         let dislike_count = crate::utils::fetch_dislike_count(video_id).await;
 
-        Ok(VideoDetails {
+        let details = VideoDetails {
             id: video_id.to_string(),
             title,
             description,
@@ -388,11 +433,23 @@ impl YoutubeClient {
             duration_formatted,
             tags,
             dislike_count,
-        })
+        };
+
+        if let Some(cache) = &self.cache {
+            cache.set_video(video_id, details.clone());
+        }
+
+        Ok(details)
     }
 
     /// Fetch channel statistics and profile metadata.
     pub async fn get_channel_details(&self, channel_id: &str) -> Result<ChannelDetails> {
+        if let Some(cache) = &self.cache {
+            if let Some(cached) = cache.get_channel(channel_id) {
+                return Ok(cached);
+            }
+        }
+
         let (_resp, channel_res) = retry_api_call(|| async {
             self.hub
                 .channels()
@@ -402,6 +459,10 @@ impl YoutubeClient {
                 .await
         })
         .await?;
+
+        if let Some(q) = &self.quota_tracker {
+            q.record_read();
+        }
 
         let item = channel_res
             .items
@@ -420,7 +481,7 @@ impl YoutubeClient {
         let video_count = stats.video_count.unwrap_or(0);
         let view_count = stats.view_count.unwrap_or(0);
 
-        Ok(ChannelDetails {
+        let details = ChannelDetails {
             id: channel_id.to_string(),
             title,
             description,
@@ -429,7 +490,13 @@ impl YoutubeClient {
             subscriber_count,
             video_count,
             view_count,
-        })
+        };
+
+        if let Some(cache) = &self.cache {
+            cache.set_channel(channel_id, details.clone());
+        }
+
+        Ok(details)
     }
 
     /// List the authenticated user's playlists with pagination.

@@ -44,8 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cross-Platform Subscription Interoperability (`youtube-client-lib` & `youtube-gui`)**:
   - Added bidirectional export and import utilities for standard OPML XML (compatible with FreeTube, NewPipe, Feedly, and RSS readers), Google Takeout CSV (`subscriptions.csv`), and NewPipe backup JSON.
   - Added one-click "Export Subscriptions to OPML" in the Settings view saving directly to the user's downloads directory.
+  - Added "Import Subscriptions (OPML / CSV)" in the Settings view with automatic format detection and deduplicating channel merge into active subscriptions.
 - **In-Memory Metadata & Channel Cache with TTL (`youtube-client-lib`)**:
   - Added thread-safe `MetadataCache` and `TtlCache<K, V>` providing configurable time-to-live expiration for video metadata (30m) and channel summaries (2h), slashing redundant API calls and conserving quota.
+  - Integrated `MetadataCache` and `QuotaTracker` directly into `YoutubeClient` and `YoutubeClientBuilder`, enabling transparent cache lookups and automatic cost accounting.
+- **Zero-Quota Public Channel RSS Feed Fallback (`youtube-client-lib` & `youtube-gui`)**:
+  - Added `fetch_channel_videos_via_rss` and `parse_youtube_rss_xml` parsing YouTube's public Atom/RSS XML feeds for channel uploads with zero API keys and 0 quota units.
+  - Automatic fallback in GUI channel browsing if API requests fail or quota limits are reached.
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Embedded audio worker continuously syncs playback progress every 200ms with debounced auto-saving every 3s, instant saving on Pause, Stop, or application exit, and auto-removal upon completion.
   - Feed cards and Video Details view visually display watch progress via a red progress bar under thumbnails and a `⏱ Watched to MM:SS` badge.
   - Action buttons in both feeds and Video Details offer instant `▶ Resume (MM:SS)` or `↺ Start` controls for local audio, local video, and streaming via external players (`--start` for MPV and `--start-time` for VLC).
+- **API Quota Budget Tracking & Management (`youtube-client-lib` & `youtube-gui`)**:
+  - Added `QuotaTracker` accurately modeling YouTube Data API v3 unit costs (search = 100u, reads = 1u, writes = 50u) with daily UTC rollover and atomic JSON persistence to `%APPDATA%/youtube-client/api_quota.json`.
+  - Automatically captures API usage in GUI client actions, logging consumption and warning against quota exhaustion.
+  - Added real-time visual Quota Budget card in Settings view with a dynamic color gauge and breakdown of searches, read queries, and mutations.
+- **Cross-Platform Subscription Interoperability (`youtube-client-lib` & `youtube-gui`)**:
+  - Added bidirectional export and import utilities for standard OPML XML (compatible with FreeTube, NewPipe, Feedly, and RSS readers), Google Takeout CSV (`subscriptions.csv`), and NewPipe backup JSON.
+  - Added one-click "Export Subscriptions to OPML" in the Settings view saving directly to the user's downloads directory.
+- **In-Memory Metadata & Channel Cache with TTL (`youtube-client-lib`)**:
+  - Added thread-safe `MetadataCache` and `TtlCache<K, V>` providing configurable time-to-live expiration for video metadata (30m) and channel summaries (2h), slashing redundant API calls and conserving quota.
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

@@ -100,6 +100,8 @@ pub struct AppState {
     pub cleared_videos_path: PathBuf,
     pub playback_positions_path: PathBuf,
     pub playback_positions: HashMap<String, youtube_client_lib::utils::PlaybackProgress>,
+    pub quota_tracker: Arc<youtube_client_lib::QuotaTracker>,
+    pub quota_path: PathBuf,
     pub toast: Option<(String, std::time::Instant, bool)>,
 }
 
@@ -256,4 +258,5 @@ pub enum PendingAction {
         cookies_from_browser: Option<String>,
     },
     SignOut,
+    ExportSubscriptionsOpml,
 }

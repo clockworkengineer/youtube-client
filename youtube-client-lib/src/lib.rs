@@ -10,6 +10,9 @@
 //! - **[`client::YoutubeClient`]**: Core API client with fluent construction via [`builder::YoutubeClientBuilder`].
 //! - **[`traits`]**: Segregated service traits (`VideoService`, `SubscriptionService`, `PlaylistService`, `CommentService`, `MediaDownloader`) for polymorphic dependency injection.
 //! - **[`models`]**: Rich domain types including [`models::Video`], [`models::Playlist`], [`models::Subscription`], [`models::Comment`], typed [`models::Rating`], and generic [`models::Page`].
+//! - **[`quota`]**: YouTube Data API v3 budget tracking, cost calculation, daily rollover, and exhaustion protection.
+//! - **[`importers`]**: Interoperability utilities for importing/exporting subscriptions across OPML, Google Takeout CSV, and NewPipe JSON.
+//! - **[`cache`]**: In-memory metadata and channel cache with configurable time-to-live (TTL).
 //! - **[`config`]**: Configuration loading with cross-platform fallback directories and secure credential storage.
 //! - **[`utils`]**: Security-hardened filename sanitization, atomic JSON persistence, and cross-platform media player dispatching.
 //! - **[`testing`]**: In-memory [`testing::MockYoutubeClient`] for testing client applications without real YouTube API credentials or network access.
@@ -40,11 +43,14 @@
 pub mod audio;
 pub mod auth;
 pub mod builder;
+pub mod cache;
 pub mod client;
 pub mod config;
 pub mod download;
 pub mod error;
+pub mod importers;
 pub mod models;
+pub mod quota;
 pub mod retry;
 pub mod testing;
 pub mod traits;
@@ -53,11 +59,14 @@ pub mod utils;
 pub use audio::*;
 pub use auth::*;
 pub use builder::YoutubeClientBuilder;
+pub use cache::*;
 pub use client::*;
 pub use config::*;
 pub use download::*;
 pub use error::*;
+pub use importers::*;
 pub use models::*;
+pub use quota::*;
 pub use traits::*;
 
 #[cfg(test)]

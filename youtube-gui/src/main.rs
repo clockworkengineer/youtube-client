@@ -93,6 +93,10 @@ impl YoutubeGuiApp {
         let playback_positions_path =
             youtube_client_lib::resolve_app_data_path("playback_positions.json");
         let playback_positions = load_playback_positions_from_file(&playback_positions_path);
+        let quota_path = youtube_client_lib::resolve_app_data_path("api_quota.json");
+        let quota_tracker = Arc::new(youtube_client_lib::QuotaTracker::load_from_file_or_new(
+            &quota_path,
+        ));
 
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
@@ -120,6 +124,8 @@ impl YoutubeGuiApp {
             cleared_videos_path,
             playback_positions_path,
             playback_positions,
+            quota_tracker,
+            quota_path,
             toast: None,
         }));
 
@@ -937,6 +943,38 @@ impl eframe::App for YoutubeGuiApp {
                 s_lock.current_view = View::Login;
                 s_lock.view_history.clear();
                 s_lock.set_toast("Signed out successfully.", false);
+            }
+            PendingAction::ExportSubscriptionsOpml => {
+                let mut s_lock = self.state.lock().unwrap();
+                if let Some(Ok(ref subs)) = s_lock.subscriptions {
+                    let imports: Vec<youtube_client_lib::SubscriptionImport> = subs
+                        .iter()
+                        .map(youtube_client_lib::SubscriptionImport::from)
+                        .collect();
+                    let opml = youtube_client_lib::export_subscriptions_to_opml(&imports);
+                    let export_path = s_lock.downloads_dir.join("youtube_subscriptions.opml");
+                    if let Err(e) = std::fs::create_dir_all(&s_lock.downloads_dir) {
+                        s_lock.set_toast(format!("Failed to create directory: {e}"), true);
+                    } else {
+                        match std::fs::write(&export_path, opml) {
+                            Ok(_) => {
+                                let count = imports.len();
+                                s_lock.set_toast(
+                                    format!(
+                                        "Exported {count} subscriptions to {}",
+                                        export_path.display()
+                                    ),
+                                    false,
+                                );
+                            }
+                            Err(e) => {
+                                s_lock.set_toast(format!("Failed to write OPML file: {e}"), true);
+                            }
+                        }
+                    }
+                } else {
+                    s_lock.set_toast("No subscriptions loaded yet to export.", true);
+                }
             }
             PendingAction::GoToAbout => {
                 let mut s_lock = self.state.lock().unwrap();

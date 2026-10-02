@@ -180,6 +180,14 @@ pub fn render_settings_view(
                 );
             });
 
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Quota Tracking State:").strong());
+                ui.label(
+                    egui::RichText::new(state.quota_path.display().to_string())
+                        .color(egui::Color32::LIGHT_GRAY),
+                );
+            });
+
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 if ui
@@ -190,6 +198,104 @@ pub fn render_settings_view(
                     .clicked()
                 {
                     action = Some(PendingAction::SignOut);
+                }
+            });
+        });
+    });
+
+    ui.add_space(15.0);
+
+    ui.group(|ui| {
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("📊 YouTube Data API Quota Budget")
+                    .strong()
+                    .size(15.0),
+            );
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(
+                    "Daily quota allocated by Google Cloud Console (resets midnight UTC).",
+                )
+                .size(12.0)
+                .color(egui::Color32::LIGHT_GRAY),
+            );
+            ui.add_space(8.0);
+
+            let quota = state.quota_tracker.status();
+            let pct = quota.percentage_used();
+            let gauge_color = if pct > 0.9 {
+                egui::Color32::from_rgb(255, 80, 80)
+            } else if pct > 0.75 {
+                egui::Color32::from_rgb(255, 180, 50)
+            } else {
+                egui::Color32::from_rgb(80, 220, 120)
+            };
+
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("Consumed Today ({} UTC):", quota.date)).strong(),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} / {} units ({:.1}%)",
+                        quota.units_used,
+                        quota.daily_limit,
+                        pct * 100.0
+                    ))
+                    .color(gauge_color)
+                    .strong(),
+                );
+            });
+
+            ui.add_space(4.0);
+            ui.add(
+                egui::ProgressBar::new(pct)
+                    .fill(gauge_color)
+                    .desired_width(260.0),
+            );
+
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "Breakdown: {} searches (100u each) • {} list/read queries (1u each) • {} write actions (50u each)",
+                    quota.search_count, quota.read_count, quota.write_count
+                ))
+                .size(11.0)
+                .color(egui::Color32::GRAY),
+            );
+        });
+    });
+
+    ui.add_space(15.0);
+
+    ui.group(|ui| {
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("📦 Subscriptions Backup & Migration")
+                    .strong()
+                    .size(15.0),
+            );
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(
+                    "Export your subscriptions to standard OPML format (compatible with FreeTube, NewPipe, and RSS readers).",
+                )
+                .size(12.0)
+                .color(egui::Color32::LIGHT_GRAY),
+            );
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                if ui
+                    .button(
+                        egui::RichText::new("📤 Export Subscriptions to OPML")
+                            .color(egui::Color32::from_rgb(100, 200, 255))
+                            .strong(),
+                    )
+                    .clicked()
+                {
+                    action = Some(PendingAction::ExportSubscriptionsOpml);
                 }
             });
         });

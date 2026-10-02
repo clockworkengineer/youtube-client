@@ -69,6 +69,18 @@ pub fn spawn_client_action<F, Fut, T>(
                 "ERROR",
                 &format!("Error during {action_name}: {e}"),
             );
+        } else {
+            let cost = match action_name {
+                "search_videos" => youtube_client_lib::costs::SEARCH,
+                "rate_video" | "post_comment" | "add_to_playlist" | "create_playlist"
+                | "delete_playlist" | "unsubscribe" | "subscribe" => {
+                    youtube_client_lib::costs::WRITE
+                }
+                "fetch_new_videos" => 6,
+                _ => youtube_client_lib::costs::READ,
+            };
+            s.quota_tracker.record_cost(cost);
+            let _ = s.quota_tracker.save_to_file(&s.quota_path);
         }
         on_complete(res, &mut s, &ctx);
     });

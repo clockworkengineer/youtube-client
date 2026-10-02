@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Provided pluggable implementations for `MpvPlayer`, `VlcPlayer`, `IinaPlayer`, `CustomExecutablePlayer`, and `SystemDefaultPlayer`.
   - Introduced [`PlayerRegistry`](file:///c:/Projects/youtube-client/youtube-client-lib/src/player.rs) for prioritized player auto-discovery and extensible registration without modifying library dispatch code.
   - Refactored `launch_external_player_with_options` in `utils.rs` to delegate completely to `PlayerRegistry`, eliminating hardcoded string matching.
+- **SOLID Architecture Phase 3: Pluggable Subscription Importers (Strategy Pattern) (`youtube-client-lib` & `youtube-gui`)**:
+  - Introduced [`SubscriptionFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs) strategy trait defining format identifiers, display names, default extensions, content detection (`can_parse`), parsing, and serialization.
+  - Implemented concrete strategies for [`OpmlFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs), [`TakeoutCsvFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs), and [`NewPipeJsonFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs).
+  - Introduced [`SubscriptionFormatRegistry`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs) with prioritized auto-detection and multi-format fallback.
+  - Decoupled GUI `ImportSubscriptionsFile` in `main.rs` to delegate directly to `registry.import_file(&path)`, eliminating 15 lines of ad-hoc format inspection and matching.
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

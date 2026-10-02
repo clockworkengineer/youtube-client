@@ -6,20 +6,35 @@ use youtube_client_lib::{Comment, Playlist, Video, VideoDetails};
 use crate::types::{AppState, PendingAction, PlayerCommand, PlayerState};
 use crate::views::get_or_fetch_thumbnail;
 
+/// Encapsulated view context for rendering video details, eliminating parameter sprawl (ISP & Clean Architecture).
+pub struct VideoDetailsContext<'a> {
+    pub video: &'a Video,
+    pub details: &'a Option<Result<VideoDetails, String>>,
+    pub comments: &'a Option<Result<Vec<Comment>, String>>,
+    pub player_state: &'a PlayerState,
+    pub playlists: &'a Option<Result<Vec<Playlist>, String>>,
+    pub playlist_action_status: &'a Option<Result<String, String>>,
+    pub comment_input: &'a mut String,
+}
+
 pub fn render_details_view(
     state: &Arc<Mutex<AppState>>,
     http_client: &reqwest::Client,
     audio_tx: &Sender<PlayerCommand>,
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    video: &Video,
-    details: &Option<Result<VideoDetails, String>>,
-    comments: &Option<Result<Vec<Comment>, String>>,
-    player_state: &PlayerState,
-    playlists: &Option<Result<Vec<Playlist>, String>>,
-    playlist_action_status: &Option<Result<String, String>>,
-    comment_input: &mut String,
+    vctx: VideoDetailsContext<'_>,
 ) -> Option<PendingAction> {
+    let VideoDetailsContext {
+        video,
+        details,
+        comments,
+        player_state,
+        playlists,
+        playlist_action_status,
+        comment_input,
+    } = vctx;
+
     let mut action = None;
 
     ui.horizontal(|ui| {

@@ -159,6 +159,7 @@ impl AppState {
 }
 
 #[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PendingAction {
     None,
     SpawnDefaultLogin,

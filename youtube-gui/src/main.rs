@@ -10,11 +10,13 @@
 //! and event dispatching.
 
 mod actions;
+mod handlers;
 mod player;
 mod types;
 mod views;
 
 use actions::*;
+use handlers::dispatch_pending_action;
 use types::*;
 use views::*;
 
@@ -23,8 +25,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use youtube_client_lib::utils::{
-    append_to_log, launch_external_player_with_options, load_playback_positions_from_file,
-    load_string_set_from_file, save_string_set_to_file, scan_downloads_dir,
+    load_playback_positions_from_file, load_string_set_from_file, scan_downloads_dir,
 };
 
 struct YoutubeGuiApp {
@@ -571,19 +572,22 @@ impl eframe::App for YoutubeGuiApp {
                             s.playlist_action_status.clone(),
                         )
                     };
+                    let vctx = views::details_view::VideoDetailsContext {
+                        video: &video,
+                        details: &details,
+                        comments: &comments,
+                        player_state: &p_state,
+                        playlists: &pls,
+                        playlist_action_status: &status,
+                        comment_input: &mut self.comment_input,
+                    };
                     if let Some(act) = render_details_view(
                         &self.state,
                         &self.http_client,
                         &self.audio_tx,
                         ui,
                         ctx,
-                        &video,
-                        &details,
-                        &comments,
-                        &p_state,
-                        &pls,
-                        &status,
-                        &mut self.comment_input,
+                        vctx,
                     ) {
                         action = act;
                     }
@@ -600,427 +604,7 @@ impl eframe::App for YoutubeGuiApp {
             }
         });
 
-        match action {
-            PendingAction::None => {}
-            PendingAction::SpawnDefaultLogin => {
-                spawn_default_login(self.state.clone(), ctx.clone());
-            }
-            PendingAction::SpawnLogin { id, secret } => {
-                spawn_login_and_auth(self.state.clone(), ctx.clone(), id, secret);
-            }
-            PendingAction::RetrySubscriptions => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.subscriptions = None;
-                }
-                spawn_fetch_subscriptions(self.state.clone(), ctx.clone());
-            }
-            PendingAction::GoToSubscriptions => {
-                let mut s_lock = self.state.lock().unwrap();
-                s_lock.navigate_clear_history(View::Subscriptions);
-            }
-            PendingAction::GoToNewVideos => {
-                let has_cache = {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.navigate_clear_history(View::NewVideos);
-                    s_lock.new_videos.is_some()
-                };
-                if !has_cache {
-                    spawn_fetch_new_videos(self.state.clone(), ctx.clone());
-                }
-            }
-            PendingAction::LoadNewVideos => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.new_videos = None;
-                    s_lock.current_view = View::NewVideos;
-                }
-                spawn_fetch_new_videos(self.state.clone(), ctx.clone());
-            }
-            PendingAction::ClearAllNewVideos => {
-                let mut s_lock = self.state.lock().unwrap();
-                let ids_to_clear: Vec<String> = match &s_lock.new_videos {
-                    Some(Ok(vids)) => vids.iter().map(|v| v.id.clone()).collect(),
-                    _ => Vec::new(),
-                };
-                for id in ids_to_clear {
-                    s_lock.cleared_video_ids.insert(id);
-                }
-                let cleared_path = s_lock.cleared_videos_path.clone();
-                let _ = save_string_set_to_file(&cleared_path, &s_lock.cleared_video_ids);
-                s_lock.new_videos = Some(Ok(Vec::new()));
-            }
-            PendingAction::DismissNewVideo { video_id } => {
-                let mut s_lock = self.state.lock().unwrap();
-                s_lock.cleared_video_ids.insert(video_id.clone());
-                let cleared_path = s_lock.cleared_videos_path.clone();
-                let _ = save_string_set_to_file(&cleared_path, &s_lock.cleared_video_ids);
-                if let Some(Ok(ref mut vids)) = s_lock.new_videos {
-                    vids.retain(|v| v.id != video_id);
-                }
-            }
-            PendingAction::ResetClearedVideos => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.cleared_video_ids.clear();
-                    let cleared_path = s_lock.cleared_videos_path.clone();
-                    let _ = save_string_set_to_file(&cleared_path, &s_lock.cleared_video_ids);
-                    s_lock.new_videos = None;
-                }
-                spawn_fetch_new_videos(self.state.clone(), ctx.clone());
-            }
-            PendingAction::LoadChannel {
-                id,
-                title,
-                description,
-            } => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.navigate_to(View::ChannelVideos {
-                        channel_id: id.clone(),
-                        channel_title: title.clone(),
-                        channel_description: description.clone(),
-                        videos: None,
-                    });
-                }
-                fetch_videos(ctx.clone(), self.state.clone(), id, title);
-            }
-            PendingAction::GoBack => {
-                let mut s_lock = self.state.lock().unwrap();
-                s_lock.go_back();
-            }
-            PendingAction::RetryVideos {
-                id,
-                title,
-                description,
-            } => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.current_view = View::ChannelVideos {
-                        channel_id: id.clone(),
-                        channel_title: title.clone(),
-                        channel_description: description.clone(),
-                        videos: None,
-                    };
-                }
-                fetch_videos(ctx.clone(), self.state.clone(), id, title);
-            }
-            PendingAction::SpawnDownload { video, is_audio } => {
-                spawn_download(self.state.clone(), ctx.clone(), video, is_audio);
-            }
-            PendingAction::PlayLocal {
-                path,
-                title,
-                video_id,
-                start_secs,
-            } => {
-                let is_mp3 = path.extension().map(|e| e == "mp3").unwrap_or(false);
-                let log_file = self.state.lock().unwrap().log_file.clone();
-                let vid = video_id
-                    .or_else(|| youtube_client_lib::utils::extract_video_id_from_path(&path));
-                if is_mp3 {
-                    append_to_log(&log_file, "INFO", &format!("Playing local audio: {path:?}"));
-                    let _ = self.audio_tx.send(PlayerCommand::Play {
-                        path,
-                        title,
-                        video_id: vid,
-                        start_secs,
-                    });
-                } else {
-                    append_to_log(&log_file, "INFO", &format!("Opening local video: {path:?}"));
-                    if let Err(e) = launch_external_player_with_options(
-                        path.as_os_str(),
-                        Some(&log_file),
-                        start_secs,
-                    ) {
-                        append_to_log(
-                            &log_file,
-                            "WARN",
-                            &format!("{e} Falling back to default file opener."),
-                        );
-                        let _ = open::that(path);
-                    }
-                }
-            }
-            PendingAction::StreamVideo {
-                video_id,
-                start_secs,
-            } => {
-                let url = if let Some(start) = start_secs {
-                    if start > 1.0 {
-                        format!("https://www.youtube.com/watch?v={video_id}&t={start:.0}s")
-                    } else {
-                        format!("https://www.youtube.com/watch?v={video_id}")
-                    }
-                } else {
-                    format!("https://www.youtube.com/watch?v={video_id}")
-                };
-                let log_file = self.state.lock().unwrap().log_file.clone();
-                append_to_log(&log_file, "INFO", &format!("Video clicked: {url}"));
-
-                // Try to open the stream in MPV or VLC first
-                if let Err(e) = launch_external_player_with_options(
-                    std::ffi::OsStr::new(&url),
-                    Some(&log_file),
-                    start_secs,
-                ) {
-                    append_to_log(
-                        &log_file,
-                        "WARN",
-                        &format!("{e} Falling back to default browser."),
-                    );
-                    let mut s = lock_state(&self.state);
-                    s.set_toast("Media player not found; opening in browser", true);
-                    let _ = open::that(url);
-                } else {
-                    let mut s = lock_state(&self.state);
-                    s.set_toast("Opening stream in external media player...", false);
-                }
-            }
-            PendingAction::OpenInBrowser { url } => {
-                let log_file = self.state.lock().unwrap().log_file.clone();
-                append_to_log(&log_file, "INFO", &format!("Opening in web browser: {url}"));
-                let mut s = lock_state(&self.state);
-                s.set_toast("Opening in web browser...", false);
-                let _ = open::that(url);
-            }
-            PendingAction::Search { query } => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.navigate_to(View::SearchResults {
-                        query: query.clone(),
-                        videos: None,
-                    });
-                }
-                fetch_search_results(ctx.clone(), self.state.clone(), query);
-            }
-            PendingAction::RetrySearch { query } => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.current_view = View::SearchResults {
-                        query: query.clone(),
-                        videos: None,
-                    };
-                }
-                fetch_search_results(ctx.clone(), self.state.clone(), query);
-            }
-            PendingAction::LoadPlaylists => {
-                let cache = {
-                    let mut s_lock = self.state.lock().unwrap();
-                    let cached = s_lock.playlists.clone();
-                    s_lock.navigate_clear_history(View::Playlists {
-                        playlists: cached.clone(),
-                    });
-                    cached
-                };
-                if cache.is_none() {
-                    spawn_fetch_playlists(self.state.clone(), ctx.clone());
-                }
-            }
-            PendingAction::RetryPlaylists => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.playlists = None;
-                    s_lock.current_view = View::Playlists { playlists: None };
-                }
-                spawn_fetch_playlists(self.state.clone(), ctx.clone());
-            }
-            PendingAction::LoadPlaylistVideos { id, title } => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.navigate_to(View::PlaylistVideos {
-                        playlist_id: id.clone(),
-                        playlist_title: title.clone(),
-                        videos: None,
-                    });
-                }
-                fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
-            }
-            PendingAction::RetryPlaylistVideos { id, title } => {
-                {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.current_view = View::PlaylistVideos {
-                        playlist_id: id.clone(),
-                        playlist_title: title.clone(),
-                        videos: None,
-                    };
-                }
-                fetch_playlist_videos(ctx.clone(), self.state.clone(), id, title);
-            }
-            PendingAction::LoadVideoDetails { video } => {
-                let cache = {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.playlist_action_status = None;
-                    s_lock.navigate_to(View::VideoDetails {
-                        video: video.clone(),
-                        details: None,
-                        comments: None,
-                    });
-                    s_lock.playlists.clone()
-                };
-                spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
-                if cache.is_none() {
-                    spawn_fetch_playlists(self.state.clone(), ctx.clone());
-                }
-            }
-            PendingAction::RetryVideoDetails { video } => {
-                let cache = {
-                    let mut s_lock = self.state.lock().unwrap();
-                    s_lock.playlist_action_status = None;
-                    s_lock.current_view = View::VideoDetails {
-                        video: video.clone(),
-                        details: None,
-                        comments: None,
-                    };
-                    s_lock.playlists.clone()
-                };
-                spawn_fetch_comments(self.state.clone(), ctx.clone(), video);
-                if cache.is_none() {
-                    spawn_fetch_playlists(self.state.clone(), ctx.clone());
-                }
-            }
-            PendingAction::PostComment { video_id, text } => {
-                spawn_post_comment(self.state.clone(), ctx.clone(), video_id, text);
-            }
-            PendingAction::CreatePlaylist { title, description } => {
-                spawn_create_playlist(self.state.clone(), ctx.clone(), title, description);
-            }
-            PendingAction::DeletePlaylist { playlist_id } => {
-                spawn_delete_playlist(self.state.clone(), ctx.clone(), playlist_id);
-            }
-            PendingAction::Subscribe { channel_id } => {
-                spawn_subscribe(self.state.clone(), ctx.clone(), channel_id);
-            }
-            PendingAction::Unsubscribe { subscription_id } => {
-                spawn_unsubscribe(self.state.clone(), ctx.clone(), subscription_id);
-            }
-            PendingAction::RateVideo { video_id, rating } => {
-                spawn_rate_video(self.state.clone(), ctx.clone(), video_id, rating);
-            }
-            PendingAction::AddToPlaylist {
-                playlist_id,
-                playlist_title,
-                video_id,
-            } => {
-                spawn_add_to_playlist(
-                    self.state.clone(),
-                    ctx.clone(),
-                    playlist_id,
-                    playlist_title,
-                    video_id,
-                );
-            }
-            PendingAction::GoToSettings => {
-                let mut s_lock = self.state.lock().unwrap();
-                s_lock.navigate_clear_history(View::Settings);
-            }
-            PendingAction::SaveSettings {
-                player_path,
-                downloads_dir,
-                cookies_from_browser,
-            } => {
-                let mut config = youtube_client_lib::load_config();
-                config.player_path = player_path;
-                config.downloads_dir = downloads_dir.clone();
-                config.cookies_from_browser = cookies_from_browser;
-
-                let _ = youtube_client_lib::save_config(&config);
-
-                let mut s_lock = self.state.lock().unwrap();
-                if let Some(ref d) = downloads_dir {
-                    s_lock.downloads_dir = PathBuf::from(d);
-                }
-                s_lock.set_toast("Settings saved successfully!", false);
-            }
-            PendingAction::SignOut => {
-                let token_path = youtube_client_lib::resolve_token_cache_path();
-                if token_path.exists() {
-                    let _ = std::fs::remove_file(&token_path);
-                }
-                let mut s_lock = self.state.lock().unwrap();
-                s_lock.subscriptions = None;
-                s_lock.new_videos = None;
-                s_lock.playlists = None;
-                s_lock.current_view = View::Login;
-                s_lock.view_history.clear();
-                s_lock.set_toast("Signed out successfully.", false);
-            }
-            PendingAction::ExportSubscriptionsOpml => {
-                let mut s_lock = self.state.lock().unwrap();
-                if let Some(Ok(ref subs)) = s_lock.subscriptions {
-                    let imports: Vec<youtube_client_lib::SubscriptionImport> = subs
-                        .iter()
-                        .map(youtube_client_lib::SubscriptionImport::from)
-                        .collect();
-                    let opml = youtube_client_lib::export_subscriptions_to_opml(&imports);
-                    let export_path = s_lock.downloads_dir.join("youtube_subscriptions.opml");
-                    if let Err(e) = std::fs::create_dir_all(&s_lock.downloads_dir) {
-                        s_lock.set_toast(format!("Failed to create directory: {e}"), true);
-                    } else {
-                        match std::fs::write(&export_path, opml) {
-                            Ok(_) => {
-                                let count = imports.len();
-                                s_lock.set_toast(
-                                    format!(
-                                        "Exported {count} subscriptions to {}",
-                                        export_path.display()
-                                    ),
-                                    false,
-                                );
-                            }
-                            Err(e) => {
-                                s_lock.set_toast(format!("Failed to write OPML file: {e}"), true);
-                            }
-                        }
-                    }
-                } else {
-                    s_lock.set_toast("No subscriptions loaded yet to export.", true);
-                }
-            }
-            PendingAction::ImportSubscriptionsFile { path } => {
-                let mut s_lock = self.state.lock().unwrap();
-                let registry = youtube_client_lib::SubscriptionFormatRegistry::with_defaults();
-                match registry.import_file(&path) {
-                    Ok(imported) => {
-                        let count = imported.len();
-                        if count == 0 {
-                            s_lock.set_toast("No channels found in file.", true);
-                        } else {
-                            let mut current = match s_lock.subscriptions.take() {
-                                Some(Ok(subs)) => subs,
-                                _ => Vec::new(),
-                            };
-                            for imp in imported {
-                                if !current.iter().any(|s| s.channel_id == imp.channel_id) {
-                                    current.push(youtube_client_lib::Subscription {
-                                        id: format!("import_{}", imp.channel_id),
-                                        title: imp.channel_title,
-                                        description: String::new(),
-                                        channel_id: imp.channel_id,
-                                        thumbnail_url: String::new(),
-                                    });
-                                }
-                            }
-                            s_lock.subscriptions = Some(Ok(current));
-                            s_lock.set_toast(
-                                format!(
-                                    "Imported {count} subscriptions from {}",
-                                    path.file_name().unwrap_or_default().to_string_lossy()
-                                ),
-                                false,
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        s_lock.set_toast(format!("Failed to import subscriptions: {e}"), true);
-                    }
-                }
-            }
-            PendingAction::GoToAbout => {
-                let mut s_lock = self.state.lock().unwrap();
-                s_lock.navigate_clear_history(View::About);
-            }
-        }
+        dispatch_pending_action(action, &self.state, &self.audio_tx, ctx);
     }
 }
 

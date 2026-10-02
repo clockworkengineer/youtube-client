@@ -67,6 +67,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented concrete strategies for [`OpmlFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs), [`TakeoutCsvFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs), and [`NewPipeJsonFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs).
   - Introduced [`SubscriptionFormatRegistry`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs) with prioritized auto-detection and multi-format fallback.
   - Decoupled GUI `ImportSubscriptionsFile` in `main.rs` to delegate directly to `registry.import_file(&path)`, eliminating 15 lines of ad-hoc format inspection and matching.
+- **SOLID Architecture Phase 4: Decomposition of GUI God Object & View Parameter Decoupling (Single Responsibility & Interface Segregation Principles) (`youtube-gui` & `youtube-client-lib`)**:
+  - Decomposed the 420-line monolithic `handle_pending_action` in `youtube-gui/src/main.rs` into dedicated, modular domain handlers under [`youtube-gui/src/handlers/`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/):
+    - [`auth.rs`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/auth.rs): Authentication, OAuth login trigger, and account disconnection.
+    - [`navigation.rs`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/navigation.rs): View routing, history back-navigation, and view state initialization.
+    - [`playback.rs`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/playback.rs): Embedded Rodio audio dispatch, external player launching, and browser URL opening.
+    - [`download.rs`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/download.rs): Asynchronous media downloading via `yt-dlp` and progress tracking.
+    - [`settings.rs`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/settings.rs): Settings persistence and runtime directory synchronization.
+    - [`library.rs`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/library.rs): Subscriptions, channels, playlists, video details, comments, ratings, and OPML/CSV/JSON imports/exports.
+  - Replaced the 12-parameter function signature of `render_details_view` with a cohesive [`VideoDetailsContext`](file:///c:/Projects/youtube-client/youtube-gui/src/views/details_view.rs), eliminating parameter sprawl and adhering to Interface Segregation.
+  - Derived `PartialEq` and `Eq` across core models ([`Video`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/video.rs), [`Subscription`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/subscription.rs), [`Playlist`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/playlist.rs), [`Comment`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/comment.rs)) in `youtube-client-lib` for model consistency.
+  - Re-exported `utils` at `youtube-client-lib` crate root.
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

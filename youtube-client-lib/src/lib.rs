@@ -75,6 +75,7 @@ pub use quota::*;
 pub use rss::*;
 pub use testing::MockYoutubeClient;
 pub use traits::*;
+pub use utils::*;
 
 #[cfg(test)]
 mod tests {

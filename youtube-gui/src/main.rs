@@ -41,9 +41,28 @@ struct YoutubeGuiApp {
     volume: f32,
     muted: bool,
     audio_tx: std::sync::mpsc::Sender<PlayerCommand>,
+    window_pos: Option<[f32; 2]>,
+    window_size: Option<[f32; 2]>,
+    window_maximized: Option<bool>,
+    window_dirty: bool,
+    last_window_change: Option<std::time::Instant>,
 }
 
 impl YoutubeGuiApp {
+    fn save_window_state(&mut self) {
+        if !self.window_dirty {
+            return;
+        }
+        let mut config = youtube_client_lib::load_config();
+        config.window_pos = self.window_pos;
+        config.window_size = self.window_size;
+        config.window_maximized = self.window_maximized;
+        config.volume = Some(self.volume);
+        if youtube_client_lib::save_config(&config).is_ok() {
+            self.window_dirty = false;
+        }
+    }
+
     fn new(cc: &eframe::CreationContext<'_>, log_file: PathBuf) -> Self {
         // Customize the styling to make it look premium
         let mut visuals = egui::Visuals::dark();
@@ -130,12 +149,91 @@ impl YoutubeGuiApp {
             volume: config.volume.unwrap_or(1.0),
             muted: false,
             audio_tx,
+            window_pos: config.window_pos,
+            window_size: config.window_size,
+            window_maximized: config.window_maximized,
+            window_dirty: false,
+            last_window_change: None,
         }
     }
 }
 
+impl Drop for YoutubeGuiApp {
+    fn drop(&mut self) {
+        self.save_window_state();
+    }
+}
+
 impl eframe::App for YoutubeGuiApp {
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        self.save_window_state();
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Track window position, size, and maximized status for session restoration
+        let (vp_pos, vp_size, vp_maximized, vp_minimized, close_requested) = ctx.input(|i| {
+            let vp = i.viewport();
+            (
+                vp.outer_rect.map(|r| [r.min.x, r.min.y]),
+                vp.inner_rect
+                    .map(|r| [r.width(), r.height()])
+                    .or_else(|| vp.outer_rect.map(|r| [r.width(), r.height()])),
+                vp.maximized.unwrap_or(false),
+                vp.minimized.unwrap_or(false),
+                vp.close_requested(),
+            )
+        });
+
+        if !vp_minimized {
+            if vp_maximized {
+                if self.window_maximized != Some(true) {
+                    self.window_maximized = Some(true);
+                    self.window_dirty = true;
+                    self.last_window_change = Some(std::time::Instant::now());
+                }
+            } else {
+                if self.window_maximized != Some(false) {
+                    self.window_maximized = Some(false);
+                    self.window_dirty = true;
+                    self.last_window_change = Some(std::time::Instant::now());
+                }
+                if let Some(pos) = vp_pos {
+                    if pos[0] > -10000.0
+                        && pos[1] > -10000.0
+                        && pos[0] < 50000.0
+                        && pos[1] < 50000.0
+                    {
+                        if self.window_pos != Some(pos) {
+                            self.window_pos = Some(pos);
+                            self.window_dirty = true;
+                            self.last_window_change = Some(std::time::Instant::now());
+                        }
+                    }
+                }
+                if let Some(size) = vp_size {
+                    if size[0] >= 400.0 && size[1] >= 400.0 {
+                        if self.window_size != Some(size) {
+                            self.window_size = Some(size);
+                            self.window_dirty = true;
+                            self.last_window_change = Some(std::time::Instant::now());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Periodically debounce save 2 seconds after window moves or resizes settle
+        if self.window_dirty
+            && self
+                .last_window_change
+                .is_some_and(|t| t.elapsed() > std::time::Duration::from_secs(2))
+        {
+            self.save_window_state();
+        }
+
+        if close_requested && self.window_dirty {
+            self.save_window_state();
+        }
         let (current_view, is_login, player_title, player_playing, player_pos, player_dur) = {
             let s = lock_state(&self.state);
             (
@@ -781,13 +879,7 @@ impl eframe::App for YoutubeGuiApp {
                 config.downloads_dir = downloads_dir.clone();
                 config.cookies_from_browser = cookies_from_browser;
 
-                if let Some(global_dir) = youtube_client_lib::get_global_config_dir() {
-                    let _ = std::fs::create_dir_all(&global_dir);
-                    let cfg_file = global_dir.join("config.json");
-                    if let Ok(json) = serde_json::to_string_pretty(&config) {
-                        let _ = std::fs::write(&cfg_file, json);
-                    }
-                }
+                let _ = youtube_client_lib::save_config(&config);
 
                 let mut s_lock = self.state.lock().unwrap();
                 if let Some(ref d) = downloads_dir {
@@ -836,9 +928,26 @@ fn main() -> eframe::Result<()> {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let _guard = rt.enter();
 
+    let config = youtube_client_lib::load_config();
+
+    let (width, height) = match config.window_size {
+        Some([w, h]) if w >= 400.0 && h >= 400.0 => (w, h),
+        _ => (700.0, 700.0),
+    };
+
     let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size([700.0, 700.0])
+        .with_inner_size([width, height])
         .with_min_inner_size([400.0, 400.0]);
+
+    if let Some([x, y]) = config.window_pos {
+        if x > -10000.0 && y >= 0.0 && x < 50000.0 && y < 50000.0 {
+            viewport = viewport.with_position([x, y]);
+        }
+    }
+
+    if config.window_maximized == Some(true) {
+        viewport = viewport.with_maximized(true);
+    }
 
     if let Ok(img) = image::load_from_memory(include_bytes!("../../assets/icon.png")) {
         let rgba = img.to_rgba8();

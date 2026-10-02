@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Upgraded embedded Rodio audio player thread with precise timeline tracking (`position_secs`, `duration_secs`) and `Seek`/`Skip` command handling.
   - Added interactive playback scrubber slider in bottom audio dock allowing instant drag-and-drop timeline scrubbing.
   - Added `⏪ 10s` and `⏩ 10s` instant skip buttons and elapsed/total duration readout (`MM:SS / MM:SS`).
+- **Persistent Window Geometry & Session Restoration (`youtube-gui` & `youtube-client-lib`)**:
+  - Added `window_pos`, `window_size`, and `window_maximized` fields to `Config` with centralized `save_config`.
+  - Automatically captures window client size, screen position, and maximized state during GUI interaction, with debounced background saving and instant flushing on close request or app drop.
+  - Restores exact window coordinates, dimensions, and maximized state on startup with screen boundary and minimum size guardrails.
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

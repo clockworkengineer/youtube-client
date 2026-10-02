@@ -24,6 +24,12 @@ pub struct Config {
     pub cookies_from_browser: Option<String>,
     /// Persistent audio volume level (0.0 to 1.0)
     pub volume: Option<f32>,
+    /// Persistent window position [x, y] in screen coordinates
+    pub window_pos: Option<[f32; 2]>,
+    /// Persistent window inner size [width, height] in logical points
+    pub window_size: Option<[f32; 2]>,
+    /// Persistent window maximized state
+    pub window_maximized: Option<bool>,
 }
 
 /// Resolve the path for the client log file.
@@ -229,32 +235,64 @@ pub fn load_config() -> Config {
     let local = load_config_from_dir(Path::new("."));
     let mut merged = local.clone();
 
-    if !local.is_valid() {
-        if let Some(global_dir) = get_global_config_dir() {
-            let global = load_config_from_dir(&global_dir);
+    if let Some(global_dir) = get_global_config_dir() {
+        let global = load_config_from_dir(&global_dir);
+        if !local.is_valid() {
             if merged.client_id.is_none() {
                 merged.client_id = global.client_id;
             }
             if merged.client_secret.is_none() {
                 merged.client_secret = global.client_secret;
             }
-            if merged.player_path.is_none() {
-                merged.player_path = global.player_path;
-            }
-            if merged.downloads_dir.is_none() {
-                merged.downloads_dir = global.downloads_dir;
-            }
         }
-    } else if let Some(global_dir) = get_global_config_dir() {
-        let global = load_config_from_dir(&global_dir);
         if merged.player_path.is_none() {
             merged.player_path = global.player_path;
         }
         if merged.downloads_dir.is_none() {
             merged.downloads_dir = global.downloads_dir;
         }
+        if merged.log_file.is_none() {
+            merged.log_file = global.log_file;
+        }
+        if merged.cookies_file.is_none() {
+            merged.cookies_file = global.cookies_file;
+        }
+        if merged.cookies_from_browser.is_none() {
+            merged.cookies_from_browser = global.cookies_from_browser;
+        }
+        if merged.volume.is_none() {
+            merged.volume = global.volume;
+        }
+        if merged.window_pos.is_none() {
+            merged.window_pos = global.window_pos;
+        }
+        if merged.window_size.is_none() {
+            merged.window_size = global.window_size;
+        }
+        if merged.window_maximized.is_none() {
+            merged.window_maximized = global.window_maximized;
+        }
     }
     merged
+}
+
+/// Save configuration to the appropriate `config.json` file.
+/// If `config.json` already exists in the current working directory, it is updated there.
+/// Otherwise, it is saved into the global user config directory (`%APPDATA%/youtube-client/config.json` or `~/.config/youtube-client/config.json`).
+pub fn save_config(config: &Config) -> std::io::Result<()> {
+    let local_file = Path::new("config.json");
+    let target_file = if local_file.exists() {
+        local_file.to_path_buf()
+    } else if let Some(global_dir) = get_global_config_dir() {
+        std::fs::create_dir_all(&global_dir)?;
+        global_dir.join("config.json")
+    } else {
+        local_file.to_path_buf()
+    };
+
+    let json = serde_json::to_string_pretty(config)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(&target_file, json)
 }
 
 pub fn load_config_from_dir(dir: &Path) -> Config {
@@ -325,12 +363,7 @@ pub fn resolve_credentials(
     let temp_config = Config {
         client_id: cid,
         client_secret: csec,
-        player_path: None,
-        downloads_dir: None,
-        log_file: None,
-        cookies_file: None,
-        cookies_from_browser: None,
-        volume: None,
+        ..Default::default()
     };
 
     if temp_config.is_valid() {

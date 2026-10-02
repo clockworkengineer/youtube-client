@@ -267,4 +267,24 @@ mod tests {
             Some("firefox".to_string())
         );
     }
+
+    #[test]
+    fn test_window_state_config_serialization() {
+        let config = Config {
+            window_pos: Some([150.0, 220.0]),
+            window_size: Some([1024.0, 768.0]),
+            window_maximized: Some(true),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&config).expect("Serialization failed");
+        assert!(json.contains("150.0"));
+        assert!(json.contains("1024.0"));
+        assert!(json.contains("true"));
+
+        let deserialized: Config = serde_json::from_str(&json).expect("Deserialization failed");
+        assert_eq!(deserialized.window_pos, Some([150.0, 220.0]));
+        assert_eq!(deserialized.window_size, Some([1024.0, 768.0]));
+        assert_eq!(deserialized.window_maximized, Some(true));
+    }
 }

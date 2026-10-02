@@ -16,13 +16,19 @@ pub fn spawn_audio_worker(
     std::thread::spawn(move || {
         let mut stream_opt: Option<rodio::MixerDeviceSink> = None;
         let mut sink_opt: Option<rodio::Player> = None;
+        let mut last_save = std::time::Instant::now();
 
         loop {
             let cmd_opt = audio_rx.recv_timeout(std::time::Duration::from_millis(200));
             match cmd_opt {
                 Ok(cmd) => {
                     match cmd {
-                        PlayerCommand::Play(path, title) => {
+                        PlayerCommand::Play {
+                            path,
+                            title,
+                            video_id,
+                            start_secs,
+                        } => {
                             if let Some(sink) = &sink_opt {
                                 sink.stop();
                             }
@@ -48,9 +54,22 @@ pub fn spawn_audio_worker(
                                         sink.append(source);
                                         sink.play();
                                         s.player_state.current_title = title;
+                                        s.player_state.current_video_id = video_id;
                                         s.player_state.playing = true;
                                         s.player_state.duration_secs = duration_secs;
                                         s.player_state.position_secs = 0.0;
+
+                                        if let Some(start) = start_secs {
+                                            if start > 1.0
+                                                && (duration_secs == 0.0
+                                                    || start < duration_secs - 3.0)
+                                            {
+                                                let _ = sink.try_seek(
+                                                    std::time::Duration::from_secs_f32(start),
+                                                );
+                                                s.player_state.position_secs = start;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -60,6 +79,7 @@ pub fn spawn_audio_worker(
                                 sink.pause();
                                 let mut s = state.lock().unwrap();
                                 s.player_state.playing = false;
+                                s.save_playback_positions();
                             }
                         }
                         PlayerCommand::Resume => {
@@ -74,6 +94,27 @@ pub fn spawn_audio_worker(
                                 sink.stop();
                                 let mut s = state.lock().unwrap();
                                 s.player_state.playing = false;
+                                if let Some(vid) = s.player_state.current_video_id.take() {
+                                    let pos = s.player_state.position_secs;
+                                    let dur = s.player_state.duration_secs;
+                                    if dur > 0.0 && pos >= dur - 5.0 {
+                                        s.playback_positions.remove(&vid);
+                                    } else if pos > 5.0 {
+                                        let now = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_secs();
+                                        s.playback_positions.insert(
+                                            vid,
+                                            youtube_client_lib::utils::PlaybackProgress {
+                                                position_secs: pos,
+                                                duration_secs: dur,
+                                                updated_at: now,
+                                            },
+                                        );
+                                    }
+                                    s.save_playback_positions();
+                                }
                                 s.player_state.current_title = String::new();
                                 s.player_state.position_secs = 0.0;
                                 s.player_state.duration_secs = 0.0;
@@ -119,6 +160,10 @@ pub fn spawn_audio_worker(
                                 let mut s = state.lock().unwrap();
                                 if s.player_state.playing {
                                     s.player_state.playing = false;
+                                    if let Some(vid) = s.player_state.current_video_id.take() {
+                                        s.playback_positions.remove(&vid);
+                                        s.save_playback_positions();
+                                    }
                                     s.player_state.current_title = String::new();
                                     s.player_state.position_secs = 0.0;
                                     s.player_state.duration_secs = 0.0;
@@ -133,6 +178,29 @@ pub fn spawn_audio_worker(
                             let mut s = state.lock().unwrap();
                             if s.player_state.playing {
                                 s.player_state.position_secs = pos;
+                                let dur = s.player_state.duration_secs;
+                                if let Some(vid) = s.player_state.current_video_id.clone() {
+                                    if dur > 0.0 && pos >= dur - 5.0 {
+                                        s.playback_positions.remove(&vid);
+                                    } else if pos > 5.0 {
+                                        let now = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_secs();
+                                        s.playback_positions.insert(
+                                            vid,
+                                            youtube_client_lib::utils::PlaybackProgress {
+                                                position_secs: pos,
+                                                duration_secs: dur,
+                                                updated_at: now,
+                                            },
+                                        );
+                                    }
+                                    if last_save.elapsed() > std::time::Duration::from_secs(3) {
+                                        last_save = std::time::Instant::now();
+                                        s.save_playback_positions();
+                                    }
+                                }
                                 ctx.request_repaint();
                             }
                         }

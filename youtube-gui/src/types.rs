@@ -46,6 +46,7 @@ pub enum View {
 #[derive(Clone, Debug)]
 pub struct PlayerState {
     pub current_title: String,
+    pub current_video_id: Option<String>,
     pub playing: bool,
     pub volume: f32,
     pub position_secs: f32,
@@ -56,6 +57,7 @@ impl Default for PlayerState {
     fn default() -> Self {
         Self {
             current_title: String::new(),
+            current_video_id: None,
             playing: false,
             volume: 1.0,
             position_secs: 0.0,
@@ -65,7 +67,12 @@ impl Default for PlayerState {
 }
 
 pub enum PlayerCommand {
-    Play(PathBuf, String),
+    Play {
+        path: PathBuf,
+        title: String,
+        video_id: Option<String>,
+        start_secs: Option<f32>,
+    },
     Pause,
     Resume,
     Stop,
@@ -91,6 +98,8 @@ pub struct AppState {
     pub downloads_dir: PathBuf,
     pub log_file: PathBuf,
     pub cleared_videos_path: PathBuf,
+    pub playback_positions_path: PathBuf,
+    pub playback_positions: HashMap<String, youtube_client_lib::utils::PlaybackProgress>,
     pub toast: Option<(String, std::time::Instant, bool)>,
 }
 
@@ -103,6 +112,13 @@ pub fn lock_state(state: &Arc<Mutex<AppState>>) -> MutexGuard<'_, AppState> {
 
 impl AppState {
     pub const MAX_THUMBNAILS: usize = 150;
+
+    pub fn save_playback_positions(&self) {
+        let _ = youtube_client_lib::utils::save_playback_positions_to_file(
+            &self.playback_positions_path,
+            &self.playback_positions,
+        );
+    }
 
     pub fn set_toast(&mut self, message: impl Into<String>, is_error: bool) {
         self.toast = Some((message.into(), std::time::Instant::now(), is_error));
@@ -174,9 +190,12 @@ pub enum PendingAction {
     PlayLocal {
         path: PathBuf,
         title: String,
+        video_id: Option<String>,
+        start_secs: Option<f32>,
     },
     StreamVideo {
         video_id: String,
+        start_secs: Option<f32>,
     },
     OpenInBrowser {
         url: String,

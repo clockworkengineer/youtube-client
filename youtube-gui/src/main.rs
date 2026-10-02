@@ -23,8 +23,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use youtube_client_lib::utils::{
-    append_to_log, launch_external_player_with_log, load_string_set_from_file,
-    save_string_set_to_file, scan_downloads_dir,
+    append_to_log, launch_external_player_with_options, load_playback_positions_from_file,
+    load_string_set_from_file, save_string_set_to_file, scan_downloads_dir,
 };
 
 struct YoutubeGuiApp {
@@ -50,6 +50,10 @@ struct YoutubeGuiApp {
 
 impl YoutubeGuiApp {
     fn save_window_state(&mut self) {
+        if let Ok(s_lock) = self.state.lock() {
+            s_lock.save_playback_positions();
+        }
+
         if !self.window_dirty {
             return;
         }
@@ -86,6 +90,10 @@ impl YoutubeGuiApp {
         let downloads = HashMap::new();
         let cleared_videos_path = youtube_client_lib::resolve_app_data_path("cleared_videos.json");
         let cleared_video_ids = load_string_set_from_file(&cleared_videos_path);
+        let playback_positions_path =
+            youtube_client_lib::resolve_app_data_path("playback_positions.json");
+        let playback_positions = load_playback_positions_from_file(&playback_positions_path);
+
         let state = Arc::new(Mutex::new(AppState {
             subscriptions: None,
             new_videos: None,
@@ -99,6 +107,7 @@ impl YoutubeGuiApp {
             downloads,
             player_state: PlayerState {
                 current_title: String::new(),
+                current_video_id: None,
                 playing: false,
                 volume: 1.0,
                 position_secs: 0.0,
@@ -109,6 +118,8 @@ impl YoutubeGuiApp {
             downloads_dir: downloads_dir.clone(),
             log_file: log_file.clone(),
             cleared_videos_path,
+            playback_positions_path,
+            playback_positions,
             toast: None,
         }));
 
@@ -690,17 +701,31 @@ impl eframe::App for YoutubeGuiApp {
             PendingAction::SpawnDownload { video, is_audio } => {
                 spawn_download(self.state.clone(), ctx.clone(), video, is_audio);
             }
-            PendingAction::PlayLocal { path, title } => {
+            PendingAction::PlayLocal {
+                path,
+                title,
+                video_id,
+                start_secs,
+            } => {
                 let is_mp3 = path.extension().map(|e| e == "mp3").unwrap_or(false);
                 let log_file = self.state.lock().unwrap().log_file.clone();
+                let vid = video_id
+                    .or_else(|| youtube_client_lib::utils::extract_video_id_from_path(&path));
                 if is_mp3 {
                     append_to_log(&log_file, "INFO", &format!("Playing local audio: {path:?}"));
-                    let _ = self.audio_tx.send(PlayerCommand::Play(path, title));
+                    let _ = self.audio_tx.send(PlayerCommand::Play {
+                        path,
+                        title,
+                        video_id: vid,
+                        start_secs,
+                    });
                 } else {
                     append_to_log(&log_file, "INFO", &format!("Opening local video: {path:?}"));
-                    if let Err(e) =
-                        launch_external_player_with_log(path.as_os_str(), Some(&log_file))
-                    {
+                    if let Err(e) = launch_external_player_with_options(
+                        path.as_os_str(),
+                        Some(&log_file),
+                        start_secs,
+                    ) {
                         append_to_log(
                             &log_file,
                             "WARN",
@@ -710,15 +735,28 @@ impl eframe::App for YoutubeGuiApp {
                     }
                 }
             }
-            PendingAction::StreamVideo { video_id } => {
-                let url = format!("https://www.youtube.com/watch?v={video_id}");
+            PendingAction::StreamVideo {
+                video_id,
+                start_secs,
+            } => {
+                let url = if let Some(start) = start_secs {
+                    if start > 1.0 {
+                        format!("https://www.youtube.com/watch?v={video_id}&t={start:.0}s")
+                    } else {
+                        format!("https://www.youtube.com/watch?v={video_id}")
+                    }
+                } else {
+                    format!("https://www.youtube.com/watch?v={video_id}")
+                };
                 let log_file = self.state.lock().unwrap().log_file.clone();
                 append_to_log(&log_file, "INFO", &format!("Video clicked: {url}"));
 
                 // Try to open the stream in MPV or VLC first
-                if let Err(e) =
-                    launch_external_player_with_log(std::ffi::OsStr::new(&url), Some(&log_file))
-                {
+                if let Err(e) = launch_external_player_with_options(
+                    std::ffi::OsStr::new(&url),
+                    Some(&log_file),
+                    start_secs,
+                ) {
                     append_to_log(
                         &log_file,
                         "WARN",

@@ -30,30 +30,69 @@ pub fn render_details_view(
     });
     ui.add_space(15.0);
 
+    let (download_status, playback_progress) = {
+        let s_lock = state.lock().unwrap();
+        (
+            s_lock
+                .downloads
+                .get(&video.id)
+                .cloned()
+                .unwrap_or(DownloadStatus::NotStarted),
+            s_lock.playback_positions.get(&video.id).cloned(),
+        )
+    };
+
     ui.horizontal(|ui| {
         let texture =
             get_or_fetch_thumbnail(state, http_client, ctx, &video.id, &video.thumbnail_url);
-        if let Some(tex) = &texture {
-            let img = egui::Image::from_texture(tex)
-                .max_width(200.0)
-                .max_height(150.0)
-                .sense(egui::Sense::click());
-            let img_response = ui.add(img);
-            if img_response.clicked() {
-                action = Some(PendingAction::StreamVideo {
-                    video_id: video.id.clone(),
-                });
+        ui.vertical(|ui| {
+            if let Some(tex) = &texture {
+                let img = egui::Image::from_texture(tex)
+                    .max_width(200.0)
+                    .max_height(150.0)
+                    .sense(egui::Sense::click());
+                let img_response = ui.add(img);
+                if img_response.clicked() {
+                    let start = playback_progress.as_ref().map(|p| p.position_secs);
+                    action = Some(PendingAction::StreamVideo {
+                        video_id: video.id.clone(),
+                        start_secs: start,
+                    });
+                }
+                if img_response.hovered() {
+                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                    img_response.on_hover_text("Click to stream video");
+                }
+            } else {
+                let (rect, _response) =
+                    ui.allocate_exact_size(egui::vec2(200.0, 150.0), egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
             }
-            if img_response.hovered() {
-                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-                img_response.on_hover_text("Click to stream video");
+
+            if let Some(ref prog) = playback_progress {
+                if prog.duration_secs > 0.0 && prog.position_secs > 2.0 {
+                    let pct = (prog.position_secs / prog.duration_secs).clamp(0.0, 1.0);
+                    ui.add(
+                        egui::ProgressBar::new(pct)
+                            .desired_width(200.0)
+                            .desired_height(4.0)
+                            .fill(egui::Color32::from_rgb(255, 60, 60)),
+                    );
+                    let m = (prog.position_secs as u32) / 60;
+                    let s = (prog.position_secs as u32) % 60;
+                    let dur_m = (prog.duration_secs as u32) / 60;
+                    let dur_s = (prog.duration_secs as u32) % 60;
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "⏱ Watched: {m:02}:{s:02} / {dur_m:02}:{dur_s:02}"
+                        ))
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(255, 120, 120)),
+                    );
+                }
             }
-        } else {
-            let (rect, _response) =
-                ui.allocate_exact_size(egui::vec2(200.0, 150.0), egui::Sense::hover());
-            ui.painter()
-                .rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
-        }
+        });
 
         ui.add_space(20.0);
 
@@ -148,15 +187,6 @@ pub fn render_details_view(
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                let download_status = {
-                    let s_lock = state.lock().unwrap();
-                    s_lock
-                        .downloads
-                        .get(&video.id)
-                        .cloned()
-                        .unwrap_or(DownloadStatus::NotStarted)
-                };
-
                 match &download_status {
                     DownloadStatus::NotStarted => {
                         if ui.button("📥 Download Video").clicked() {
@@ -211,6 +241,62 @@ pub fn render_details_view(
                                 {
                                     let _ = audio_tx.send(PlayerCommand::Stop);
                                 }
+                            } else if let Some(prog) = &playback_progress {
+                                if prog.position_secs > 5.0 {
+                                    let mins = (prog.position_secs / 60.0).floor() as u64;
+                                    let secs = (prog.position_secs % 60.0).floor() as u64;
+                                    if ui
+                                        .button(
+                                            egui::RichText::new(format!(
+                                                "▶ Resume Audio ({mins:02}:{secs:02})"
+                                            ))
+                                            .color(egui::Color32::from_rgb(100, 255, 100))
+                                            .strong(),
+                                        )
+                                        .clicked()
+                                    {
+                                        if let Some(path) = path_opt {
+                                            action = Some(PendingAction::PlayLocal {
+                                                path: path.clone(),
+                                                title: video.title.clone(),
+                                                video_id: Some(video.id.clone()),
+                                                start_secs: Some(prog.position_secs),
+                                            });
+                                        }
+                                    }
+                                    if ui
+                                        .button(
+                                            egui::RichText::new("↺ Start")
+                                                .color(egui::Color32::from_rgb(180, 220, 180)),
+                                        )
+                                        .clicked()
+                                    {
+                                        if let Some(path) = path_opt {
+                                            action = Some(PendingAction::PlayLocal {
+                                                path: path.clone(),
+                                                title: video.title.clone(),
+                                                video_id: Some(video.id.clone()),
+                                                start_secs: Some(0.0),
+                                            });
+                                        }
+                                    }
+                                } else if ui
+                                    .button(
+                                        egui::RichText::new("▶ Play Local Audio")
+                                            .color(egui::Color32::from_rgb(100, 255, 100))
+                                            .strong(),
+                                    )
+                                    .clicked()
+                                {
+                                    if let Some(path) = path_opt {
+                                        action = Some(PendingAction::PlayLocal {
+                                            path: path.clone(),
+                                            title: video.title.clone(),
+                                            video_id: Some(video.id.clone()),
+                                            start_secs: None,
+                                        });
+                                    }
+                                }
                             } else if ui
                                 .button(
                                     egui::RichText::new("▶ Play Local Audio")
@@ -223,6 +309,64 @@ pub fn render_details_view(
                                     action = Some(PendingAction::PlayLocal {
                                         path: path.clone(),
                                         title: video.title.clone(),
+                                        video_id: Some(video.id.clone()),
+                                        start_secs: None,
+                                    });
+                                }
+                            }
+                        } else if let Some(prog) = &playback_progress {
+                            if prog.position_secs > 5.0 {
+                                let mins = (prog.position_secs / 60.0).floor() as u64;
+                                let secs = (prog.position_secs % 60.0).floor() as u64;
+                                if ui
+                                    .button(
+                                        egui::RichText::new(format!(
+                                            "▶ Resume Video ({mins:02}:{secs:02})"
+                                        ))
+                                        .color(egui::Color32::from_rgb(100, 255, 100))
+                                        .strong(),
+                                    )
+                                    .clicked()
+                                {
+                                    if let Some(path) = path_opt {
+                                        action = Some(PendingAction::PlayLocal {
+                                            path: path.clone(),
+                                            title: video.title.clone(),
+                                            video_id: Some(video.id.clone()),
+                                            start_secs: Some(prog.position_secs),
+                                        });
+                                    }
+                                }
+                                if ui
+                                    .button(
+                                        egui::RichText::new("↺ Start")
+                                            .color(egui::Color32::from_rgb(180, 220, 180)),
+                                    )
+                                    .clicked()
+                                {
+                                    if let Some(path) = path_opt {
+                                        action = Some(PendingAction::PlayLocal {
+                                            path: path.clone(),
+                                            title: video.title.clone(),
+                                            video_id: Some(video.id.clone()),
+                                            start_secs: Some(0.0),
+                                        });
+                                    }
+                                }
+                            } else if ui
+                                .button(
+                                    egui::RichText::new("▶ Play Local Video")
+                                        .color(egui::Color32::from_rgb(100, 255, 100))
+                                        .strong(),
+                                )
+                                .clicked()
+                            {
+                                if let Some(path) = path_opt {
+                                    action = Some(PendingAction::PlayLocal {
+                                        path: path.clone(),
+                                        title: video.title.clone(),
+                                        video_id: Some(video.id.clone()),
+                                        start_secs: None,
                                     });
                                 }
                             }
@@ -238,6 +382,8 @@ pub fn render_details_view(
                                 action = Some(PendingAction::PlayLocal {
                                     path: path.clone(),
                                     title: video.title.clone(),
+                                    video_id: Some(video.id.clone()),
+                                    start_secs: None,
                                 });
                             }
                         }
@@ -269,7 +415,51 @@ pub fn render_details_view(
                 ui.add_space(10.0);
 
                 ui.horizontal(|ui| {
-                    if ui
+                    if let Some(prog) = &playback_progress {
+                        if prog.position_secs > 5.0 {
+                            let mins = (prog.position_secs / 60.0).floor() as u64;
+                            let secs = (prog.position_secs % 60.0).floor() as u64;
+                            if ui
+                                .button(
+                                    egui::RichText::new(format!(
+                                        "📺 Resume Stream ({mins:02}:{secs:02})"
+                                    ))
+                                    .color(egui::Color32::from_rgb(255, 100, 100))
+                                    .strong(),
+                                )
+                                .clicked()
+                            {
+                                action = Some(PendingAction::StreamVideo {
+                                    video_id: video.id.clone(),
+                                    start_secs: Some(prog.position_secs),
+                                });
+                            }
+                            if ui
+                                .button(
+                                    egui::RichText::new("↺ Stream Start")
+                                        .color(egui::Color32::from_rgb(255, 180, 180)),
+                                )
+                                .clicked()
+                            {
+                                action = Some(PendingAction::StreamVideo {
+                                    video_id: video.id.clone(),
+                                    start_secs: Some(0.0),
+                                });
+                            }
+                        } else if ui
+                            .button(
+                                egui::RichText::new("📺 Stream Video")
+                                    .color(egui::Color32::from_rgb(255, 100, 100))
+                                    .strong(),
+                            )
+                            .clicked()
+                        {
+                            action = Some(PendingAction::StreamVideo {
+                                video_id: video.id.clone(),
+                                start_secs: None,
+                            });
+                        }
+                    } else if ui
                         .button(
                             egui::RichText::new("📺 Stream Video")
                                 .color(egui::Color32::from_rgb(255, 100, 100))
@@ -279,6 +469,7 @@ pub fn render_details_view(
                     {
                         action = Some(PendingAction::StreamVideo {
                             video_id: video.id.clone(),
+                            start_secs: None,
                         });
                     }
 

@@ -89,3 +89,28 @@ fn test_ryd_response_parsing() {
     assert!(parsed.is_ok());
     assert_eq!(parsed.unwrap().dislikes, Some(420_000));
 }
+
+#[test]
+fn test_playback_positions_persistence() {
+    use tempfile::tempdir;
+    use youtube_client_lib::utils::{
+        PlaybackProgress, load_playback_positions_from_file, save_playback_positions_to_file,
+    };
+
+    let tmp = tempdir().unwrap();
+    let file_path = tmp.path().join("playback_positions.json");
+
+    let mut map = HashMap::new();
+    map.insert(
+        "dQw4w9WgXcQ".to_string(),
+        PlaybackProgress {
+            position_secs: 142.5,
+            duration_secs: 212.0,
+            updated_at: 1720000000,
+        },
+    );
+
+    assert!(save_playback_positions_to_file(&file_path, &map).is_ok());
+    let loaded = load_playback_positions_from_file(&file_path);
+    assert_eq!(loaded, map);
+}

@@ -196,6 +196,15 @@ pub fn launch_external_player_with_log(
     target: &std::ffi::OsStr,
     log_file: Option<&Path>,
 ) -> Result<(), String> {
+    launch_external_player_with_options(target, log_file, None)
+}
+
+/// Launch an external media player for a file or URL target with start offset position and logging.
+pub fn launch_external_player_with_options(
+    target: &std::ffi::OsStr,
+    log_file: Option<&Path>,
+    start_secs: Option<f32>,
+) -> Result<(), String> {
     let mut players = Vec::new();
     if let Some(user_player) = get_configured_player_path() {
         players.push(user_player);
@@ -245,6 +254,12 @@ pub fn launch_external_player_with_log(
         let mut cmd = std::process::Command::new(&player);
         if player.to_lowercase().contains("mpv") {
             cmd.arg("--no-terminal");
+            cmd.arg("--save-position-on-quit");
+            if let Some(start) = start_secs {
+                if start > 1.0 {
+                    cmd.arg(format!("--start={start:.1}"));
+                }
+            }
             if is_url {
                 if let Some(ref cf) = cookies_file {
                     cmd.arg(format!(
@@ -256,6 +271,12 @@ pub fn launch_external_player_with_log(
                     cmd.arg(format!(
                         "--ytdl-raw-options-append=cookies-from-browser={cb}"
                     ));
+                }
+            }
+        } else if player.to_lowercase().contains("vlc") {
+            if let Some(start) = start_secs {
+                if start > 1.0 {
+                    cmd.arg(format!("--start-time={start:.0}"));
                 }
             }
         }
@@ -307,6 +328,55 @@ pub fn launch_external_player_with_log(
         &format!("No media players succeeded for target: {target_str}"),
     );
     Err("No media players succeeded.".to_string())
+}
+
+/// Playback position and duration metadata for resume-from-last-watched features.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct PlaybackProgress {
+    /// Playback position in seconds
+    pub position_secs: f32,
+    /// Total duration in seconds (if known)
+    pub duration_secs: f32,
+    /// Unix timestamp in seconds when last updated
+    pub updated_at: u64,
+}
+
+/// Load playback progress map (`video_id -> PlaybackProgress`) from a JSON file.
+pub fn load_playback_positions_from_file(
+    path: &Path,
+) -> std::collections::HashMap<String, PlaybackProgress> {
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(map) = serde_json::from_str::<
+                std::collections::HashMap<String, PlaybackProgress>,
+            >(&content)
+            {
+                return map;
+            }
+        }
+    }
+    std::collections::HashMap::new()
+}
+
+/// Save playback progress map to a JSON file atomically using a temporary file.
+pub fn save_playback_positions_to_file(
+    path: &Path,
+    positions: &std::collections::HashMap<String, PlaybackProgress>,
+) -> Result<(), String> {
+    let content = serde_json::to_string_pretty(positions).map_err(|e| e.to_string())?;
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    if !parent.as_os_str().is_empty() && !parent.exists() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    temp.write_all(content.as_bytes())
+        .map_err(|e| e.to_string())?;
+    temp.as_file().sync_all().map_err(|e| e.to_string())?;
+    temp.persist(path).map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 /// Load a set of strings from a JSON array file.

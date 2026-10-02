@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `window_pos`, `window_size`, and `window_maximized` fields to `Config` with centralized `save_config`.
   - Automatically captures window client size, screen position, and maximized state during GUI interaction, with debounced background saving and instant flushing on close request or app drop.
   - Restores exact window coordinates, dimensions, and maximized state on startup with screen boundary and minimum size guardrails.
+- **Persistent Playback Progress Tracking & Resume Playback (`youtube-gui` & `youtube-client-lib`)**:
+  - Added `PlaybackProgress` tracking storing exact watched timestamp (`position_secs`, `duration_secs`, `updated_at`) per video ID in `%APPDATA%/youtube-client/playback_positions.json` (or `~/.config/youtube-client/playback_positions.json`) using atomic tempfile writes.
+  - Embedded audio worker continuously syncs playback progress every 200ms with debounced auto-saving every 3s, instant saving on Pause, Stop, or application exit, and auto-removal upon completion.
+  - Feed cards and Video Details view visually display watch progress via a red progress bar under thumbnails and a `⏱ Watched to MM:SS` badge.
+  - Action buttons in both feeds and Video Details offer instant `▶ Resume (MM:SS)` or `↺ Start` controls for local audio, local video, and streaming via external players (`--start` for MPV and `--start-time` for VLC).
 - **CI Hygiene & Build Reproducibility**:
   - Resolved clippy dead code error in `youtube-installer/src/prompt.rs`.
   - Fixed code formatting in `youtube-installer/src/platform.rs`.

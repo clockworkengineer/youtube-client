@@ -49,7 +49,7 @@ pub fn draw_video_card_with_dismiss(
     ui.push_id(&video.id, |ui| {
         let texture =
             get_or_fetch_thumbnail(state, http_client, ctx, &video.id, &video.thumbnail_url);
-        let (download_status, player_state) = {
+        let (download_status, player_state, playback_progress) = {
             let s_lock = state.lock().unwrap();
             (
                 s_lock
@@ -58,6 +58,7 @@ pub fn draw_video_card_with_dismiss(
                     .cloned()
                     .unwrap_or(DownloadStatus::NotStarted),
                 s_lock.player_state.clone(),
+                s_lock.playback_positions.get(&video.id).cloned(),
             )
         };
         let mut card_clicked = false;
@@ -65,25 +66,41 @@ pub fn draw_video_card_with_dismiss(
         let _response = ui.group(|ui| {
             ui.horizontal(|ui| {
                 let left_response = ui.horizontal(|ui| {
-                    if let Some(tex) = &texture {
-                        ui.add(
-                            egui::Image::from_texture(tex)
-                                .max_width(100.0)
-                                .max_height(100.0),
-                        );
-                    } else {
-                        let (rect, _response) =
-                            ui.allocate_exact_size(egui::vec2(100.0, 100.0), egui::Sense::hover());
-                        ui.painter()
-                            .rect_filled(rect, 4.0, egui::Color32::from_rgb(50, 53, 60));
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            "🎬",
-                            egui::FontId::proportional(40.0),
-                            egui::Color32::LIGHT_GRAY,
-                        );
-                    }
+                    ui.vertical(|ui| {
+                        if let Some(tex) = &texture {
+                            ui.add(
+                                egui::Image::from_texture(tex)
+                                    .max_width(100.0)
+                                    .max_height(100.0),
+                            );
+                        } else {
+                            let (rect, _response) = ui
+                                .allocate_exact_size(egui::vec2(100.0, 75.0), egui::Sense::hover());
+                            ui.painter().rect_filled(
+                                rect,
+                                4.0,
+                                egui::Color32::from_rgb(50, 53, 60),
+                            );
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "🎬",
+                                egui::FontId::proportional(40.0),
+                                egui::Color32::LIGHT_GRAY,
+                            );
+                        }
+                        if let Some(ref prog) = playback_progress {
+                            if prog.duration_secs > 0.0 && prog.position_secs > 2.0 {
+                                let pct = (prog.position_secs / prog.duration_secs).clamp(0.0, 1.0);
+                                ui.add(
+                                    egui::ProgressBar::new(pct)
+                                        .desired_width(100.0)
+                                        .desired_height(4.0)
+                                        .fill(egui::Color32::from_rgb(255, 60, 60)),
+                                );
+                            }
+                        }
+                    });
 
                     ui.add_space(15.0);
 
@@ -113,6 +130,18 @@ pub fn draw_video_card_with_dismiss(
                                     .color(egui::Color32::from_rgb(140, 140, 150)),
                             );
                         });
+                        if let Some(ref prog) = playback_progress {
+                            if prog.position_secs > 5.0 {
+                                let m = (prog.position_secs as u32) / 60;
+                                let s = (prog.position_secs as u32) % 60;
+                                ui.add_space(2.0);
+                                ui.label(
+                                    egui::RichText::new(format!("⏱ Watched to {m:02}:{s:02}"))
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(255, 120, 120)),
+                                );
+                            }
+                        }
                     });
                 });
 
@@ -185,20 +214,82 @@ pub fn draw_video_card_with_dismiss(
                                     {
                                         let _ = audio_tx.send(PlayerCommand::Stop);
                                     }
-                                } else if ui.button("▶ Play Local").clicked() {
+                                } else {
+                                    let resume_sec =
+                                        playback_progress.as_ref().map(|p| p.position_secs);
+                                    if let Some(sec) = resume_sec.filter(|&s| s > 5.0) {
+                                        let m = (sec as u32) / 60;
+                                        let s = (sec as u32) % 60;
+                                        if ui.button(format!("▶ Resume ({m:02}:{s:02})")).clicked()
+                                        {
+                                            if let Some(path) = path_opt {
+                                                *action = PendingAction::PlayLocal {
+                                                    path: path.clone(),
+                                                    title: video.title.clone(),
+                                                    video_id: Some(video.id.clone()),
+                                                    start_secs: Some(sec),
+                                                };
+                                            }
+                                        }
+                                        if ui.button("↺ Start").clicked() {
+                                            if let Some(path) = path_opt {
+                                                *action = PendingAction::PlayLocal {
+                                                    path: path.clone(),
+                                                    title: video.title.clone(),
+                                                    video_id: Some(video.id.clone()),
+                                                    start_secs: None,
+                                                };
+                                            }
+                                        }
+                                    } else if ui.button("▶ Play Local").clicked() {
+                                        if let Some(path) = path_opt {
+                                            *action = PendingAction::PlayLocal {
+                                                path: path.clone(),
+                                                title: video.title.clone(),
+                                                video_id: Some(video.id.clone()),
+                                                start_secs: None,
+                                            };
+                                        }
+                                    }
+                                }
+                            } else {
+                                let resume_sec =
+                                    playback_progress.as_ref().map(|p| p.position_secs);
+                                if let Some(sec) = resume_sec.filter(|&s| s > 5.0) {
+                                    let m = (sec as u32) / 60;
+                                    let s = (sec as u32) % 60;
+                                    if ui
+                                        .button(format!("▶ Resume Video ({m:02}:{s:02})"))
+                                        .clicked()
+                                    {
+                                        if let Some(path) = path_opt {
+                                            *action = PendingAction::PlayLocal {
+                                                path: path.clone(),
+                                                title: video.title.clone(),
+                                                video_id: Some(video.id.clone()),
+                                                start_secs: Some(sec),
+                                            };
+                                        }
+                                    }
+                                    if ui.button("↺ Start").clicked() {
+                                        if let Some(path) = path_opt {
+                                            *action = PendingAction::PlayLocal {
+                                                path: path.clone(),
+                                                title: video.title.clone(),
+                                                video_id: Some(video.id.clone()),
+                                                start_secs: None,
+                                            };
+                                        }
+                                    }
+                                } else if ui.button("▶ Play Local Video").clicked() {
                                     if let Some(path) = path_opt {
                                         *action = PendingAction::PlayLocal {
                                             path: path.clone(),
                                             title: video.title.clone(),
+                                            video_id: Some(video.id.clone()),
+                                            start_secs: None,
                                         };
                                     }
-                                }
-                            } else if ui.button("▶ Play Local Video").clicked() {
-                                if let Some(path) = path_opt {
-                                    *action = PendingAction::PlayLocal {
-                                        path: path.clone(),
-                                        title: video.title.clone(),
-                                    };
                                 }
                             }
                         }

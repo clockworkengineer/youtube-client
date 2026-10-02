@@ -649,7 +649,7 @@ fn main() -> eframe::Result<()> {
         viewport = viewport.with_maximized(true);
     }
 
-    if let Ok(img) = image::load_from_memory(include_bytes!("../../assets/icon.png")) {
+    if let Ok(img) = image::load_from_memory(include_bytes!("../assets/icon.png")) {
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
         viewport = viewport.with_icon(egui::IconData {

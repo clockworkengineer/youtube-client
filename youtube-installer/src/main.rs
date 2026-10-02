@@ -10,8 +10,8 @@ use config_writer::setup_global_config;
 use platform::{configure_platform_environment, remove_platform_environment};
 use prompt::{get_default_install_dir, prompt};
 
-const ICON_ICO_BYTES: &[u8] = include_bytes!("../../assets/icon.ico");
-const ICON_PNG_BYTES: &[u8] = include_bytes!("../../assets/icon.png");
+const ICON_ICO_BYTES: &[u8] = include_bytes!("../assets/icon.ico");
+const ICON_PNG_BYTES: &[u8] = include_bytes!("../assets/icon.png");
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();

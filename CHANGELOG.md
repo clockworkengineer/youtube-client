@@ -4,7 +4,7 @@ All notable changes to the `youtube-client` workspace are documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.4] - Release Readiness, Robust Storage Architecture & In-App Settings
+## [0.2.0] - SOLID Architectural Refactoring, Release Readiness & Modern Client Suite
 
 ### Added
 - **Application State & Data Path Architecture (`youtube-client-lib`)**:

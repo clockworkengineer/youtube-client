@@ -3,7 +3,7 @@
 [![CI](https://github.com/clockworkengineer/youtube-client/actions/workflows/ci.yml/badge.svg)](https://github.com/clockworkengineer/youtube-client/actions/workflows/ci.yml)
 [![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-orange.svg)](Cargo.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests: 67 Passed](https://img.shields.io/badge/tests-67%20passed-brightgreen.svg)](docs/development_and_testing.md)
+[![Tests: 79 Passed](https://img.shields.io/badge/tests-79%20passed-brightgreen.svg)](docs/development_and_testing.md)
 
 A modular, high-performance Rust workspace engineered under **SOLID Clean Architecture** principles, providing YouTube Data API v3 integration, a native desktop GUI application (`youtube-gui`), a command-line interface (`youtube-client`), and a cross-platform system installer (`youtube-installer`).
 
@@ -86,16 +86,18 @@ cargo run --bin youtube-client -- download --video-id dQw4w9WgXcQ --format mp3
 
 ## Key Features
 
-* 🔐 **OAuth2 Authentication & Centralized Storage**: Secure browser-based authentication flow storing tokens with OS security permissions in `%APPDATA%/youtube-client` (Windows) or `~/.config/youtube-client` (Linux/macOS).
+* 🔐 **OAuth2 & API Key Access**: Secure browser-based authentication, headless device-code flow (`--device-code`), and zero-OAuth read-only access via `--api-key`.
+* 🛡️ **SponsorBlock & Native MPV EDL**: Skips sponsor, intro, and outro segments natively in MPV without requiring external Lua scripts or browser plugins.
+* 📡 **Bi-Directional MPV IPC**: Remote player control and real-time timeline queries over Windows named pipes and Unix domain sockets.
 * ⚙️ **Native In-App Settings**: Graphical settings view in `youtube-gui` allowing player configuration (Auto, MPV, VLC, Custom), download directory selection, browser cookie extraction (`chrome`, `firefox`, `edge`, `brave`), and one-click account disconnection.
 * 👍 **Return YouTube Dislike (RYD) Integration**: Non-blocking public API lookup displaying restored community dislike counts and ratios across CLI details and GUI cards.
 * 🎵 **Interactive Audio Scrubber & Dock**: Background audio player with timeline scrubber slider, 10s instant skip buttons (`⏪ 10s`, `⏩ 10s`), duration readout (`MM:SS / MM:SS`), and volume controls.
 * ⏱️ **Watch Progress Tracking & Resume Playback**: Watches timestamps per video ID (`playback_positions.json`), displaying watched badges (`⏱ Watched to MM:SS`) and offering instant `▶ Resume` controls.
 * 📊 **API Quota Budget Tracking**: Accurately accounts for YouTube Data API v3 unit costs (search: 100u, reads: 1u, writes: 50u) with daily UTC rollover and real-time visual gauge in Settings.
-* 🌐 **Zero-Quota Public RSS Fallback**: Automatically falls back to YouTube public Atom XML feeds when browsing channel uploads without requiring API keys or quota consumption.
-* ⚡ **In-Memory TTL Metadata Cache**: Configurable time-to-live caching for video metadata (30m) and channel profiles (2h), eliminating redundant API requests.
-* 📥 **Media Downloading**: Download videos or audio via `yt-dlp` with format presets (`mp4`, `mp3`, `bestaudio`), real-time percentage progress bars, and diagnostics logging.
-* 🧪 **In-Memory Test Mocking**: 67 unit and integration tests executing with 0 live API credentials using `MockYoutubeClient`.
+* 🌐 **Zero-Quota Public RSS Fallback**: Automatically falls back to YouTube public Atom XML feeds via `quick-xml` when browsing channel uploads without requiring API keys or quota consumption.
+* ⚡ **Persistent Disk & TTL Cache**: Configurable time-to-live caching for video metadata and channel profiles with disk persistence restoring remaining TTLs, plus thumbnail disk caching in the GUI.
+* 📥 **Media Downloading**: Download videos or audio via `yt-dlp` with format presets (`mp4`, `mp3`, `bestaudio`), structured progress events, cooperative cancellation (`CancellationToken`), and diagnostics logging.
+* 🧪 **In-Memory Test Mocking**: 79 unit and integration tests executing with 0 live API credentials using `MockYoutubeClient`, plus 4 standalone developer examples.
 
 ---
 
@@ -114,7 +116,7 @@ The `docs/` directory contains comprehensive specifications and guides:
 | 🏗️ [Architecture & Design Specification](docs/architecture.md) | Workspace design, component topology, concurrency model, and 10 quality attributes. |
 | 🏛️ [SOLID Architecture Specification](docs/solid_architecture.md) | In-depth breakdown of the 5 SOLID refactoring phases, design patterns, and extension recipes. |
 | 📊 [Caching & API Quota Guide](docs/caching_and_quota.md) | YouTube API quota economics, `QuotaTracker`, TTL cache, and public RSS Atom feed fallback. |
-| 🛠️ [Developer & Testing Guide](docs/development_and_testing.md) | Environment setup, 67 test suites, `MockYoutubeClient`, Clippy standards, and CI pipelines. |
+| 🛠️ [Developer & Testing Guide](docs/development_and_testing.md) | Environment setup, 79 test suites, `MockYoutubeClient`, Clippy standards, and CI pipelines. |
 
 ---
 

@@ -23,27 +23,37 @@ graph TD
         GAPI["Google YouTube API v3"]
         PLAY["Pluggable Media Players<br/>(MPV, VLC, IINA, Custom, System)"]
         RYD["Return YouTube Dislike API"]
+        SB["SponsorBlock API"]
+        MPV_IPC["MPV IPC Control<br/>(Named Pipe / Unix Socket)"]
         RSS["YouTube Public Atom/RSS Feeds"]
     end
 
     CLI -->|Depends on| LIB
     GUI -->|Depends on| LIB
     INST -->|Deploys| CLI
+    GUI -->|Disk Thumbnail Cache| FS["Thumbnail Disk Cache"]
     INST -->|Deploys| GUI
 
-    LIB -->|HTTP OAuth2| GAPI
+    LIB -->|HTTP OAuth2 / API Key| GAPI
     LIB -->|Spawns| YTDL
     LIB -->|Controls| ROD
     LIB -->|HTTP Async| RYD
+    LIB -->|HTTP Async| SB
+    LIB -->|IPC Named Pipe / Socket| MPV_IPC
     LIB -->|Zero-Quota Fallback| RSS
     LIB -->|Dispatches| PLAY
 ```
 
-### Crate Roles
+### Crate Roles & Feature Flags
 
-1. **`youtube-client-lib`**: Pure asynchronous library providing authentication, YouTube Data API v3 bindings, media downloading abstractions, background audio decoding, retry logic, configuration resolution, quota budget tracking, in-memory TTL caching, and pluggable player/importer registries.
-2. **`youtube-client`**: Lightweight command-line interface wrapping `youtube-client-lib`. Built with `clap`, supporting 17 subcommands, pluggable output formatters (`OutputFormatter<T>`: Table, JSON, CSV), and shell auto-completion generation.
-3. **`youtube-gui`**: Desktop graphical application built using `eframe` and `egui`. Features decoupled domain action handlers (`handlers/auth`, `handlers/playback`, `handlers/settings`, etc.), interactive audio dock with scrubber slider, persistent watch progress tracking, RYD dislike metrics, and an in-app Settings view.
+1. **`youtube-client-lib`**: Pure asynchronous library providing authentication (OAuth2 & API Key), YouTube Data API v3 bindings, media downloading abstractions with progress & cancellation, background audio decoding, retry logic, configuration resolution, quota budget tracking, disk-persistent TTL caching, SponsorBlock EDL segment generation, MPV IPC player controls, and pluggable player/importer registries.
+   - **Feature Flags**:
+     - `importers`: OPML, Google Takeout CSV, and NewPipe JSON subscription parsing.
+     - `sponsorblock`: SponsorBlock segment retrieval and MPV EDL formatting.
+     - `ipc`: Cross-platform MPV IPC controller over Windows named pipes and Unix sockets.
+     - `full`: Enables all optional modules.
+2. **`youtube-client`**: Lightweight command-line interface wrapping `youtube-client-lib`. Built with `clap`, supporting 17 subcommands, pluggable output formatters (`OutputFormatter<T>`: Table, JSON, CSV), zero-OAuth `--api-key` access, headless `login --device-code` authentication, and shell auto-completion generation.
+3. **`youtube-gui`**: Desktop graphical application built using `eframe` and `egui`. Features decoupled domain action handlers (`handlers/auth`, `handlers/playback`, `handlers/settings`, etc.), interactive audio dock with scrubber slider, persistent watch progress tracking, RYD dislike metrics, persistent disk thumbnail caching, and an in-app Settings view.
 4. **`youtube-installer`**: Standalone installation and system lifecycle management binary capable of compiling release binaries, configuring user `PATH` environment variables, creating shortcuts, verifying installations (`--verify`), and performing clean removals (`--uninstall`).
 
 ---
@@ -96,6 +106,12 @@ graph TD
   - `TableFormatter`: Aligned tabular layouts and ASCII cards.
 - **Pure Utility:** [`format_table`](file:///c:/Projects/youtube-client/youtube-client-lib/src/utils.rs) generates formatted strings independently of terminal `stdout` I/O.
 
+### 6. Media Engine Resilience & Player Extensibility
+- **Native SponsorBlock Skipping ([`sponsorblock.rs`](file:///c:/Projects/youtube-client/youtube-client-lib/src/sponsorblock.rs)):** Retrieves crowd-sourced skip segments (sponsor, intro, outro, self-promotion) and synthesizes native MPV EDL (`edl://`) stream URLs. Skips non-content sections natively without requiring external Lua plugins or scripts.
+- **Bi-directional MPV IPC Client ([`mpv_ipc.rs`](file:///c:/Projects/youtube-client/youtube-client-lib/src/mpv_ipc.rs)):** Controls running MPV instances over Windows named pipes (`\\.\pipe\mpvsocket-...`) and Unix domain sockets (`/tmp/mpvsocket-...`). Supports pause, seek, volume, and playback timestamp queries.
+- **Cooperative Download Cancellation & ETA ([`download.rs`](file:///c:/Projects/youtube-client/youtube-client-lib/src/download.rs)):** Emits structured [`DownloadProgress`](file:///c:/Projects/youtube-client/youtube-client-lib/src/download.rs) events with percentage, transfer speed, and ETA calculations, honoring cooperative abort tokens via [`tokio_util::sync::CancellationToken`](file:///c:/Projects/youtube-client/youtube-client-lib/src/download.rs).
+- **Direct Rodio Audio Streaming ([`audio.rs`](file:///c:/Projects/youtube-client/youtube-client-lib/src/audio.rs)):** Streams extracted audio pipes (`yt-dlp` stdout) directly into Rodio's decoder, playing audio instantly in memory without writing intermediate files to disk.
+
 ---
 
 ## 3. Concurrency & Threading Model
@@ -136,6 +152,8 @@ graph LR
     subgraph "Disk Persistence (%APPDATA% / ~/.config)"
         CONF["config.json<br/>(Settings, Window Geometry)"]
         TOK["tokencache.json<br/>(OAuth2 Refresh Token - 0600)"]
+        CACHE["cache.json<br/>(Metadata Cache with Remaining TTL)"]
+        THUMBS["thumbnails/<br/>(Disk-Cached Thumbnail JPGs)"]
         QUOTA["api_quota.json<br/>(Daily UTC Quota Tracker)"]
         POS["playback_positions.json<br/>(Watched Timestamps)"]
         CLR["cleared_videos.json<br/>(Dismissed Video IDs)"]
@@ -145,11 +163,13 @@ graph LR
     subgraph "In-Memory Caches & Resiliency"
         TTL["TtlCache / MetadataCache<br/>(Videos: 30m, Channels: 2h)"]
         RSS["Public Atom/RSS Fallback<br/>(Zero Quota Channel Feeds)"]
-        TEX["LRU Texture Cache<br/>(Max 120 Thumbnails)"]
+        TEX["LRU Texture Cache<br/>(Max 120 In-Memory Thumbnails)"]
     end
 
     CONF -->|Dynamic Save/Load| LIB
     TOK -->|Auth Resolution| LIB
+    CACHE -->|Restore / Flush TTL Entries| LIB
+    THUMBS -->|Disk Thumbnail Cache| GUI
     QUOTA -->|Cost Tracking & Rollover| LIB
     POS -->|Watch Progress Sync| GUI
     CLR -->|Atomic Sibling Write| GUI
@@ -159,11 +179,13 @@ graph LR
 
 * **`config.json`**: Dynamic user configuration (preferred player, downloads directory, browser cookies, and window geometry coordinates/dimensions).
 * **`tokencache.json`**: Stores OAuth2 token records with strict security permissions (`0600` on Unix).
+* **`cache.json` (`MetadataCache`)**: Disk-backed atomic cache storing video and channel metadata across application runs. Automatically computes remaining TTL on reload so expired entries are discarded immediately.
+* **`thumbnails/`**: Persistent thumbnail directory caching retrieved image bytes locally, eliminating duplicate network fetches.
 * **`api_quota.json`**: Daily YouTube Data API v3 consumption tracker with daily UTC rollover.
 * **`playback_positions.json`**: Per-video watch timestamps (`position_secs`, `duration_secs`, `updated_at`) written atomically.
 * **`cleared_videos.json`**: Dismissed video IDs in the New Videos feed.
 * **`TtlCache<K, V>`**: Thread-safe in-memory cache with configurable time-to-live, slashing redundant API requests.
-* **Public RSS Fallback**: Atom XML parsing that fetches channel uploads without requiring API keys or quota consumption.
+* **Public RSS Fallback**: Atom XML parsing via `quick-xml` that fetches channel uploads without requiring API keys or quota consumption.
 * **LRU Texture Cache**: In-memory FIFO/LRU structure tracking loaded textures with `egui::TextureHandle` capped at 120 items.
 
 ---
@@ -173,12 +195,12 @@ graph LR
 | Attribute | Implementation Details |
 | :--- | :--- |
 | **1. Intuitive API Design** | Fluent builder [`YoutubeClientBuilder`](file:///c:/Projects/youtube-client/youtube-client-lib/src/builder.rs); strongly typed models ([`Rating`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/rating.rs), [`DownloadFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/download.rs), [`Page<T>`](file:///c:/Projects/youtube-client/youtube-client-lib/src/models/page.rs)). |
-| **2. Comprehensive Documentation** | Complete rustdoc with executable doc-tests; 10 specialized markdown guides in `docs/`. |
-| **3. High Reliability & Resilience** | Exponential backoff with jitter ([`retry_api_call`](file:///c:/Projects/youtube-client/youtube-client-lib/src/retry.rs)); atomic sibling file writes ([`write_json_atomically`](file:///c:/Projects/youtube-client/youtube-client-lib/src/utils.rs)); mutex poison recovery. |
-| **4. Performance & Efficiency** | Capped LRU texture queue (120 textures); lazy pagination; non-blocking asynchronous startup. |
-| **5. Maintainability** | Segregated service traits; decoupled domain handlers (`handlers/`); isolated presentation (`OutputFormatter`). |
-| **6. Flexibility & Customization** | Pluggable media player registry; arbitrary yt-dlp arguments; multi-format subscription importers. |
-| **7. Strong Security** | Filename sanitization ([`sanitize_filename`](file:///c:/Projects/youtube-client/youtube-client-lib/src/utils.rs)); command injection protection; sensitive token permissions (`0600`). |
-| **8. High Testability** | In-memory [`MockYoutubeClient`](file:///c:/Projects/youtube-client/youtube-client-lib/src/testing/mod.rs); 67 automated unit and integration tests; offline CLI/GUI testing via `YoutubeBackend`. |
-| **9. Compatibility & Portability** | Centralized standard OS app data directories (`%APPDATA%`, `~/.config`); cross-platform media player discovery. |
-| **10. Low Dependency Footprint** | Zero default features on `youtube-client-lib`; no bloated framework dependencies. |
+| **2. Comprehensive Documentation** | Complete rustdoc with executable doc-tests; 10 specialized markdown guides in `docs/`; 4 standalone runnable examples in `examples/`. |
+| **3. High Reliability & Resilience** | Exponential backoff with jitter ([`retry_api_call`](file:///c:/Projects/youtube-client/youtube-client-lib/src/retry.rs)); atomic sibling file writes ([`write_json_atomically`](file:///c:/Projects/youtube-client/youtube-client-lib/src/utils.rs)); mutex poison recovery; cooperative cancellation. |
+| **4. Performance & Efficiency** | Capped LRU texture queue (120 textures); lazy stream pagination (`BoxStream<'a, T>`); chunked batch video fetching (`get_videos_batch`); persistent disk caching. |
+| **5. Maintainability** | Segregated service traits; decoupled domain handlers (`handlers/`); isolated presentation (`OutputFormatter`); feature flags (`sponsorblock`, `ipc`, `importers`). |
+| **6. Flexibility & Customization** | Pluggable media player registry; SponsorBlock EDL generation; MPV IPC control; arbitrary yt-dlp arguments; multi-format subscription importers. |
+| **7. Strong Security** | Filename sanitization ([`sanitize_filename`](file:///c:/Projects/youtube-client/youtube-client-lib/src/utils.rs)); command injection protection; sensitive token permissions (`0600`); zero-OAuth API key support. |
+| **8. High Testability** | In-memory [`MockYoutubeClient`](file:///c:/Projects/youtube-client/youtube-client-lib/src/testing/mod.rs); 79 automated unit and integration tests; offline CLI/GUI testing via `YoutubeBackend`. |
+| **9. Compatibility & Portability** | Centralized standard OS app data directories (`%APPDATA%`, `~/.config`); cross-platform media player discovery; cross-platform named pipe/Unix socket IPC. |
+| **10. Low Dependency Footprint** | Modular feature flags on `youtube-client-lib`; no bloated framework dependencies. |

@@ -40,6 +40,7 @@ All subcommands inherit the following global options. They may be passed before 
 | :--- | :--- | :--- | :--- |
 | `-c, --config <FILE>` | — | `config.json` | Path to client credentials JSON file. |
 | `-t, --token-cache <FILE>` | — | `tokencache.json` | Path to cached OAuth2 token file. |
+| `--api-key <KEY>` | `YOUTUBE_API_KEY` | — | Google Cloud API key for zero-OAuth public access (search, videos, details, comments). |
 | `-l, --log-file <FILE>` | `YOUTUBE_CLIENT_LOG_FILE` | `youtube-client.log` | Path to destination log file for operations, yt-dlp, and ffmpeg traces. |
 | `--cookies <FILE>` | `YOUTUBE_COOKIES_FILE` | — | Path to Netscape-format `cookies.txt` file for yt-dlp/MPV. |
 | `--cookies-from-browser <NAME>` | `YOUTUBE_COOKIES_FROM_BROWSER` | — | Browser name to extract cookies from (`chrome`, `firefox`, `edge`, `brave`, etc.). |
@@ -50,6 +51,7 @@ All subcommands inherit the following global options. They may be passed before 
 
 > [!TIP]
 > Credentials can also be placed in `private_config.json` in the current directory or in the OS global configuration directory (see [Configuration Guide](configuration.md)).
+> You can also bypass OAuth2 completely for read-only actions by passing `--api-key <KEY>` or setting the `YOUTUBE_API_KEY` environment variable.
 
 ---
 
@@ -57,7 +59,7 @@ All subcommands inherit the following global options. They may be passed before 
 
 | Subcommand | Purpose | Pagination Support | `--json` Output |
 | :--- | :--- | :---: | :---: |
-| `login` | Interactive OAuth2 browser login | — | — |
+| `login` | Interactive OAuth2 browser or device-code login | — | — |
 | `subscriptions` | List subscribed YouTube channels | ✅ (`--page-token`, `--all`) | ✅ |
 | `videos` | List uploads for a specific channel ID | ✅ (`--page-token`) | ✅ |
 | `search` | Search YouTube videos by keyword query | ✅ (`--page-token`) | ✅ |
@@ -73,6 +75,7 @@ All subcommands inherit the following global options. They may be passed before 
 | `unsubscribe` | Unsubscribe by subscription ID | — | — |
 | `playlist-create` | Create a new user playlist | — | — |
 | `playlist-delete` | Delete an existing user playlist | — | — |
+| `completions` | Generate shell auto-completion scripts | — | — |
 
 ---
 
@@ -80,11 +83,18 @@ All subcommands inherit the following global options. They may be passed before 
 
 ### 1. `login`
 
-Authenticates with Google OAuth2 using the Desktop Application flow. A local browser tab opens for authorization, and the resulting refresh token is saved to the token cache.
+Authenticates with Google OAuth2 using the Desktop Application flow or headless device-code flow. The resulting refresh token is saved to the token cache (`tokencache.json`).
 
 ```bash
+# Standard browser login (opens default web browser)
 youtube-client login
+
+# Headless / terminal device-code flow (for SSH, remote containers, or servers without a browser)
+youtube-client login --device-code
 ```
+
+#### Options:
+* `--device-code`: Use terminal interactive / device flow authentication displaying a verification URL and code instead of launching a local browser.
 
 ---
 
@@ -379,6 +389,16 @@ youtube-client channel --channel-id UC_x5XG1OV2P6uZZ5FSM9Ttw --json | jq '{title
 youtube-client search --query "Synthwave mix" --limit 3 --json | jq -r '.[].id' | while read id; do
     youtube-client download --video-id "$id" --format mp3
 done
+```
+
+### 5. Zero-OAuth Querying with an API Key (No Browser or Login Required)
+```bash
+# Query YouTube search directly using an API key
+youtube-client --api-key AIzaSyYourApiKeyHere search --query "Rust async" --limit 5
+
+# Or export via environment variable
+export YOUTUBE_API_KEY="AIzaSyYourApiKeyHere"
+youtube-client details --video-id dQw4w9WgXcQ --json | jq '{title, views: .statistics.view_count}'
 ```
 
 ---

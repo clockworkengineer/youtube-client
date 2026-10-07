@@ -724,6 +724,20 @@ pub fn spawn_add_to_playlist(
     );
 }
 
+fn get_thumbnail_cache_path(url: &str) -> std::path::PathBuf {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let cache_dir = youtube_client_lib::config::get_global_config_dir()
+        .map(|d| d.join("thumbnails"))
+        .unwrap_or_else(|| std::path::PathBuf::from("thumbnails"));
+
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    let hash_val = hasher.finish();
+    cache_dir.join(format!("{hash_val:016x}.bin"))
+}
+
 pub fn fetch_thumbnail(
     ctx: egui::Context,
     state: Arc<Mutex<AppState>>,
@@ -733,8 +747,19 @@ pub fn fetch_thumbnail(
 ) {
     tokio::spawn(async move {
         let success = async {
-            let response = http_client.get(&url).send().await.ok()?;
-            let bytes = response.bytes().await.ok()?;
+            let cache_path = get_thumbnail_cache_path(&url);
+            let bytes = if cache_path.exists() {
+                std::fs::read(&cache_path).ok()
+            } else {
+                let response = http_client.get(&url).send().await.ok()?;
+                let fetched = response.bytes().await.ok()?.to_vec();
+                if let Some(parent) = cache_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&cache_path, &fetched);
+                Some(fetched)
+            }?;
+
             let img = image::load_from_memory(&bytes).ok()?;
             let size = [img.width() as _, img.height() as _];
             let rgba = img.to_rgba8();

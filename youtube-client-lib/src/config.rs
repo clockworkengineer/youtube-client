@@ -30,6 +30,8 @@ pub struct Config {
     pub window_size: Option<[f32; 2]>,
     /// Persistent window maximized state
     pub window_maximized: Option<bool>,
+    /// Google Cloud API key for unauthenticated read operations
+    pub api_key: Option<String>,
 }
 
 /// Resolve the path for the client log file.
@@ -428,4 +430,32 @@ pub fn check_token_cache_scopes(token_cache_path: &Path, required_scopes: &[&str
         }
     }
     false
+}
+
+/// Resolve YouTube API key from CLI override, environment variable `YOUTUBE_API_KEY`, or config file.
+pub fn resolve_api_key(
+    opt_api_key: Option<String>,
+    config_path: Option<&Path>,
+) -> Option<String> {
+    if let Some(key) = opt_api_key {
+        let trimmed = key.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    if let Ok(env_key) = std::env::var("YOUTUBE_API_KEY") {
+        let trimmed = env_key.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    let default_cfg = Path::new("config.json");
+    let cfg = load_config_from_file_or_default(config_path.unwrap_or(default_cfg));
+    if let Some(cfg_key) = cfg.api_key {
+        let trimmed = cfg_key.trim();
+        if !trimmed.is_empty() && trimmed != "ENTER_YOUR_API_KEY_HERE" {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
 }

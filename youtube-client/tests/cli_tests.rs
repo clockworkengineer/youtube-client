@@ -406,3 +406,34 @@ async fn test_mock_backend_injection_and_execution() {
         .expect("Delete playlist failed");
     assert_eq!(mock.playlists.lock().unwrap().len(), 0);
 }
+
+#[test]
+fn test_login_command_parsing() {
+    let args_default = vec!["youtube-client", "login"];
+    let cli1 = Cli::try_parse_from(args_default).expect("Failed to parse login command");
+    match cli1.command {
+        Commands::Login { device_code } => assert!(!device_code),
+        _ => panic!("Expected Login command"),
+    }
+
+    let args_device = vec!["youtube-client", "login", "--device-code"];
+    let cli2 = Cli::try_parse_from(args_device).expect("Failed to parse login --device-code");
+    match cli2.command {
+        Commands::Login { device_code } => assert!(device_code),
+        _ => panic!("Expected Login command with device_code"),
+    }
+}
+
+#[test]
+fn test_api_key_flag_parsing() {
+    let args = vec![
+        "youtube-client",
+        "--api-key",
+        "AIzaSyDummyKey12345",
+        "search",
+        "--query",
+        "Rust",
+    ];
+    let cli = Cli::try_parse_from(args).expect("Failed to parse --api-key");
+    assert_eq!(cli.api_key.as_deref(), Some("AIzaSyDummyKey12345"));
+}

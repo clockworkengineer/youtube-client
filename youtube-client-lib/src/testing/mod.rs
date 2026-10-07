@@ -114,6 +114,14 @@ impl VideoService for MockYoutubeClient {
             dislike_count: Some(12),
         })
     }
+
+    async fn get_videos_batch(&self, video_ids: &[&str]) -> Result<Vec<VideoDetails>> {
+        let mut list = Vec::new();
+        for &id in video_ids {
+            list.push(self.fetch_video_details(id).await?);
+        }
+        Ok(list)
+    }
 }
 
 impl PlaylistService for MockYoutubeClient {

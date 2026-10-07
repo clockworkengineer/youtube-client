@@ -27,6 +27,10 @@ pub const YOUTUBE_SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/youtube.readonly",
 ];
 
+/// A pinned, heap-allocated asynchronous stream.
+pub type BoxStream<'a, T> =
+    std::pin::Pin<Box<dyn futures_core::stream::Stream<Item = T> + Send + 'a>>;
+
 fn extract_thumbnail_url(thumbnails: Option<google_youtube3::api::ThumbnailDetails>) -> String {
     if let Some(t) = thumbnails {
         if let Some(url) = t
@@ -48,6 +52,7 @@ pub struct YoutubeClient {
     hub: YouTube<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>,
     cache: Option<Arc<MetadataCache>>,
     quota_tracker: Option<Arc<QuotaTracker>>,
+    api_key: Option<String>,
 }
 
 impl YoutubeClient {
@@ -68,6 +73,12 @@ impl YoutubeClient {
         self
     }
 
+    /// Set or update the API key for unauthenticated requests.
+    pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = Some(key.into());
+        self
+    }
+
     /// Access the attached metadata cache, if any.
     pub fn cache(&self) -> Option<&Arc<MetadataCache>> {
         self.cache.as_ref()
@@ -76,6 +87,41 @@ impl YoutubeClient {
     /// Access the attached quota tracker, if any.
     pub fn quota_tracker(&self) -> Option<&Arc<QuotaTracker>> {
         self.quota_tracker.as_ref()
+    }
+
+    /// Returns the configured API key, if any.
+    pub fn api_key(&self) -> Option<&str> {
+        self.api_key.as_deref()
+    }
+
+    /// Returns `true` if the client is configured exclusively with an API key without OAuth tokens.
+    pub fn is_api_key_only(&self) -> bool {
+        self.api_key.is_some()
+    }
+
+    /// Create a new `YoutubeClient` authorized with a Google Cloud API Key for public read operations.
+    ///
+    /// This mode requires zero OAuth configuration, zero user interaction, and zero tokens.
+    /// It can execute search queries, fetch video/channel details, and browse public playlists.
+    pub async fn new_api_key(api_key: &str) -> Result<Self> {
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_native_roots()?
+            .https_only()
+            .enable_http2()
+            .build();
+
+        let client =
+            hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+                .build(connector);
+
+        let hub = YouTube::new(client, crate::auth::NoAuth);
+
+        Ok(Self {
+            hub,
+            cache: None,
+            quota_tracker: None,
+            api_key: Some(api_key.to_string()),
+        })
     }
 
     /// Create a new `YoutubeClient` with read-only OAuth scopes.
@@ -110,6 +156,71 @@ impl YoutubeClient {
         )
         .await
     }
+
+    /// Create a new `YoutubeClient` with interactive terminal OAuth (prompts with code for headless/SSH).
+    pub async fn new_oauth_interactive(
+        client_id: &str,
+        client_secret: &str,
+        token_cache_path: &Path,
+        scopes: &[&str],
+    ) -> Result<Self> {
+        Self::construct_with_params(
+            client_id,
+            client_secret,
+            token_cache_path,
+            scopes,
+            InstalledFlowReturnMethod::Interactive,
+            Box::new(crate::auth::InteractiveFlowDelegate),
+        )
+        .await
+    }
+
+    /// Create a new `YoutubeClient` using the Google Device Authorization flow (`https://www.google.com/device`).
+    pub async fn new_device_flow(
+        client_id: &str,
+        client_secret: &str,
+        token_cache_path: &Path,
+        scopes: &[&str],
+    ) -> Result<Self> {
+        let secret = ApplicationSecret {
+            client_id: client_id.to_string(),
+            client_secret: client_secret.to_string(),
+            token_uri: "https://oauth2.googleapis.com/token".to_string(),
+            auth_uri: "https://accounts.google.com/o/oauth2/auth".to_string(),
+            ..Default::default()
+        };
+
+        let auth = yup_oauth2::DeviceFlowAuthenticator::builder(secret)
+            .flow_delegate(Box::new(crate::auth::TerminalDeviceFlowDelegate))
+            .persist_tokens_to_disk(token_cache_path)
+            .build()
+            .await?;
+
+        if !scopes.is_empty() {
+            auth.token(scopes).await?;
+        }
+
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_native_roots()?
+            .https_only()
+            .enable_http2()
+            .build();
+
+        let client =
+            hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+                .build(connector);
+
+        let hub = YouTube::new(client, auth);
+
+        Ok(Self {
+            hub,
+            cache: None,
+            quota_tracker: None,
+            api_key: None,
+        })
+    }
+
+
 
     pub(crate) async fn construct_with_params(
         client_id: &str,
@@ -154,6 +265,7 @@ impl YoutubeClient {
             hub,
             cache: None,
             quota_tracker: None,
+            api_key: None,
         })
     }
 
@@ -163,6 +275,11 @@ impl YoutubeClient {
         max_results: u32,
         page_token: Option<&str>,
     ) -> Result<Page<Subscription>> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Accessing user subscriptions requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         let limit = max_results.min(50);
         let (_response, list) = retry_api_call(|| async {
             let mut req = self
@@ -219,12 +336,15 @@ impl YoutubeClient {
         page_token: Option<&str>,
     ) -> Result<Page<Video>> {
         let (_resp, channel_res) = retry_api_call(|| async {
-            self.hub
+            let mut req = self
+                .hub
                 .channels()
                 .list(&vec!["contentDetails".to_string()])
-                .add_id(channel_id)
-                .doit()
-                .await
+                .add_id(channel_id);
+            if let Some(key) = &self.api_key {
+                req = req.param("key", key);
+            }
+            req.doit().await
         })
         .await?;
 
@@ -255,6 +375,9 @@ impl YoutubeClient {
                 .max_results(limit);
             if let Some(token) = page_token {
                 req = req.page_token(token);
+            }
+            if let Some(key) = &self.api_key {
+                req = req.param("key", key);
             }
             req.doit().await
         })
@@ -319,6 +442,9 @@ impl YoutubeClient {
             if let Some(token) = page_token {
                 req = req.page_token(token);
             }
+            if let Some(key) = &self.api_key {
+                req = req.param("key", key);
+            }
             req.doit().await
         })
         .await?;
@@ -372,16 +498,19 @@ impl YoutubeClient {
         }
 
         let (_resp, video_res) = retry_api_call(|| async {
-            self.hub
+            let mut req = self
+                .hub
                 .videos()
                 .list(&vec![
                     "snippet".to_string(),
                     "statistics".to_string(),
                     "contentDetails".to_string(),
                 ])
-                .add_id(video_id)
-                .doit()
-                .await
+                .add_id(video_id);
+            if let Some(key) = &self.api_key {
+                req = req.param("key", key);
+            }
+            req.doit().await
         })
         .await?;
 
@@ -442,6 +571,125 @@ impl YoutubeClient {
         Ok(details)
     }
 
+    /// Fetch comprehensive video details for multiple video IDs in batches of up to 50.
+    ///
+    /// Minimizes YouTube Data API v3 quota consumption by resolving cached entries first
+    /// and chunking missing IDs into unified multi-ID requests (`videos.list(id=[...])`).
+    pub async fn get_videos_batch(&self, video_ids: &[&str]) -> Result<Vec<VideoDetails>> {
+        if video_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut cached_map = std::collections::HashMap::new();
+        let mut missing_ids = Vec::new();
+
+        for &id in video_ids {
+            if let Some(cache) = &self.cache {
+                if let Some(cached) = cache.get_video(id) {
+                    cached_map.insert(id.to_string(), cached);
+                    continue;
+                }
+            }
+            if !missing_ids.contains(&id) {
+                missing_ids.push(id);
+            }
+        }
+
+        let mut fetched_map = std::collections::HashMap::new();
+
+        for chunk in missing_ids.chunks(50) {
+            let chunk_vec: Vec<String> = chunk.iter().map(|s| s.to_string()).collect();
+            let (_resp, video_res) = retry_api_call(|| async {
+                let mut req = self
+                    .hub
+                    .videos()
+                    .list(&vec![
+                        "snippet".to_string(),
+                        "statistics".to_string(),
+                        "contentDetails".to_string(),
+                    ]);
+                for id in &chunk_vec {
+                    req = req.add_id(id);
+                }
+                if let Some(key) = &self.api_key {
+                    req = req.param("key", key);
+                }
+                req.doit().await
+            })
+            .await?;
+
+            if let Some(q) = &self.quota_tracker {
+                q.record_read();
+            }
+
+            if let Some(items) = video_res.items {
+                for item in items {
+                    let id = item.id.clone().unwrap_or_default();
+                    if id.is_empty() {
+                        continue;
+                    }
+                    let snippet = item.snippet.unwrap_or_default();
+                    let stats = item.statistics.unwrap_or_default();
+                    let content_details = item.content_details.unwrap_or_default();
+
+                    let title = snippet.title.unwrap_or_default();
+                    let description = snippet.description.unwrap_or_default();
+                    let published_at = snippet
+                        .published_at
+                        .map(|dt| dt.to_string())
+                        .unwrap_or_default();
+                    let channel_id = snippet.channel_id.unwrap_or_default();
+                    let channel_title = snippet.channel_title.unwrap_or_default();
+                    let thumbnail_url = extract_thumbnail_url(snippet.thumbnails);
+                    let tags = snippet.tags.unwrap_or_default();
+
+                    let view_count = stats.view_count.unwrap_or(0);
+                    let like_count = stats.like_count.unwrap_or(0);
+                    let comment_count = stats.comment_count.unwrap_or(0);
+
+                    let duration_iso = content_details.duration.unwrap_or_default();
+                    let duration_seconds = VideoDetails::parse_iso8601_duration(&duration_iso);
+                    let duration_formatted = VideoDetails::format_duration(duration_seconds);
+                    let dislike_count = crate::utils::fetch_dislike_count(&id).await;
+
+                    let details = VideoDetails {
+                        id: id.clone(),
+                        title,
+                        description,
+                        published_at,
+                        channel_id,
+                        channel_title,
+                        thumbnail_url,
+                        view_count,
+                        like_count,
+                        comment_count,
+                        duration_seconds,
+                        duration_formatted,
+                        tags,
+                        dislike_count,
+                    };
+
+                    if let Some(cache) = &self.cache {
+                        cache.set_video(&id, details.clone());
+                    }
+
+                    fetched_map.insert(id, details);
+                }
+            }
+        }
+
+        let mut results = Vec::new();
+        for &id in video_ids {
+            if let Some(details) = cached_map.get(id) {
+                results.push(details.clone());
+            } else if let Some(details) = fetched_map.get(id) {
+                results.push(details.clone());
+            }
+        }
+
+        Ok(results)
+    }
+
     /// Fetch channel statistics and profile metadata.
     pub async fn get_channel_details(&self, channel_id: &str) -> Result<ChannelDetails> {
         if let Some(cache) = &self.cache {
@@ -451,12 +699,15 @@ impl YoutubeClient {
         }
 
         let (_resp, channel_res) = retry_api_call(|| async {
-            self.hub
+            let mut req = self
+                .hub
                 .channels()
                 .list(&vec!["snippet".to_string(), "statistics".to_string()])
-                .add_id(channel_id)
-                .doit()
-                .await
+                .add_id(channel_id);
+            if let Some(key) = &self.api_key {
+                req = req.param("key", key);
+            }
+            req.doit().await
         })
         .await?;
 
@@ -505,6 +756,11 @@ impl YoutubeClient {
         max_results: u32,
         page_token: Option<&str>,
     ) -> Result<Page<Playlist>> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Accessing user playlists requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         let limit = max_results.min(50);
         let (_resp, playlist_res) = retry_api_call(|| async {
             let mut req = self
@@ -574,6 +830,9 @@ impl YoutubeClient {
             if let Some(token) = page_token {
                 req = req.page_token(token);
             }
+            if let Some(key) = &self.api_key {
+                req = req.param("key", key);
+            }
             req.doit().await
         })
         .await?;
@@ -630,6 +889,11 @@ impl YoutubeClient {
 
     /// Subscribe to a channel.
     pub async fn subscribe_to_channel(&self, channel_id: &str) -> Result<()> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Subscribing to a channel requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         use google_youtube3::api::{ResourceId, Subscription as YtSub, SubscriptionSnippet};
         let snippet = SubscriptionSnippet {
             resource_id: Some(ResourceId {
@@ -650,6 +914,11 @@ impl YoutubeClient {
 
     /// Unsubscribe from a channel using its subscription ID.
     pub async fn unsubscribe_from_channel(&self, subscription_id: &str) -> Result<()> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Unsubscribing from a channel requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         retry_api_call(|| async {
             self.hub
                 .subscriptions()
@@ -667,6 +936,11 @@ impl YoutubeClient {
         title: &str,
         description: Option<&str>,
     ) -> Result<Playlist> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Creating a playlist requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         use google_youtube3::api::{Playlist as YtPlaylist, PlaylistSnippet};
         let snippet = PlaylistSnippet {
             title: Some(title.to_string()),
@@ -714,12 +988,22 @@ impl YoutubeClient {
 
     /// Delete a playlist owned by the authenticated user.
     pub async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Deleting a playlist requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         retry_api_call(|| async { self.hub.playlists().delete(playlist_id).doit().await }).await?;
         Ok(())
     }
 
     /// Add a video to a playlist.
     pub async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> Result<()> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Modifying playlist items requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         use google_youtube3::api::{PlaylistItem, PlaylistItemSnippet, ResourceId};
         let snippet = PlaylistItemSnippet {
             playlist_id: Some(playlist_id.to_string()),
@@ -741,6 +1025,11 @@ impl YoutubeClient {
 
     /// Remove a video from a playlist using its playlist item ID.
     pub async fn remove_from_playlist(&self, playlist_item_id: &str) -> Result<()> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Modifying playlist items requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         retry_api_call(|| async {
             self.hub
                 .playlist_items()
@@ -754,6 +1043,11 @@ impl YoutubeClient {
 
     /// Rate a video ("like", "dislike", or "none") using a raw string or [`Rating`] enum.
     pub async fn rate_video(&self, video_id: &str, rating: impl AsRef<str>) -> Result<()> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Rating a video requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         let rating_str = rating.as_ref();
         retry_api_call(|| async { self.hub.videos().rate(video_id, rating_str).doit().await })
             .await?;
@@ -768,15 +1062,18 @@ impl YoutubeClient {
     /// Fetch top comment threads for a video.
     pub async fn fetch_comments(&self, video_id: &str) -> Result<Vec<Comment>> {
         let (_resp, comment_res) = retry_api_call(|| async {
-            self.hub
+            let mut req = self
+                .hub
                 .comment_threads()
                 .list(&vec!["snippet".to_string()])
                 .video_id(video_id)
                 .max_results(20)
                 .clear_scopes()
-                .add_scope(google_youtube3::api::Scope::Readonly)
-                .doit()
-                .await
+                .add_scope(google_youtube3::api::Scope::Readonly);
+            if let Some(key) = &self.api_key {
+                req = req.param("key", key);
+            }
+            req.doit().await
         })
         .await?;
 
@@ -809,6 +1106,11 @@ impl YoutubeClient {
 
     /// Post a new top-level comment on a video.
     pub async fn post_comment(&self, video_id: &str, text: &str) -> Result<Comment> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Posting a comment requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
         use google_youtube3::api::{
             Comment as YtComment, CommentSnippet as YtCommentSnippet, CommentThread,
             CommentThreadSnippet,
@@ -870,7 +1172,7 @@ impl YoutubeClient {
         on_progress: F,
     ) -> Result<()>
     where
-        F: Fn(&str) + Send + Sync + 'static,
+        F: Fn(crate::download::DownloadProgress) + Send + Sync + 'static,
     {
         crate::download::download_video_direct(video_id, output_path, on_progress).await
     }
@@ -884,7 +1186,7 @@ impl YoutubeClient {
         on_progress: F,
     ) -> Result<()>
     where
-        F: Fn(&str) + Send + Sync + 'static,
+        F: Fn(crate::download::DownloadProgress) + Send + Sync + 'static,
     {
         crate::download::download_video_with_options(video_id, output_path, options, on_progress)
             .await
@@ -901,10 +1203,122 @@ impl YoutubeClient {
         crate::audio::play_audio_rodio(file_path).await
     }
 
+    /// Fetch SponsorBlock skip segments (sponsors, intros, selfpromo, etc.) for a video.
+    pub async fn fetch_skip_segments(
+        &self,
+        video_id: &str,
+    ) -> Result<Vec<crate::sponsorblock::SkipSegment>> {
+        let http = reqwest::Client::new();
+        crate::sponsorblock::fetch_skip_segments(&http, video_id, None).await
+    }
+
     /// Test the connection to YouTube by querying a single subscription.
     pub async fn test_connection(&self) -> Result<()> {
         let _ = self.list_subscriptions(1).await?;
         Ok(())
+    }
+
+    /// Stream the authenticated user's subscriptions as an asynchronous pinned [`BoxStream`].
+    pub fn stream_subscriptions(
+        &self,
+        page_size: u32,
+    ) -> BoxStream<'_, Result<Subscription>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.list_subscriptions_page(page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
+    }
+
+    /// Stream uploaded videos from a channel as an asynchronous pinned [`BoxStream`].
+    pub fn stream_videos<'a>(
+        &'a self,
+        channel_id: &'a str,
+        page_size: u32,
+    ) -> BoxStream<'a, Result<Video>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.list_videos_page(channel_id, page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
+    }
+
+    /// Stream search results for a query string as an asynchronous pinned [`BoxStream`].
+    pub fn stream_search<'a>(
+        &'a self,
+        query: &'a str,
+        page_size: u32,
+    ) -> BoxStream<'a, Result<Video>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.search_videos_page(query, page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
+    }
+
+    /// Stream the authenticated user's playlists as an asynchronous pinned [`BoxStream`].
+    pub fn stream_playlists(
+        &self,
+        page_size: u32,
+    ) -> BoxStream<'_, Result<Playlist>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.list_playlists_page(page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
+    }
+
+    /// Stream videos inside a playlist as an asynchronous pinned [`BoxStream`].
+    pub fn stream_playlist_videos<'a>(
+        &'a self,
+        playlist_id: &'a str,
+        page_size: u32,
+    ) -> BoxStream<'a, Result<Video>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.list_playlist_videos_page(playlist_id, page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
     }
 }
 
@@ -932,6 +1346,9 @@ impl VideoService for YoutubeClient {
     }
     async fn fetch_video_details(&self, video_id: &str) -> Result<VideoDetails> {
         self.fetch_video_details(video_id).await
+    }
+    async fn get_videos_batch(&self, video_ids: &[&str]) -> Result<Vec<VideoDetails>> {
+        self.get_videos_batch(video_ids).await
     }
 }
 
@@ -973,8 +1390,10 @@ impl MediaDownloader for YoutubeClient {
         output_path: &Path,
         progress_cb: Box<dyn Fn(&str) + Send + Sync>,
     ) -> Result<()> {
-        self.download_video(video_id, output_path, progress_cb)
-            .await
+        self.download_video(video_id, output_path, move |prog| {
+            progress_cb(&prog);
+        })
+        .await
     }
 }
 

@@ -223,6 +223,7 @@ pub fn launch_external_player_with_options(
         cookies_from_browser: crate::config::resolve_cookies_from_browser(None),
         log_file: log_file.map(|p| p.to_path_buf()),
         title: None,
+        ..Default::default()
     };
     let registry = crate::player::PlayerRegistry::with_defaults();
     registry.launch(target, &opts)
@@ -289,14 +290,8 @@ pub fn load_string_set_from_file(path: &Path) -> std::collections::HashSet<Strin
     std::collections::HashSet::new()
 }
 
-/// Save a set of strings to a JSON array file atomically using a temporary file.
-pub fn save_string_set_to_file(
-    path: &Path,
-    set: &std::collections::HashSet<String>,
-) -> Result<(), String> {
-    let list: Vec<&String> = set.iter().collect();
-    let content = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
-
+/// Atomically write string content to a file using a synchronized temporary file.
+pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     if !parent.as_os_str().is_empty() && !parent.exists() {
         let _ = std::fs::create_dir_all(parent);
@@ -309,6 +304,16 @@ pub fn save_string_set_to_file(
     temp.persist(path).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// Save a set of strings to a JSON array file atomically using a temporary file.
+pub fn save_string_set_to_file(
+    path: &Path,
+    set: &std::collections::HashSet<String>,
+) -> Result<(), String> {
+    let list: Vec<&String> = set.iter().collect();
+    let content = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+    write_atomic(path, &content)
 }
 
 fn format_current_timestamp() -> String {

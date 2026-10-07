@@ -14,6 +14,7 @@ use yup_oauth2::authenticator_delegate::InstalledFlowDelegate;
 pub struct YoutubeClientBuilder {
     client_id: Option<String>,
     client_secret: Option<String>,
+    api_key: Option<String>,
     config_path: Option<PathBuf>,
     token_cache_path: PathBuf,
     scopes: Vec<String>,
@@ -28,6 +29,7 @@ impl Default for YoutubeClientBuilder {
         Self {
             client_id: None,
             client_secret: None,
+            api_key: None,
             config_path: None,
             token_cache_path: PathBuf::from("tokencache.json"),
             scopes: YOUTUBE_SCOPES.iter().map(|s| s.to_string()).collect(),
@@ -53,6 +55,12 @@ impl YoutubeClientBuilder {
     ) -> Self {
         self.client_id = Some(client_id.into());
         self.client_secret = Some(client_secret.into());
+        self
+    }
+
+    /// Set the Google Cloud API Key for zero-OAuth access to public endpoints.
+    pub fn with_api_key(mut self, api_key: impl Into<String>) -> Self {
+        self.api_key = Some(api_key.into());
         self
     }
 
@@ -98,6 +106,13 @@ impl YoutubeClientBuilder {
         self
     }
 
+    /// Attach a disk-persistent metadata cache (persists metadata across CLI invocations and GUI sessions).
+    pub fn with_persistent_cache(mut self, path: Option<PathBuf>) -> Self {
+        let p = path.unwrap_or_else(|| crate::config::resolve_app_data_path("metadata_cache.json"));
+        self.cache = Some(Arc::new(MetadataCache::open(p)));
+        self
+    }
+
     /// Attach a persistent quota budget tracker to the built client.
     pub fn with_quota_tracker(mut self, tracker: Arc<QuotaTracker>) -> Self {
         self.quota_tracker = Some(tracker);
@@ -106,11 +121,39 @@ impl YoutubeClientBuilder {
 
     /// Build and authenticate the [`YoutubeClient`].
     pub async fn build(self) -> Result<YoutubeClient> {
+        let default_cfg = PathBuf::from("config.json");
+        let cfg_path = self.config_path.as_ref().unwrap_or(&default_cfg);
+
+        // 1. If explicit API key or resolved API key (without OAuth credentials) is provided:
+        if let Some(key) = self.api_key {
+            let mut client = YoutubeClient::new_api_key(&key).await?;
+            if let Some(cache) = self.cache {
+                client = client.with_cache(cache);
+            }
+            if let Some(tracker) = self.quota_tracker {
+                client = client.with_quota_tracker(tracker);
+            }
+            return Ok(client);
+        }
+
+        // 2. Check if API key is present in config/env when OAuth is not explicitly provided:
+        if self.client_id.is_none() && self.client_secret.is_none() {
+            if let Some(key) = crate::config::resolve_api_key(None, Some(cfg_path)) {
+                let mut client = YoutubeClient::new_api_key(&key).await?;
+                if let Some(cache) = self.cache {
+                    client = client.with_cache(cache);
+                }
+                if let Some(tracker) = self.quota_tracker {
+                    client = client.with_quota_tracker(tracker);
+                }
+                return Ok(client);
+            }
+        }
+
+        // 3. Otherwise resolve OAuth credentials
         let (client_id, client_secret) = match (self.client_id, self.client_secret) {
             (Some(id), Some(sec)) => (id, sec),
             (opt_id, opt_sec) => {
-                let default_cfg = PathBuf::from("config.json");
-                let cfg_path = self.config_path.as_ref().unwrap_or(&default_cfg);
                 crate::config::resolve_credentials(opt_id, opt_sec, cfg_path)?
             }
         };

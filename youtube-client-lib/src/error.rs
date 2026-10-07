@@ -10,6 +10,9 @@ pub enum YoutubeError {
     #[error("Authentication error: {0}")]
     Auth(#[from] yup_oauth2::Error),
 
+    #[error("Authentication required: {0}")]
+    AuthenticationRequired(String),
+
     #[error("API request failed: {0}")]
     Api(Box<google_youtube3::Error>),
 
@@ -30,6 +33,9 @@ pub enum YoutubeError {
 
     #[error("yt-dlp is missing. Please make sure yt-dlp is installed and in your PATH: {0}")]
     YtDlpMissing(String),
+
+    #[error("Operation was cancelled")]
+    Cancelled,
 
     #[error("Other error: {0}")]
     Other(String),

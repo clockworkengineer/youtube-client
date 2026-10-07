@@ -11,7 +11,7 @@ readme = "README.md"
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-youtube-client-lib = { workspace = true, features = ["audio", "download"] }
+youtube-client-lib = { workspace = true, features = ["full"] }
 open.workspace = true
 rodio.workspace = true
 serde = { workspace = true, features = ["derive"] }

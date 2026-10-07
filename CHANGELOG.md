@@ -4,6 +4,40 @@ All notable changes to the `youtube-client` workspace are documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Core Modernization, Media Engine Resilience & Advanced Integrations
+
+### Added
+- **Zero-OAuth Public API Key Authentication (`youtube-client-lib` & `youtube-client`)**:
+  - Implemented `NoAuth` token provider for unauthenticated API requests via `?key=...`.
+  - Added `YoutubeClient::new_api_key` and `--api-key` CLI flag for public operations (search, video details, comments, channels, playlists).
+  - Enforced `YoutubeError::AuthenticationRequired` safety checks on mutating endpoints.
+- **Headless / Device Code OAuth Flow (`youtube-client-lib` & `youtube-client`)**:
+  - Added `InteractiveFlowDelegate` and `--device-code` login flag for authenticating remote SSH and headless environments.
+- **Robust XML RSS Parsing with `quick-xml` (`youtube-client-lib`)**:
+  - Replaced ad-hoc string splitting in `rss.rs` with `quick-xml` (v0.37) supporting CDATA, namespaces, and malformed tags.
+- **Asynchronous Pagination Streams (`youtube-client-lib`)**:
+  - Implemented `stream_subscriptions`, `stream_videos`, `stream_search`, `stream_playlists`, and `stream_playlist_videos` returning pinned `BoxStream<'a, T>`.
+- **Structured Media Download Progress & Cooperative Cancellation (`youtube-client-lib`)**:
+  - Added `DownloadProgress` and `DownloadStage` structs capturing completion percentage, transfer speed, downloaded/total bytes, and ETA.
+  - Implemented `Display` and `Deref<Target = str>` on `DownloadProgress` for backward compatibility.
+  - Added `cancellation_token` using `tokio_util::sync::CancellationToken` to `DownloadOptions` to cleanly terminate runaway `yt-dlp` processes.
+- **Persistent Disk Metadata Cache (`youtube-client-lib` & `youtube-client`)**:
+  - Extended `MetadataCache` with atomic disk persistence, automatically restoring unexpired entries and remaining TTLs across CLI runs.
+  - Integrated persistent caching into `YoutubeClientBuilder` and `CliContext`.
+- **Multi-ID Batch Video Lookups (`youtube-client-lib`)**:
+  - Added `get_videos_batch` querying up to 50 videos per API call with cache-first deduplication.
+- **Direct Stream Audio Playback (`youtube-client-lib`)**:
+  - Added `stream_audio_rodio` piping `yt-dlp -f bestaudio -o -` directly into `rodio` decoding with cancellation support.
+- **SponsorBlock Integration & MPV EDL Generation (`youtube-client-lib`)**:
+  - Added `sponsorblock.rs` querying community skip segments and generating native MPV Edit Decision List (`edl://`) streams.
+- **MPV IPC Remote Control Client (`youtube-client-lib`)**:
+  - Added `MpvIpcClient` for remote playback control (pause, seek, volume, position) over Windows named pipes and Unix domain sockets.
+- **Disk-Backed Thumbnail Cache (`youtube-gui`)**:
+  - Added persistent thumbnail disk caching in `fetch_thumbnail` to avoid redundant network avatar downloads on GUI startup.
+- **Modular Feature Flags & Standalone Examples (`youtube-client-lib`)**:
+  - Added granular feature flags (`sponsorblock`, `ipc`, `importers`, `full`) in `Cargo.toml`.
+  - Added 4 runnable examples in `examples/`: `search_and_stream.rs`, `batch_metadata.rs`, `sponsorblock_mpv.rs`, and `import_subscriptions.rs`.
+
 ## [0.2.0] - SOLID Architectural Refactoring, Release Readiness & Modern Client Suite
 
 ### Added

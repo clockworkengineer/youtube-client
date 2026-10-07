@@ -24,6 +24,8 @@ pub struct PlayOptions {
     pub log_file: Option<PathBuf>,
     /// Optional window or media title.
     pub title: Option<String>,
+    /// Optional MPV IPC server named pipe or UNIX domain socket path.
+    pub ipc_pipe: Option<String>,
 }
 
 impl PlayOptions {
@@ -59,6 +61,12 @@ impl PlayOptions {
     /// Set window or media title.
     pub fn with_title(mut self, title: Option<String>) -> Self {
         self.title = title;
+        self
+    }
+
+    /// Set MPV IPC server socket / pipe path.
+    pub fn with_ipc_pipe(mut self, ipc_pipe: impl Into<String>) -> Self {
+        self.ipc_pipe = Some(ipc_pipe.into());
         self
     }
 }
@@ -187,6 +195,10 @@ impl MediaPlayer for MpvPlayer {
 
         if let Some(ref title) = opts.title {
             cmd.arg(format!("--force-media-title={title}"));
+        }
+
+        if let Some(ref pipe) = opts.ipc_pipe {
+            cmd.arg(format!("--input-ipc-server={pipe}"));
         }
 
         let target_str = target.to_string_lossy();

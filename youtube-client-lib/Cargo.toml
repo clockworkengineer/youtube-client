@@ -20,12 +20,21 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rand = { workspace = true }
 reqwest = { workspace = true }
+quick-xml = { workspace = true }
+async-stream = { workspace = true }
+futures-core = { workspace = true }
+futures-util = { workspace = true }
+tokio-util = { workspace = true }
 
 [features]
 default = []
 audio = ["dep:rodio"]
 download = []
+sponsorblock = []
+ipc = []
+importers = []
 testing = []
+full = ["audio", "download", "sponsorblock", "ipc", "importers", "testing"]
 
 [dev-dependencies]
 tempfile = "3"

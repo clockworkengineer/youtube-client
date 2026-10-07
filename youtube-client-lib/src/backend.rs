@@ -56,8 +56,23 @@ impl YoutubeBackend {
         match self {
             Self::Live(c) => c.list_subscriptions_page(max_results, page_token).await,
             Self::Mock(m) => {
-                let items = m.list_subscriptions(max_results).await?;
-                Ok(Page::new(items, None))
+                let all = m.subscriptions.lock().unwrap();
+                let offset: usize = page_token
+                    .and_then(|t| t.strip_prefix("offset_"))
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                let end = (offset + max_results as usize).min(all.len());
+                let items = if offset < all.len() {
+                    all[offset..end].to_vec()
+                } else {
+                    Vec::new()
+                };
+                let next_token = if end < all.len() {
+                    Some(format!("offset_{end}"))
+                } else {
+                    None
+                };
+                Ok(Page::new(items, next_token))
             }
         }
     }
@@ -90,8 +105,24 @@ impl YoutubeBackend {
                     .await
             }
             Self::Mock(m) => {
-                let items = m.list_videos(channel_id, max_results).await?;
-                Ok(Page::new(items, None))
+                let vids = m.videos_by_channel.lock().unwrap();
+                let all = vids.get(channel_id).cloned().unwrap_or_default();
+                let offset: usize = page_token
+                    .and_then(|t| t.strip_prefix("offset_"))
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                let end = (offset + max_results as usize).min(all.len());
+                let items = if offset < all.len() {
+                    all[offset..end].to_vec()
+                } else {
+                    Vec::new()
+                };
+                let next_token = if end < all.len() {
+                    Some(format!("offset_{end}"))
+                } else {
+                    None
+                };
+                Ok(Page::new(items, next_token))
             }
         }
     }
@@ -217,6 +248,11 @@ impl YoutubeBackend {
         }
     }
 
+    /// Fetch comprehensive video details for multiple videos in batches of up to 50.
+    pub async fn get_videos_batch(&self, video_ids: &[&str]) -> Result<Vec<VideoDetails>> {
+        VideoService::get_videos_batch(self, video_ids).await
+    }
+
     /// Download media with options and progress callback.
     pub async fn download_video_with_options<F>(
         &self,
@@ -226,7 +262,7 @@ impl YoutubeBackend {
         progress_callback: F,
     ) -> Result<()>
     where
-        F: Fn(&str) + Send + Sync + 'static,
+        F: Fn(crate::download::DownloadProgress) + Send + Sync + 'static,
     {
         match self {
             Self::Live(c) => {
@@ -234,12 +270,115 @@ impl YoutubeBackend {
                     .await
             }
             Self::Mock(m) => {
-                progress_callback("Mock downloading: 100%");
+                progress_callback(crate::download::DownloadProgress::finished("Mock downloading: 100%"));
                 let mut dls = m.downloaded_videos.lock().unwrap();
                 dls.push(video_id.to_string());
                 Ok(())
             }
         }
+    }
+
+    /// Stream subscriptions across pages as an asynchronous pinned [`BoxStream`](crate::client::BoxStream).
+    pub fn stream_subscriptions(
+        &self,
+        page_size: u32,
+    ) -> crate::client::BoxStream<'_, Result<Subscription>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.list_subscriptions_page(page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
+    }
+
+    /// Stream uploaded videos from a channel as an asynchronous pinned [`BoxStream`](crate::client::BoxStream).
+    pub fn stream_videos<'a>(
+        &'a self,
+        channel_id: &'a str,
+        page_size: u32,
+    ) -> crate::client::BoxStream<'a, Result<Video>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.list_videos_page(channel_id, page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
+    }
+
+    /// Stream search results as an asynchronous pinned [`BoxStream`](crate::client::BoxStream).
+    pub fn stream_search<'a>(
+        &'a self,
+        query: &'a str,
+        page_size: u32,
+    ) -> crate::client::BoxStream<'a, Result<Video>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.search_videos_page(query, page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
+    }
+
+    /// Stream playlists as an asynchronous pinned [`BoxStream`](crate::client::BoxStream).
+    pub fn stream_playlists(
+        &self,
+        page_size: u32,
+    ) -> crate::client::BoxStream<'_, Result<Playlist>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.list_playlists_page(page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
+    }
+
+    /// Stream videos from a playlist as an asynchronous pinned [`BoxStream`](crate::client::BoxStream).
+    pub fn stream_playlist_videos<'a>(
+        &'a self,
+        playlist_id: &'a str,
+        page_size: u32,
+    ) -> crate::client::BoxStream<'a, Result<Video>> {
+        Box::pin(async_stream::try_stream! {
+            let mut page_token = None;
+            loop {
+                let page = self.list_playlist_videos_page(playlist_id, page_size, page_token.as_deref()).await?;
+                for item in page.items {
+                    yield item;
+                }
+                match page.next_page_token {
+                    Some(token) if !token.is_empty() => page_token = Some(token),
+                    _ => break,
+                }
+            }
+        })
     }
 }
 
@@ -283,6 +422,13 @@ impl VideoService for YoutubeBackend {
         match self {
             Self::Live(c) => c.fetch_video_details(video_id).await,
             Self::Mock(m) => m.fetch_video_details(video_id).await,
+        }
+    }
+
+    async fn get_videos_batch(&self, video_ids: &[&str]) -> Result<Vec<VideoDetails>> {
+        match self {
+            Self::Live(c) => c.get_videos_batch(video_ids).await,
+            Self::Mock(m) => m.get_videos_batch(video_ids).await,
         }
     }
 }
@@ -392,5 +538,13 @@ mod tests {
 
         let pls = backend.list_playlists(10).await.unwrap();
         assert_eq!(pls.len(), 1);
+
+        // Test get_videos_batch through backend
+        let batch_ids = vec!["vid_a", "vid_b", "vid_c"];
+        let batch_details = backend.get_videos_batch(&batch_ids).await.unwrap();
+        assert_eq!(batch_details.len(), 3);
+        assert_eq!(batch_details[0].id, "vid_a");
+        assert_eq!(batch_details[1].id, "vid_b");
+        assert_eq!(batch_details[2].id, "vid_c");
     }
 }

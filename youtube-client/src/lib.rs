@@ -33,6 +33,10 @@ pub struct Cli {
     #[arg(long, env = "GOOGLE_CLIENT_SECRET")]
     pub client_secret: Option<String>,
 
+    /// Google Cloud API key for zero-OAuth public access (search, videos, details, comments)
+    #[arg(long, env = "YOUTUBE_API_KEY")]
+    pub api_key: Option<String>,
+
     /// Path to client log file for subprocess and media trace output
     #[arg(short, long, env = "YOUTUBE_CLIENT_LOG_FILE")]
     pub log_file: Option<PathBuf>,
@@ -52,7 +56,11 @@ pub struct Cli {
 #[derive(Subcommand, Debug, Clone, PartialEq)]
 pub enum Commands {
     /// Authenticate with Google OAuth2 and save the token cache
-    Login,
+    Login {
+        /// Use terminal interactive/device flow authentication instead of launching a local browser
+        #[arg(long, default_value_t = false)]
+        device_code: bool,
+    },
 
     /// List your YouTube subscriptions
     Subscriptions {
@@ -281,6 +289,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     let ctx = CliContext {
         client_id: cli.client_id,
         client_secret: cli.client_secret,
+        api_key: cli.api_key,
         config: cli.config,
         token_cache: cli.token_cache,
         log_file: cli.log_file,
@@ -295,7 +304,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             clap_complete::generate(shell, &mut cmd, "youtube-client", &mut std::io::stdout());
             Ok(())
         }
-        Commands::Login => execute_login(&ctx).await,
+        Commands::Login { device_code } => execute_login(&ctx, device_code).await,
         Commands::Subscriptions {
             limit,
             page_token,

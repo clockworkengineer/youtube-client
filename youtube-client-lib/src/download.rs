@@ -16,6 +16,244 @@ pub enum DownloadFormat {
     Custom(String),
 }
 
+/// Stage of the media download process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DownloadStage {
+    /// Preparing the download / querying metadata.
+    Starting,
+    /// Downloading video / audio streams.
+    Downloading,
+    /// Merging streams or extracting audio via ffmpeg.
+    ExtractingAudio,
+    /// Download completed successfully.
+    Finished,
+}
+
+impl std::fmt::Display for DownloadStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DownloadStage::Starting => write!(f, "Starting"),
+            DownloadStage::Downloading => write!(f, "Downloading"),
+            DownloadStage::ExtractingAudio => write!(f, "Extracting audio"),
+            DownloadStage::Finished => write!(f, "Finished"),
+        }
+    }
+}
+
+/// Structured download progress snapshot reported during `yt-dlp` operations.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DownloadProgress {
+    /// Current download stage.
+    pub stage: DownloadStage,
+    /// Completion percentage (0.0 to 100.0).
+    pub percent: Option<f32>,
+    /// Downloaded data in bytes.
+    pub downloaded_bytes: Option<u64>,
+    /// Total expected size in bytes.
+    pub total_bytes: Option<u64>,
+    /// Download speed in bytes per second.
+    pub speed_bytes_per_sec: Option<u64>,
+    /// Estimated time remaining in seconds.
+    pub eta_seconds: Option<u64>,
+    /// Formatted status line.
+    pub raw_message: String,
+}
+
+impl std::fmt::Display for DownloadProgress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.raw_message)
+    }
+}
+
+impl std::ops::Deref for DownloadProgress {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        &self.raw_message
+    }
+}
+
+impl DownloadProgress {
+    /// Construct a progress snapshot for the initial startup phase.
+    pub fn starting(msg: impl Into<String>) -> Self {
+        let raw = msg.into();
+        Self {
+            stage: DownloadStage::Starting,
+            percent: None,
+            downloaded_bytes: None,
+            total_bytes: None,
+            speed_bytes_per_sec: None,
+            eta_seconds: None,
+            raw_message: raw,
+        }
+    }
+
+    /// Construct a progress snapshot for audio/post-processing extraction.
+    pub fn extracting(msg: impl Into<String>) -> Self {
+        let raw = msg.into();
+        Self {
+            stage: DownloadStage::ExtractingAudio,
+            percent: None,
+            downloaded_bytes: None,
+            total_bytes: None,
+            speed_bytes_per_sec: None,
+            eta_seconds: None,
+            raw_message: raw,
+        }
+    }
+
+    /// Construct a progress snapshot for download completion.
+    pub fn finished(msg: impl Into<String>) -> Self {
+        let raw = msg.into();
+        Self {
+            stage: DownloadStage::Finished,
+            percent: Some(100.0),
+            downloaded_bytes: None,
+            total_bytes: None,
+            speed_bytes_per_sec: None,
+            eta_seconds: Some(0),
+            raw_message: raw,
+        }
+    }
+
+    /// Parse a raw stdout line from `yt-dlp` into a structured progress snapshot.
+    pub fn parse_line(line: &str) -> Option<Self> {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        if trimmed.contains("[ExtractAudio]") || trimmed.contains("[ffmpeg]") {
+            return Some(Self::extracting("Extracting audio..."));
+        }
+
+        if !trimmed.contains("[download]") {
+            return None;
+        }
+
+        if trimmed.contains("Destination:") {
+            return Some(Self::starting("Starting download..."));
+        }
+
+        if let Some(pct_pos) = trimmed.find('%') {
+            if let Some(dl_idx) = trimmed.find("[download]") {
+                let start = dl_idx + 10;
+                if start < pct_pos {
+                    let pct_str = trimmed[start..pct_pos].trim();
+                    let percent = pct_str.parse::<f32>().ok();
+
+                    let mut total_bytes = None;
+                    let mut speed_bytes_per_sec = None;
+                    let mut eta_seconds = None;
+
+                    let after_pct = &trimmed[pct_pos + 1..];
+                    if let Some(of_idx) = after_pct.find("of") {
+                        let after_of = &after_pct[of_idx + 2..];
+                        let parts: Vec<&str> = after_of.split_whitespace().collect();
+                        for (i, &token) in parts.iter().enumerate() {
+                            let clean_token = token.trim_start_matches('~');
+                            if let Some(bytes) = parse_byte_size(clean_token) {
+                                total_bytes = Some(bytes);
+                            } else if clean_token.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                                if let Some(&unit) = parts.get(i + 1) {
+                                    if let Some(bytes) = parse_byte_size(&format!("{clean_token}{unit}")) {
+                                        total_bytes = Some(bytes);
+                                    }
+                                }
+                            }
+                            if total_bytes.is_some() {
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(at_idx) = after_pct.find("at") {
+                        let after_at = &after_pct[at_idx + 2..];
+                        if let Some(token) = after_at.split_whitespace().next() {
+                            let clean_token = token.trim_end_matches("/s");
+                            speed_bytes_per_sec = parse_byte_size(clean_token);
+                        }
+                    }
+
+                    if let Some(eta_idx) = after_pct.find("ETA") {
+                        let after_eta = &after_pct[eta_idx + 3..];
+                        if let Some(token) = after_eta.split_whitespace().next() {
+                            eta_seconds = parse_eta_seconds(token);
+                        }
+                    }
+
+                    let downloaded_bytes = match (percent, total_bytes) {
+                        (Some(p), Some(tot)) => Some(((p as f64 / 100.0) * tot as f64) as u64),
+                        _ => None,
+                    };
+
+                    let stage = if percent.is_some_and(|p| p >= 100.0) {
+                        DownloadStage::Finished
+                    } else {
+                        DownloadStage::Downloading
+                    };
+
+                    let raw_message = if let Some(p) = percent {
+                        format!("Downloading: {p}%")
+                    } else {
+                        format!("Downloading: {pct_str}%")
+                    };
+
+                    return Some(Self {
+                        stage,
+                        percent,
+                        downloaded_bytes,
+                        total_bytes,
+                        speed_bytes_per_sec,
+                        eta_seconds,
+                        raw_message,
+                    });
+                }
+            }
+        }
+
+        None
+    }
+}
+
+fn parse_byte_size(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let (num_part, multiplier) = if let Some(stripped) = s.strip_suffix("GiB") {
+        (stripped, 1024.0 * 1024.0 * 1024.0)
+    } else if let Some(stripped) = s.strip_suffix("GB") {
+        (stripped, 1000.0 * 1000.0 * 1000.0)
+    } else if let Some(stripped) = s.strip_suffix("MiB") {
+        (stripped, 1024.0 * 1024.0)
+    } else if let Some(stripped) = s.strip_suffix("MB") {
+        (stripped, 1000.0 * 1000.0)
+    } else if let Some(stripped) = s.strip_suffix("KiB") {
+        (stripped, 1024.0)
+    } else if let Some(stripped) = s.strip_suffix("KB") {
+        (stripped, 1000.0)
+    } else {
+        let stripped = s.strip_suffix('B')?;
+        (stripped, 1.0)
+    };
+    num_part.trim().parse::<f64>().ok().map(|v| (v * multiplier) as u64)
+}
+
+fn parse_eta_seconds(s: &str) -> Option<u64> {
+    let parts: Vec<&str> = s.trim().split(':').collect();
+    match parts.len() {
+        2 => {
+            let mins = parts[0].parse::<u64>().ok()?;
+            let secs = parts[1].parse::<u64>().ok()?;
+            Some(mins * 60 + secs)
+        }
+        3 => {
+            let hours = parts[0].parse::<u64>().ok()?;
+            let mins = parts[1].parse::<u64>().ok()?;
+            let secs = parts[2].parse::<u64>().ok()?;
+            Some(hours * 3600 + mins * 60 + secs)
+        }
+        _ => None,
+    }
+}
+
 /// Configuration options for downloading media.
 #[derive(Clone, Debug)]
 pub struct DownloadOptions {
@@ -25,6 +263,7 @@ pub struct DownloadOptions {
     pub log_file: Option<std::path::PathBuf>,
     pub cookies_file: Option<std::path::PathBuf>,
     pub cookies_from_browser: Option<String>,
+    pub cancellation_token: Option<tokio_util::sync::CancellationToken>,
 }
 
 impl Default for DownloadOptions {
@@ -36,6 +275,7 @@ impl Default for DownloadOptions {
             log_file: None,
             cookies_file: None,
             cookies_from_browser: None,
+            cancellation_token: None,
         }
     }
 }
@@ -81,6 +321,12 @@ impl DownloadOptions {
         self.cookies_from_browser = Some(browser.into());
         self
     }
+
+    /// Set a cooperative cancellation token.
+    pub fn with_cancellation_token(mut self, token: tokio_util::sync::CancellationToken) -> Self {
+        self.cancellation_token = Some(token);
+        self
+    }
 }
 
 /// Download a YouTube video directly by ID using `yt-dlp`.
@@ -96,7 +342,7 @@ pub async fn download_video_direct<F>(
     on_progress: F,
 ) -> Result<()>
 where
-    F: Fn(&str) + Send + Sync + 'static,
+    F: Fn(DownloadProgress) + Send + Sync + 'static,
 {
     download_video_with_options(
         video_id,
@@ -114,7 +360,7 @@ pub async fn download_video_direct<F>(
     _on_progress: F,
 ) -> Result<()>
 where
-    F: Fn(&str) + Send + Sync + 'static,
+    F: Fn(DownloadProgress) + Send + Sync + 'static,
 {
     Err(YoutubeError::Download(
         "The 'download' feature is disabled in youtube-client-lib.".to_string(),
@@ -130,7 +376,7 @@ pub async fn download_video_with_options<F>(
     on_progress: F,
 ) -> Result<()>
 where
-    F: Fn(&str) + Send + Sync + 'static,
+    F: Fn(DownloadProgress) + Send + Sync + 'static,
 {
     use tokio::io::AsyncReadExt;
 
@@ -274,11 +520,28 @@ where
 
     let mut buffer = Vec::new();
     let mut temp_buf = [0u8; 1024];
+    let cancellation_token = options.cancellation_token.clone();
 
-    on_progress("Starting download...");
+    on_progress(DownloadProgress::starting("Starting download..."));
 
     loop {
-        let n = stdout.read(&mut temp_buf).await?;
+        let n = tokio::select! {
+            _ = async {
+                if let Some(ref token) = cancellation_token {
+                    token.cancelled().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                let _ = child.kill().await;
+                crate::utils::append_to_log(&log_file_path, "WARN", "Download cancelled by token");
+                return Err(YoutubeError::Cancelled);
+            }
+            read_res = stdout.read(&mut temp_buf) => {
+                read_res?
+            }
+        };
+
         if n == 0 {
             break;
         }
@@ -290,20 +553,8 @@ where
                 let line = line_str.trim();
                 if !line.is_empty() {
                     crate::utils::append_to_log(&log_file_path, "STDOUT", line);
-                    if line.contains("[download]") {
-                        if let Some(pct_idx) = line.find('%') {
-                            if let Some(dl_idx) = line.find("[download]") {
-                                let start = dl_idx + 10;
-                                if start < pct_idx {
-                                    let pct = line[start..pct_idx].trim();
-                                    on_progress(&format!("Downloading: {pct}%"));
-                                }
-                            }
-                        } else if line.contains("Destination:") {
-                            on_progress("Starting download...");
-                        }
-                    } else if line.contains("[ExtractAudio]") || line.contains("[ffmpeg]") {
-                        on_progress("Extracting audio...");
+                    if let Some(progress) = DownloadProgress::parse_line(line) {
+                        on_progress(progress);
                     }
                 }
             }
@@ -311,7 +562,23 @@ where
         }
     }
 
-    let status = child.wait().await?;
+    let status = tokio::select! {
+        _ = async {
+            if let Some(ref token) = cancellation_token {
+                token.cancelled().await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        } => {
+            let _ = child.kill().await;
+            crate::utils::append_to_log(&log_file_path, "WARN", "Download cancelled while awaiting process");
+            return Err(YoutubeError::Cancelled);
+        }
+        wait_res = child.wait() => {
+            wait_res?
+        }
+    };
+
     let stderr_output = stderr_handle.await.unwrap_or_default();
     if !status.success() {
         crate::utils::append_to_log(
@@ -333,6 +600,7 @@ where
         "INFO",
         &format!("Download finished successfully: {output_path:?}"),
     );
+    on_progress(DownloadProgress::finished("Download complete"));
     Ok(())
 }
 
@@ -344,9 +612,49 @@ pub async fn download_video_with_options<F>(
     _on_progress: F,
 ) -> Result<()>
 where
-    F: Fn(&str) + Send + Sync + 'static,
+    F: Fn(DownloadProgress) + Send + Sync + 'static,
 {
     Err(YoutubeError::Download(
         "The 'download' feature is disabled in youtube-client-lib.".to_string(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_byte_size() {
+        assert_eq!(parse_byte_size("1024B"), Some(1024));
+        assert_eq!(parse_byte_size("10KiB"), Some(10240));
+        assert_eq!(parse_byte_size("5MiB"), Some(5 * 1024 * 1024));
+        assert_eq!(parse_byte_size("1GiB"), Some(1024 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_parse_eta_seconds() {
+        assert_eq!(parse_eta_seconds("00:45"), Some(45));
+        assert_eq!(parse_eta_seconds("01:23"), Some(83));
+        assert_eq!(parse_eta_seconds("01:02:03"), Some(3600 + 120 + 3));
+    }
+
+    #[test]
+    fn test_download_progress_parsing() {
+        let line = "[download]  45.2% of ~ 50.00MiB at 10.20MiB/s ETA 01:23";
+        let prog = DownloadProgress::parse_line(line).expect("should parse");
+        assert_eq!(prog.stage, DownloadStage::Downloading);
+        assert_eq!(prog.percent, Some(45.2));
+        assert!(prog.total_bytes.is_some());
+        assert!(prog.speed_bytes_per_sec.is_some());
+        assert_eq!(prog.eta_seconds, Some(83));
+        assert_eq!(prog.raw_message, "Downloading: 45.2%");
+
+        let dest_line = "[download] Destination: video.mp4";
+        let dest_prog = DownloadProgress::parse_line(dest_line).expect("should parse destination");
+        assert_eq!(dest_prog.stage, DownloadStage::Starting);
+
+        let audio_line = "[ExtractAudio] Destination: song.mp3";
+        let audio_prog = DownloadProgress::parse_line(audio_line).expect("should parse extract");
+        assert_eq!(audio_prog.stage, DownloadStage::ExtractingAudio);
+    }
 }

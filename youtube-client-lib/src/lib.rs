@@ -51,10 +51,12 @@ pub mod download;
 pub mod error;
 pub mod importers;
 pub mod models;
+pub mod mpv_ipc;
 pub mod player;
 pub mod quota;
 pub mod retry;
 pub mod rss;
+pub mod sponsorblock;
 pub mod testing;
 pub mod traits;
 pub mod utils;
@@ -70,12 +72,16 @@ pub use download::*;
 pub use error::*;
 pub use importers::*;
 pub use models::*;
+pub use mpv_ipc::*;
 pub use player::*;
 pub use quota::*;
 pub use rss::*;
+pub use sponsorblock::*;
 pub use testing::MockYoutubeClient;
 pub use traits::*;
 pub use utils::*;
+pub use yup_oauth2;
+pub use yup_oauth2::InstalledFlowReturnMethod;
 
 #[cfg(test)]
 mod tests {
@@ -107,6 +113,37 @@ mod tests {
 
         let _ = std::fs::remove_file(&cache_path);
         assert!(client.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_new_api_key_initialization() {
+        let client = YoutubeClient::new_api_key("AIzaSyDummyKeyTest123")
+            .await
+            .expect("Failed to initialize API Key client");
+
+        assert!(client.is_api_key_only());
+        assert_eq!(client.api_key(), Some("AIzaSyDummyKeyTest123"));
+
+        // Private endpoints must return AuthenticationRequired error
+        let sub_err = client.list_subscriptions_page(10, None).await;
+        match sub_err {
+            Err(YoutubeError::AuthenticationRequired(msg)) => {
+                assert!(msg.contains("OAuth2"));
+            }
+            other => panic!("Expected AuthenticationRequired error, got: {other:?}"),
+        }
+
+        let rate_err = client.rate_video("test_vid", "like").await;
+        match rate_err {
+            Err(YoutubeError::AuthenticationRequired(_)) => {}
+            other => panic!("Expected AuthenticationRequired error for rate_video, got: {other:?}"),
+        }
+
+        let playlist_err = client.create_playlist("Test PL", None).await;
+        match playlist_err {
+            Err(YoutubeError::AuthenticationRequired(_)) => {}
+            other => panic!("Expected AuthenticationRequired error for create_playlist, got: {other:?}"),
+        }
     }
 
     #[test]

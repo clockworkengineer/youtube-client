@@ -11,7 +11,7 @@ readme = "README.md"
 eframe.workspace = true
 egui.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-youtube-client-lib = { workspace = true, features = ["download", "audio"] }
+youtube-client-lib = { workspace = true, features = ["full"] }
 anyhow.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

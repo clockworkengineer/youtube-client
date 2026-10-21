@@ -59,7 +59,9 @@ impl CliContext {
             .with_config_path(&self.config)
             .with_token_cache(&self.token_cache)
             .with_persistent_cache(None)
-            .with_return_method(youtube_client_lib::yup_oauth2::InstalledFlowReturnMethod::Interactive)
+            .with_return_method(
+                youtube_client_lib::yup_oauth2::InstalledFlowReturnMethod::Interactive,
+            )
             .with_flow_delegate(Box::new(InteractiveFlowDelegate));
 
         if let Some(ref key) = self.api_key {

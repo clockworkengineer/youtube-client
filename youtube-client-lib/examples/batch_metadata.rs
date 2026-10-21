@@ -24,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set up a quota budget tracker (standard default: 10,000 units/day)
     let quota = Arc::new(QuotaTracker::new());
-    println!("Initial quota consumed: {} units", quota.status().units_used);
+    println!(
+        "Initial quota consumed: {} units",
+        quota.status().units_used
+    );
 
     // Use Mock client for offline example execution
     let mock = MockYoutubeClient::new();

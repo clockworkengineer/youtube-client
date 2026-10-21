@@ -58,13 +58,7 @@ struct RawSegmentResponse {
 }
 
 /// Default categories requested for skipping.
-pub const DEFAULT_CATEGORIES: &[&str] = &[
-    "sponsor",
-    "selfpromo",
-    "interaction",
-    "intro",
-    "outro",
-];
+pub const DEFAULT_CATEGORIES: &[&str] = &["sponsor", "selfpromo", "interaction", "intro", "outro"];
 
 /// Fetch skip segments for a video from the SponsorBlock API.
 ///
@@ -84,7 +78,11 @@ pub async fn fetch_skip_segments(
 
     let resp = match http_client.get(&url).send().await {
         Ok(r) => r,
-        Err(e) => return Err(YoutubeError::Other(format!("SponsorBlock query failed: {e}"))),
+        Err(e) => {
+            return Err(YoutubeError::Other(format!(
+                "SponsorBlock query failed: {e}"
+            )));
+        }
     };
 
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
@@ -117,7 +115,11 @@ pub async fn fetch_skip_segments(
 /// Generate an MPV Edit Decision List (EDL) specification to skip specified segments seamlessly.
 ///
 /// If `skip_segments` is empty or no valid cuts can be made, returns `None`.
-pub fn build_mpv_edl(media_url: &str, total_duration_secs: f64, skip_segments: &[SkipSegment]) -> Option<String> {
+pub fn build_mpv_edl(
+    media_url: &str,
+    total_duration_secs: f64,
+    skip_segments: &[SkipSegment],
+) -> Option<String> {
     if skip_segments.is_empty() || total_duration_secs <= 0.0 {
         return None;
     }
@@ -158,7 +160,13 @@ pub fn build_mpv_edl(media_url: &str, total_duration_secs: f64, skip_segments: &
         if idx > 0 {
             edl.push(';');
         }
-        edl.push_str(&format!("%{}%{},{:.2},{:.2}", media_url.len(), media_url, start, length));
+        edl.push_str(&format!(
+            "%{}%{},{:.2},{:.2}",
+            media_url.len(),
+            media_url,
+            start,
+            length
+        ));
     }
 
     Some(edl)

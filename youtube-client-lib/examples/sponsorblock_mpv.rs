@@ -11,7 +11,7 @@
 //! ```
 
 use youtube_client_lib::{
-    build_mpv_edl, fetch_skip_segments, MpvIpcClient, SegmentCategory, SkipSegment,
+    MpvIpcClient, SegmentCategory, SkipSegment, build_mpv_edl, fetch_skip_segments,
 };
 
 #[tokio::main]
@@ -50,7 +50,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if let Some(edl_url) = build_mpv_edl(&video_url, total_duration_secs, &mock_segments) {
                 println!("\nGenerated MPV EDL Stream URL:\n{edl_url}");
-                println!("Passing this EDL URL to MPV automatically cuts out sponsor segments during playback!");
+                println!(
+                    "Passing this EDL URL to MPV automatically cuts out sponsor segments during playback!"
+                );
             }
         }
         Err(e) => {

@@ -270,7 +270,9 @@ impl YoutubeBackend {
                     .await
             }
             Self::Mock(m) => {
-                progress_callback(crate::download::DownloadProgress::finished("Mock downloading: 100%"));
+                progress_callback(crate::download::DownloadProgress::finished(
+                    "Mock downloading: 100%",
+                ));
                 let mut dls = m.downloaded_videos.lock().unwrap();
                 dls.push(video_id.to_string());
                 Ok(())

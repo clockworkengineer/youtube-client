@@ -102,7 +102,9 @@ pub async fn stream_audio_rodio(
     let _ = child.wait().await;
 
     if audio_bytes.is_empty() {
-        return Err(YoutubeError::Media("No audio data received from stream".to_string()));
+        return Err(YoutubeError::Media(
+            "No audio data received from stream".to_string(),
+        ));
     }
 
     tokio::task::spawn_blocking(move || {

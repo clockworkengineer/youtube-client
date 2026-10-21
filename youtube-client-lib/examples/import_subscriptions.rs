@@ -36,17 +36,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let subscriptions = import_subscriptions_from_opml(sample_opml)?;
     println!("Parsed {} channels:", subscriptions.len());
     for sub in &subscriptions {
-        println!("  - Channel: {:<15} | ID: {}", sub.channel_title, sub.channel_id);
+        println!(
+            "  - Channel: {:<15} | ID: {}",
+            sub.channel_title, sub.channel_id
+        );
     }
 
     // Export back to OPML
     let exported_opml = export_subscriptions_to_opml(&subscriptions);
-    println!("\nExported back to valid OPML ({} bytes).", exported_opml.len());
+    println!(
+        "\nExported back to valid OPML ({} bytes).",
+        exported_opml.len()
+    );
 
     // Auto-detect format from CSV content
     let sample_csv = "Channel Id,Channel Url,Channel Title\nUC_test_1,http://youtube.com/channel/UC_test_1,Test Channel";
     let detected = import_subscriptions_auto_detect(sample_csv, None)?;
-    println!("\nAuto-detected and imported {} channels from CSV format.", detected.len());
+    println!(
+        "\nAuto-detected and imported {} channels from CSV format.",
+        detected.len()
+    );
 
     Ok(())
 }

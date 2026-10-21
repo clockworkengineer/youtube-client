@@ -47,7 +47,11 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
                     current_thumbnail_url.clear();
                 } else if in_entry && name == "author" {
                     in_author = true;
-                } else if in_entry && (name == "media:thumbnail" || name.ends_with(":thumbnail") || name == "thumbnail") {
+                } else if in_entry
+                    && (name == "media:thumbnail"
+                        || name.ends_with(":thumbnail")
+                        || name == "thumbnail")
+                {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"url" {
                             if let Ok(val) = attr.decode_and_unescape_value(reader.decoder()) {
@@ -60,7 +64,11 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
             }
             Ok(Event::Empty(e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                if in_entry && (name == "media:thumbnail" || name.ends_with(":thumbnail") || name == "thumbnail") {
+                if in_entry
+                    && (name == "media:thumbnail"
+                        || name.ends_with(":thumbnail")
+                        || name == "thumbnail")
+                {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"url" {
                             if let Ok(val) = attr.decode_and_unescape_value(reader.decoder()) {
@@ -243,7 +251,10 @@ mod tests {
         let v2 = &videos[1];
         assert_eq!(v2.id, "abc123xyz89");
         assert_eq!(v2.title, "Second Video");
-        assert_eq!(v2.description, "Second description with <special> characters");
+        assert_eq!(
+            v2.description,
+            "Second description with <special> characters"
+        );
         assert_eq!(
             v2.thumbnail_url,
             "https://i.ytimg.com/vi/abc123xyz89/hqdefault.jpg"
@@ -260,7 +271,10 @@ mod tests {
         let videos = parse_youtube_rss_xml(xml_no_thumb).unwrap();
         assert_eq!(videos.len(), 1);
         assert_eq!(videos[0].id, "test1234");
-        assert_eq!(videos[0].thumbnail_url, "https://i.ytimg.com/vi/test1234/hqdefault.jpg");
+        assert_eq!(
+            videos[0].thumbnail_url,
+            "https://i.ytimg.com/vi/test1234/hqdefault.jpg"
+        );
 
         // Malformed XML returns Err
         let malformed = "<feed><entry><title>Unclosed";

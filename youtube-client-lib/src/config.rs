@@ -433,10 +433,7 @@ pub fn check_token_cache_scopes(token_cache_path: &Path, required_scopes: &[&str
 }
 
 /// Resolve YouTube API key from CLI override, environment variable `YOUTUBE_API_KEY`, or config file.
-pub fn resolve_api_key(
-    opt_api_key: Option<String>,
-    config_path: Option<&Path>,
-) -> Option<String> {
+pub fn resolve_api_key(opt_api_key: Option<String>, config_path: Option<&Path>) -> Option<String> {
     if let Some(key) = opt_api_key {
         let trimmed = key.trim();
         if !trimmed.is_empty() {

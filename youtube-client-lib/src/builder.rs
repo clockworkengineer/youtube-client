@@ -153,9 +153,7 @@ impl YoutubeClientBuilder {
         // 3. Otherwise resolve OAuth credentials
         let (client_id, client_secret) = match (self.client_id, self.client_secret) {
             (Some(id), Some(sec)) => (id, sec),
-            (opt_id, opt_sec) => {
-                crate::config::resolve_credentials(opt_id, opt_sec, cfg_path)?
-            }
+            (opt_id, opt_sec) => crate::config::resolve_credentials(opt_id, opt_sec, cfg_path)?,
         };
 
         let resolved_token_cache = if self.token_cache_path == Path::new("tokencache.json") {

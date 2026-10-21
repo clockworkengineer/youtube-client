@@ -220,8 +220,6 @@ impl YoutubeClient {
         })
     }
 
-
-
     pub(crate) async fn construct_with_params(
         client_id: &str,
         client_secret: &str,
@@ -600,14 +598,11 @@ impl YoutubeClient {
         for chunk in missing_ids.chunks(50) {
             let chunk_vec: Vec<String> = chunk.iter().map(|s| s.to_string()).collect();
             let (_resp, video_res) = retry_api_call(|| async {
-                let mut req = self
-                    .hub
-                    .videos()
-                    .list(&vec![
-                        "snippet".to_string(),
-                        "statistics".to_string(),
-                        "contentDetails".to_string(),
-                    ]);
+                let mut req = self.hub.videos().list(&vec![
+                    "snippet".to_string(),
+                    "statistics".to_string(),
+                    "contentDetails".to_string(),
+                ]);
                 for id in &chunk_vec {
                     req = req.add_id(id);
                 }
@@ -1219,10 +1214,7 @@ impl YoutubeClient {
     }
 
     /// Stream the authenticated user's subscriptions as an asynchronous pinned [`BoxStream`].
-    pub fn stream_subscriptions(
-        &self,
-        page_size: u32,
-    ) -> BoxStream<'_, Result<Subscription>> {
+    pub fn stream_subscriptions(&self, page_size: u32) -> BoxStream<'_, Result<Subscription>> {
         Box::pin(async_stream::try_stream! {
             let mut page_token = None;
             loop {
@@ -1281,10 +1273,7 @@ impl YoutubeClient {
     }
 
     /// Stream the authenticated user's playlists as an asynchronous pinned [`BoxStream`].
-    pub fn stream_playlists(
-        &self,
-        page_size: u32,
-    ) -> BoxStream<'_, Result<Playlist>> {
+    pub fn stream_playlists(&self, page_size: u32) -> BoxStream<'_, Result<Playlist>> {
         Box::pin(async_stream::try_stream! {
             let mut page_token = None;
             loop {

@@ -155,7 +155,9 @@ impl DownloadProgress {
                                 total_bytes = Some(bytes);
                             } else if clean_token.chars().all(|c| c.is_ascii_digit() || c == '.') {
                                 if let Some(&unit) = parts.get(i + 1) {
-                                    if let Some(bytes) = parse_byte_size(&format!("{clean_token}{unit}")) {
+                                    if let Some(bytes) =
+                                        parse_byte_size(&format!("{clean_token}{unit}"))
+                                    {
                                         total_bytes = Some(bytes);
                                     }
                                 }
@@ -233,7 +235,11 @@ fn parse_byte_size(s: &str) -> Option<u64> {
         let stripped = s.strip_suffix('B')?;
         (stripped, 1.0)
     };
-    num_part.trim().parse::<f64>().ok().map(|v| (v * multiplier) as u64)
+    num_part
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .map(|v| (v * multiplier) as u64)
 }
 
 fn parse_eta_seconds(s: &str) -> Option<u64> {

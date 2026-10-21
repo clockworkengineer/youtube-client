@@ -4,7 +4,7 @@
 //! play, pause, seek, volume control, and playback position tracking.
 
 use crate::error::{Result, YoutubeError};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
 
 /// An IPC client for sending commands and querying properties from a running MPV player.
@@ -52,16 +52,18 @@ impl MpvIpcClient {
                 .read(true)
                 .write(true)
                 .open(&self.pipe_path)
-                .map_err(|e| YoutubeError::Media(format!("Failed to connect to MPV IPC pipe: {e}")))?;
+                .map_err(|e| {
+                    YoutubeError::Media(format!("Failed to connect to MPV IPC pipe: {e}"))
+                })?;
 
             file.write_all(line.as_bytes())
                 .map_err(|e| YoutubeError::Media(format!("Failed to write to MPV IPC: {e}")))?;
 
             let mut reader = BufReader::new(file);
             let mut resp_line = String::new();
-            reader
-                .read_line(&mut resp_line)
-                .map_err(|e| YoutubeError::Media(format!("Failed to read MPV IPC response: {e}")))?;
+            reader.read_line(&mut resp_line).map_err(|e| {
+                YoutubeError::Media(format!("Failed to read MPV IPC response: {e}"))
+            })?;
 
             let val: Value = serde_json::from_str(&resp_line)
                 .map_err(|e| YoutubeError::Media(format!("Invalid MPV JSON response: {e}")))?;
@@ -71,17 +73,19 @@ impl MpvIpcClient {
         #[cfg(not(windows))]
         {
             use std::os::unix::net::UnixStream;
-            let mut stream = UnixStream::connect(&self.pipe_path)
-                .map_err(|e| YoutubeError::Media(format!("Failed to connect to MPV IPC socket: {e}")))?;
+            let mut stream = UnixStream::connect(&self.pipe_path).map_err(|e| {
+                YoutubeError::Media(format!("Failed to connect to MPV IPC socket: {e}"))
+            })?;
 
-            stream.write_all(line.as_bytes())
+            stream
+                .write_all(line.as_bytes())
                 .map_err(|e| YoutubeError::Media(format!("Failed to write to MPV IPC: {e}")))?;
 
             let mut reader = BufReader::new(stream);
             let mut resp_line = String::new();
-            reader
-                .read_line(&mut resp_line)
-                .map_err(|e| YoutubeError::Media(format!("Failed to read MPV IPC response: {e}")))?;
+            reader.read_line(&mut resp_line).map_err(|e| {
+                YoutubeError::Media(format!("Failed to read MPV IPC response: {e}"))
+            })?;
 
             let val: Value = serde_json::from_str(&resp_line)
                 .map_err(|e| YoutubeError::Media(format!("Invalid MPV JSON response: {e}")))?;

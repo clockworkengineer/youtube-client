@@ -170,14 +170,18 @@ impl MetadataCache {
             if let Ok(content) = std::fs::read_to_string(&path_buf) {
                 if let Ok(data) = serde_json::from_str::<PersistentCacheData>(&content) {
                     for item in data.videos {
-                        cache
-                            .videos
-                            .insert_with_epoch(item.key, item.value, item.expires_at_epoch_secs);
+                        cache.videos.insert_with_epoch(
+                            item.key,
+                            item.value,
+                            item.expires_at_epoch_secs,
+                        );
                     }
                     for item in data.channels {
-                        cache
-                            .channels
-                            .insert_with_epoch(item.key, item.value, item.expires_at_epoch_secs);
+                        cache.channels.insert_with_epoch(
+                            item.key,
+                            item.value,
+                            item.expires_at_epoch_secs,
+                        );
                     }
                 }
             }

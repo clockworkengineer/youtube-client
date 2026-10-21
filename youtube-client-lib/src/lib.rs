@@ -142,7 +142,9 @@ mod tests {
         let playlist_err = client.create_playlist("Test PL", None).await;
         match playlist_err {
             Err(YoutubeError::AuthenticationRequired(_)) => {}
-            other => panic!("Expected AuthenticationRequired error for create_playlist, got: {other:?}"),
+            other => {
+                panic!("Expected AuthenticationRequired error for create_playlist, got: {other:?}")
+            }
         }
     }
 

@@ -234,23 +234,24 @@ pub struct VlcPlayer {
 
 impl VlcPlayer {
     pub fn new() -> Self {
-        let mut candidates = vec![PathBuf::from("vlc")];
-
         #[cfg(target_os = "windows")]
-        {
-            candidates.push(PathBuf::from("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"));
-            candidates.push(PathBuf::from(
-                "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe",
-            ));
-        }
+        let candidates = [
+            PathBuf::from("vlc"),
+            PathBuf::from("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"),
+            PathBuf::from("C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe"),
+        ];
 
         #[cfg(target_os = "macos")]
-        {
-            candidates.push(PathBuf::from("/Applications/VLC.app/Contents/MacOS/VLC"));
-        }
+        let candidates = [
+            PathBuf::from("vlc"),
+            PathBuf::from("/Applications/VLC.app/Contents/MacOS/VLC"),
+        ];
+
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let candidates = [PathBuf::from("vlc")];
 
         let mut found = None;
-        for c in candidates {
+        for c in &candidates {
             if let Some(path) = find_executable(&c.to_string_lossy()) {
                 found = Some(path);
                 break;

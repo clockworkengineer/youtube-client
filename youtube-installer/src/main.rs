@@ -6,7 +6,7 @@ mod platform;
 mod prompt;
 
 use builder::build_release_binaries;
-use config_writer::setup_global_config;
+use config_writer::{get_global_config_dir, setup_global_config};
 use platform::{configure_platform_environment, remove_platform_environment};
 use prompt::{get_default_install_dir, prompt};
 
@@ -167,7 +167,7 @@ fn main() -> anyhow::Result<()> {
             println!("✓ PNG icon found: {}", png_file.display());
         }
 
-        if let Some(config_dir) = youtube_client_lib::get_global_config_dir() {
+        if let Some(config_dir) = get_global_config_dir() {
             let config_file = config_dir.join("config.json");
             if config_file.exists() {
                 println!("✓ Global configuration found: {}", config_file.display());

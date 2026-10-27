@@ -1,5 +1,31 @@
+use std::path::PathBuf;
+
+pub fn get_global_config_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA")
+            .map(|appdata| PathBuf::from(appdata).join("youtube-client"))
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|home| {
+            PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("youtube-client")
+        })
+    } else {
+        if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+            Some(PathBuf::from(xdg).join("youtube-client"))
+        } else {
+            std::env::var_os("HOME").map(|home| {
+                PathBuf::from(home)
+                    .join(".config")
+                    .join("youtube-client")
+            })
+        }
+    }
+}
+
 pub fn setup_global_config() -> anyhow::Result<()> {
-    if let Some(config_dir) = youtube_client_lib::get_global_config_dir() {
+    if let Some(config_dir) = get_global_config_dir() {
         std::fs::create_dir_all(&config_dir)?;
         let config_file = config_dir.join("config.json");
         if !config_file.exists() {

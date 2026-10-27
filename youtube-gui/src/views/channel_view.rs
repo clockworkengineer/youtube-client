@@ -14,8 +14,8 @@ pub fn render_channel_view(
     channel_id: &str,
     channel_title: &str,
     channel_description: &str,
-    videos: &Option<Result<Vec<Video>, String>>,
-    subscriptions: &Option<Result<Vec<Subscription>, String>>,
+    videos: &Option<Result<Arc<Vec<Video>>, String>>,
+    subscriptions: &Option<Result<Arc<Vec<Subscription>>, String>>,
 ) -> Option<PendingAction> {
     let mut action = None;
 
@@ -105,7 +105,7 @@ pub fn render_channel_view(
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for video in vids {
+                        for video in vids.iter() {
                             let mut card_action = PendingAction::None;
                             draw_video_card(
                                 state,

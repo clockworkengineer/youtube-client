@@ -10,7 +10,7 @@ pub fn render_playlists_view(
     http_client: &reqwest::Client,
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    playlists: &Option<Result<Vec<Playlist>, String>>,
+    playlists: &Option<Result<Arc<Vec<Playlist>>, String>>,
     title_input: &mut String,
     desc_input: &mut String,
 ) -> Option<PendingAction> {
@@ -97,7 +97,7 @@ pub fn render_playlists_view(
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for list in lists {
+                        for list in lists.iter() {
                             ui.push_id(&list.id, |ui| {
                                 let texture = get_or_fetch_thumbnail(
                                     state,

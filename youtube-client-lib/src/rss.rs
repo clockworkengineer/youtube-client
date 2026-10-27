@@ -12,6 +12,47 @@ use reqwest::Client;
 
 use crate::models::Video;
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum AtomTag {
+    Feed,
+    Entry,
+    Author,
+    MediaThumbnail,
+    YtVideoId,
+    Id,
+    Title,
+    MediaTitle,
+    Description,
+    MediaDescription,
+    Published,
+    Name,
+    Other,
+}
+
+#[inline]
+fn classify_tag(name: &[u8]) -> AtomTag {
+    match name {
+        b"feed" => AtomTag::Feed,
+        b"entry" => AtomTag::Entry,
+        b"author" => AtomTag::Author,
+        b"yt:videoId" | b"videoId" => AtomTag::YtVideoId,
+        b"id" => AtomTag::Id,
+        b"title" => AtomTag::Title,
+        b"media:title" => AtomTag::MediaTitle,
+        b"media:description" => AtomTag::MediaDescription,
+        b"description" => AtomTag::Description,
+        b"published" => AtomTag::Published,
+        b"name" => AtomTag::Name,
+        _ if name == b"media:thumbnail"
+            || name == b"thumbnail"
+            || name.ends_with(b":thumbnail") =>
+        {
+            AtomTag::MediaThumbnail
+        }
+        _ => AtomTag::Other,
+    }
+}
+
 /// Parse a YouTube channel Atom/RSS XML feed string into a list of [`Video`] items using `quick-xml`.
 pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, String> {
     let mut reader = Reader::from_str(xml);
@@ -20,7 +61,7 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
     let mut videos = Vec::new();
     let mut in_entry = false;
     let mut in_author = false;
-    let mut tag_stack: Vec<String> = Vec::new();
+    let mut tag_stack: Vec<AtomTag> = Vec::with_capacity(16);
 
     let mut current_id = String::new();
     let mut current_yt_id = String::new();
@@ -34,41 +75,38 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
     loop {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                if name == "entry" {
-                    in_entry = true;
-                    current_id.clear();
-                    current_yt_id.clear();
-                    current_title.clear();
-                    current_media_title.clear();
-                    current_description.clear();
-                    current_published.clear();
-                    current_channel_title.clear();
-                    current_thumbnail_url.clear();
-                } else if in_entry && name == "author" {
-                    in_author = true;
-                } else if in_entry
-                    && (name == "media:thumbnail"
-                        || name.ends_with(":thumbnail")
-                        || name == "thumbnail")
-                {
-                    for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"url" {
-                            if let Ok(val) = attr.decode_and_unescape_value(reader.decoder()) {
-                                current_thumbnail_url = val.to_string();
+                let tag = classify_tag(e.name().as_ref());
+                match tag {
+                    AtomTag::Entry => {
+                        in_entry = true;
+                        current_id.clear();
+                        current_yt_id.clear();
+                        current_title.clear();
+                        current_media_title.clear();
+                        current_description.clear();
+                        current_published.clear();
+                        current_channel_title.clear();
+                        current_thumbnail_url.clear();
+                    }
+                    AtomTag::Author if in_entry => {
+                        in_author = true;
+                    }
+                    AtomTag::MediaThumbnail if in_entry => {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"url" {
+                                if let Ok(val) = attr.decode_and_unescape_value(reader.decoder()) {
+                                    current_thumbnail_url = val.to_string();
+                                }
                             }
                         }
                     }
+                    _ => {}
                 }
-                tag_stack.push(name);
+                tag_stack.push(tag);
             }
             Ok(Event::Empty(e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                if in_entry
-                    && (name == "media:thumbnail"
-                        || name.ends_with(":thumbnail")
-                        || name == "thumbnail")
-                {
+                let tag = classify_tag(e.name().as_ref());
+                if in_entry && tag == AtomTag::MediaThumbnail {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"url" {
                             if let Ok(val) = attr.decode_and_unescape_value(reader.decoder()) {
@@ -81,15 +119,28 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
             Ok(Event::Text(e)) => {
                 if in_entry {
                     if let Some(tag) = tag_stack.last() {
-                        let text = e.unescape().map_err(|err| err.to_string())?.to_string();
-                        match tag.as_str() {
-                            "yt:videoId" | "videoId" => current_yt_id = text,
-                            "id" => current_id = text,
-                            "title" => current_title = text,
-                            "media:title" => current_media_title = text,
-                            "media:description" | "description" => current_description = text,
-                            "published" => current_published = text,
-                            "name" if in_author => current_channel_title = text,
+                        match tag {
+                            AtomTag::YtVideoId => {
+                                current_yt_id = e.unescape().map_err(|err| err.to_string())?.to_string();
+                            }
+                            AtomTag::Id => {
+                                current_id = e.unescape().map_err(|err| err.to_string())?.to_string();
+                            }
+                            AtomTag::Title => {
+                                current_title = e.unescape().map_err(|err| err.to_string())?.to_string();
+                            }
+                            AtomTag::MediaTitle => {
+                                current_media_title = e.unescape().map_err(|err| err.to_string())?.to_string();
+                            }
+                            AtomTag::Description | AtomTag::MediaDescription => {
+                                current_description = e.unescape().map_err(|err| err.to_string())?.to_string();
+                            }
+                            AtomTag::Published => {
+                                current_published = e.unescape().map_err(|err| err.to_string())?.to_string();
+                            }
+                            AtomTag::Name if in_author => {
+                                current_channel_title = e.unescape().map_err(|err| err.to_string())?.to_string();
+                            }
                             _ => {}
                         }
                     }
@@ -99,39 +150,39 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
                 if in_entry {
                     if let Some(tag) = tag_stack.last() {
                         let text = String::from_utf8_lossy(&e.into_inner()).to_string();
-                        match tag.as_str() {
-                            "yt:videoId" | "videoId" => current_yt_id = text,
-                            "id" => current_id = text,
-                            "title" => current_title = text,
-                            "media:title" => current_media_title = text,
-                            "media:description" | "description" => current_description = text,
-                            "published" => current_published = text,
-                            "name" if in_author => current_channel_title = text,
+                        match tag {
+                            AtomTag::YtVideoId => current_yt_id = text,
+                            AtomTag::Id => current_id = text,
+                            AtomTag::Title => current_title = text,
+                            AtomTag::MediaTitle => current_media_title = text,
+                            AtomTag::Description | AtomTag::MediaDescription => current_description = text,
+                            AtomTag::Published => current_published = text,
+                            AtomTag::Name if in_author => current_channel_title = text,
                             _ => {}
                         }
                     }
                 }
             }
             Ok(Event::End(e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                if name == "entry" {
+                let tag = classify_tag(e.name().as_ref());
+                if tag == AtomTag::Entry {
                     in_entry = false;
                     let video_id = if !current_yt_id.is_empty() {
-                        current_yt_id.clone()
+                        std::mem::take(&mut current_yt_id)
                     } else if let Some(stripped) = current_id.strip_prefix("yt:video:") {
                         stripped.to_string()
                     } else {
-                        current_id.clone()
+                        std::mem::take(&mut current_id)
                     };
 
                     if !video_id.is_empty() {
                         let title = if !current_title.is_empty() {
-                            current_title.clone()
+                            std::mem::take(&mut current_title)
                         } else {
-                            current_media_title.clone()
+                            std::mem::take(&mut current_media_title)
                         };
                         let thumbnail_url = if !current_thumbnail_url.is_empty() {
-                            current_thumbnail_url.clone()
+                            std::mem::take(&mut current_thumbnail_url)
                         } else {
                             format!("https://i.ytimg.com/vi/{video_id}/hqdefault.jpg")
                         };
@@ -139,22 +190,22 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
                         videos.push(Video {
                             id: video_id,
                             title,
-                            description: current_description.clone(),
-                            published_at: current_published.clone(),
+                            description: std::mem::take(&mut current_description),
+                            published_at: std::mem::take(&mut current_published),
                             channel_title: current_channel_title.clone(),
                             thumbnail_url,
                         });
                     }
-                } else if name == "author" {
+                } else if tag == AtomTag::Author {
                     in_author = false;
                 }
-                if let Some(pos) = tag_stack.iter().rposition(|t| t == &name) {
+                if let Some(pos) = tag_stack.iter().rposition(|t| *t == tag) {
                     tag_stack.truncate(pos);
                 }
             }
             Ok(Event::Eof) => {
                 if !tag_stack.is_empty() {
-                    return Err(format!("Unclosed XML tags at EOF: {tag_stack:?}"));
+                    return Err(format!("Unclosed XML tags at EOF (count: {})", tag_stack.len()));
                 }
                 break;
             }

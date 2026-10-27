@@ -9,10 +9,10 @@ use crate::views::get_or_fetch_thumbnail;
 /// Encapsulated view context for rendering video details, eliminating parameter sprawl (ISP & Clean Architecture).
 pub struct VideoDetailsContext<'a> {
     pub video: &'a Video,
-    pub details: &'a Option<Result<VideoDetails, String>>,
-    pub comments: &'a Option<Result<Vec<Comment>, String>>,
+    pub details: &'a Option<Result<Arc<VideoDetails>, String>>,
+    pub comments: &'a Option<Result<Arc<Vec<Comment>>, String>>,
     pub player_state: &'a PlayerState,
-    pub playlists: &'a Option<Result<Vec<Playlist>, String>>,
+    pub playlists: &'a Option<Result<Arc<Vec<Playlist>>, String>>,
     pub playlist_action_status: &'a Option<Result<String, String>>,
     pub comment_input: &'a mut String,
 }
@@ -539,7 +539,7 @@ pub fn render_details_view(
                         egui::ComboBox::from_id_source("add_to_playlist_cb")
                             .selected_text("Select Playlist...")
                             .show_ui(ui, |ui| {
-                                for playlist in items {
+                                for playlist in items.iter() {
                                     if ui.selectable_label(false, &playlist.title).clicked() {
                                         action = Some(PendingAction::AddToPlaylist {
                                             playlist_id: playlist.id.clone(),
@@ -625,7 +625,7 @@ pub fn render_details_view(
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for comment in items {
+                        for comment in items.iter() {
                             ui.group(|ui| {
                                 ui.horizontal(|ui| {
                                     ui.vertical(|ui| {

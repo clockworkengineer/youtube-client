@@ -343,30 +343,59 @@ fn format_current_timestamp() -> String {
     format!("{y:04}-{m:02}-{d:02} {hour:02}:{min:02}:{sec:02}")
 }
 
-/// Append a line with a timestamp and prefix to a log file, creating any missing parent directories.
+static LOG_WRITERS: std::sync::Mutex<
+    Option<std::collections::HashMap<std::path::PathBuf, std::io::BufWriter<std::fs::File>>>,
+> = std::sync::Mutex::new(None);
+
+/// Append a line with a timestamp and prefix to a log file, caching open file handles to avoid repeated filesystem opens.
 pub fn append_to_log(path: &Path, prefix: &str, message: &str) {
+    append_lines_to_log(path, prefix, &[message]);
+}
+
+/// Append multiple lines to a log file in a single buffered operation.
+pub fn append_lines_to_log(path: &Path, prefix: &str, lines: &[&str]) {
+    if lines.is_empty() {
+        return;
+    }
     use std::fs::OpenOptions;
     use std::io::Write;
 
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            let _ = std::fs::create_dir_all(parent);
+    let now = format_current_timestamp();
+    let mut payload = Vec::new();
+    for line in lines {
+        payload.extend_from_slice(format!("[{now}] [{prefix}] {line}\n").as_bytes());
+    }
+
+    let mut lock = LOG_WRITERS.lock().unwrap_or_else(|p| p.into_inner());
+    let map = lock.get_or_insert_with(std::collections::HashMap::new);
+    if let std::collections::hash_map::Entry::Vacant(v) = map.entry(path.to_path_buf()) {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+        if let Ok(file) = OpenOptions::new().create(true).append(true).open(path) {
+            v.insert(std::io::BufWriter::new(file));
         }
     }
 
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let now = format_current_timestamp();
-        let _ = writeln!(file, "[{now}] [{prefix}] {message}");
+    if let Some(writer) = map.get_mut(path) {
+        if writer.write_all(&payload).and_then(|_| writer.flush()).is_err() {
+            map.remove(path);
+        }
     }
 }
 
 /// Query the public Return YouTube Dislike (RYD) API for estimated video dislike counts.
 pub async fn fetch_dislike_count(video_id: &str) -> Option<u64> {
+    static HTTP_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let client = HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(3))
+            .build()
+            .unwrap_or_default()
+    });
     let url = format!("https://returnyoutubedislikeapi.com/votes?videoId={video_id}");
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-        .ok()?;
     let resp = client.get(&url).send().await.ok()?;
     if resp.status().is_success() {
         #[derive(serde::Deserialize)]

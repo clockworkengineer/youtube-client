@@ -10,7 +10,7 @@ pub fn render_subscriptions_view(
     http_client: &reqwest::Client,
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    subscriptions: &Option<Result<Vec<Subscription>, String>>,
+    subscriptions: &Option<Result<Arc<Vec<Subscription>>, String>>,
     filter_input: &mut String,
 ) -> Option<PendingAction> {
     let mut action = None;

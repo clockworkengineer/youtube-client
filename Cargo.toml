@@ -23,9 +23,9 @@ clap_complete = "4.5"
 eframe = "0.26.2"
 egui = "0.26.2"
 google-youtube3 = "7.0.0"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
 open = "5.4.0"
-reqwest = { version = "0.12", default-features = false, features = ["json", "default-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
 rodio = "0.22.2"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.137"
@@ -47,7 +47,7 @@ collapsible_else_if = "warn"
 uninlined_format_args = "warn"
 
 [profile.release]
-opt-level = "s"
+opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"

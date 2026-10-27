@@ -10,7 +10,7 @@ readme = "README.md"
 [dependencies]
 eframe.workspace = true
 egui.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs"] }
 youtube-client-lib = { workspace = true, features = ["full"] }
 anyhow.workspace = true
 serde = { workspace = true, features = ["derive"] }

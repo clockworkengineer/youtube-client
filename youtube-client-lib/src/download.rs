@@ -502,15 +502,20 @@ where
             }
             err_buf.extend_from_slice(&temp_err[..n]);
             line_buf.extend_from_slice(&temp_err[..n]);
+            let mut batch: Vec<String> = Vec::new();
             while let Some(pos) = line_buf.iter().position(|&b| b == b'\n' || b == b'\r') {
                 let line_bytes = &line_buf[..pos];
                 if let Ok(line_str) = std::str::from_utf8(line_bytes) {
                     let trimmed = line_str.trim();
                     if !trimmed.is_empty() {
-                        crate::utils::append_to_log(&log_path_clone, "STDERR", trimmed);
+                        batch.push(trimmed.to_string());
                     }
                 }
                 line_buf.drain(..pos + 1);
+            }
+            if !batch.is_empty() {
+                let batch_refs: Vec<&str> = batch.iter().map(|s| s.as_str()).collect();
+                crate::utils::append_lines_to_log(&log_path_clone, "STDERR", &batch_refs);
             }
         }
         if !line_buf.is_empty() {

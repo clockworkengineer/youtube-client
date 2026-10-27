@@ -49,15 +49,16 @@ pub fn draw_video_card_with_dismiss(
     ui.push_id(&video.id, |ui| {
         let texture =
             get_or_fetch_thumbnail(state, http_client, ctx, &video.id, &video.thumbnail_url);
-        let (download_status, player_state, playback_progress) = {
+        let (download_status, is_playing, playback_progress) = {
             let s_lock = state.lock().unwrap();
+            let is_playing = s_lock.player_state.playing && s_lock.player_state.current_title == video.title;
             (
                 s_lock
                     .downloads
                     .get(&video.id)
                     .cloned()
                     .unwrap_or(DownloadStatus::NotStarted),
-                s_lock.player_state.clone(),
+                is_playing,
                 s_lock.playback_positions.get(&video.id).cloned(),
             )
         };
@@ -201,8 +202,6 @@ pub fn draw_video_card_with_dismiss(
                                 .unwrap_or(false);
 
                             if is_mp3 {
-                                let is_playing = player_state.playing
-                                    && player_state.current_title == video.title;
                                 if is_playing {
                                     if ui
                                         .button(

@@ -44,17 +44,23 @@ pub fn handle_library_action(
                 s_lock.cleared_video_ids.insert(id);
             }
             let cleared_path = s_lock.cleared_videos_path.clone();
-            let _ = save_string_set_to_file(&cleared_path, &s_lock.cleared_video_ids);
-            s_lock.new_videos = Some(Ok(Vec::new()));
+            let set_to_save = s_lock.cleared_video_ids.clone();
+            std::thread::spawn(move || {
+                let _ = save_string_set_to_file(&cleared_path, &set_to_save);
+            });
+            s_lock.new_videos = Some(Ok(Arc::new(Vec::new())));
             true
         }
         PendingAction::DismissNewVideo { video_id } => {
             let mut s_lock = state.lock().unwrap();
             s_lock.cleared_video_ids.insert(video_id.clone());
             let cleared_path = s_lock.cleared_videos_path.clone();
-            let _ = save_string_set_to_file(&cleared_path, &s_lock.cleared_video_ids);
+            let set_to_save = s_lock.cleared_video_ids.clone();
+            std::thread::spawn(move || {
+                let _ = save_string_set_to_file(&cleared_path, &set_to_save);
+            });
             if let Some(Ok(ref mut vids)) = s_lock.new_videos {
-                vids.retain(|v| v.id != *video_id);
+                Arc::make_mut(vids).retain(|v| v.id != *video_id);
             }
             true
         }
@@ -63,7 +69,10 @@ pub fn handle_library_action(
                 let mut s_lock = state.lock().unwrap();
                 s_lock.cleared_video_ids.clear();
                 let cleared_path = s_lock.cleared_videos_path.clone();
-                let _ = save_string_set_to_file(&cleared_path, &s_lock.cleared_video_ids);
+                let set_to_save = s_lock.cleared_video_ids.clone();
+                std::thread::spawn(move || {
+                    let _ = save_string_set_to_file(&cleared_path, &set_to_save);
+                });
                 s_lock.new_videos = None;
             }
             spawn_fetch_new_videos(state.clone(), ctx.clone());
@@ -292,7 +301,7 @@ pub fn handle_library_action(
                         s_lock.set_toast("No channels found in file.", true);
                     } else {
                         let mut current = match s_lock.subscriptions.take() {
-                            Some(Ok(subs)) => subs,
+                            Some(Ok(subs)) => Arc::unwrap_or_clone(subs),
                             _ => Vec::new(),
                         };
                         for imp in imported {
@@ -306,7 +315,7 @@ pub fn handle_library_action(
                                 });
                             }
                         }
-                        s_lock.subscriptions = Some(Ok(current));
+                        s_lock.subscriptions = Some(Ok(Arc::new(current)));
                         s_lock.set_toast(
                             format!(
                                 "Imported {count} subscriptions from {}",

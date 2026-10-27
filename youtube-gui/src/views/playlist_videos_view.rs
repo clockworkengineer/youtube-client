@@ -13,7 +13,7 @@ pub fn render_playlist_videos_view(
     ctx: &egui::Context,
     playlist_id: &str,
     playlist_title: &str,
-    videos: &Option<Result<Vec<Video>, String>>,
+    videos: &Option<Result<Arc<Vec<Video>>, String>>,
 ) -> Option<PendingAction> {
     let mut action = None;
 
@@ -61,7 +61,7 @@ pub fn render_playlist_videos_view(
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for video in vids {
+                        for video in vids.iter() {
                             let mut card_action = PendingAction::None;
                             draw_video_card(
                                 state,

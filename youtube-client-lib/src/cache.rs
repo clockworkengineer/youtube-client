@@ -7,40 +7,60 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::models::{ChannelDetails, VideoDetails};
 
 #[derive(Clone)]
 struct CacheEntry<V> {
-    value: V,
+    value: Arc<V>,
     expires_at: Instant,
     expires_at_epoch_secs: u64,
 }
 
-/// Generic, thread-safe in-memory cache with time-to-live expiration.
+/// Generic, thread-safe in-memory cache with time-to-live expiration and bounded capacity.
 pub struct TtlCache<K, V> {
     entries: RwLock<HashMap<K, CacheEntry<V>>>,
     default_ttl: Duration,
+    max_capacity: usize,
 }
 
 impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
-    /// Create a new TTL cache with the specified default time-to-live duration.
+    /// Default maximum capacity for in-memory cache entries.
+    pub const DEFAULT_MAX_CAPACITY: usize = 1000;
+
+    /// Create a new TTL cache with the specified default time-to-live duration and default capacity (1000).
     pub fn new(default_ttl: Duration) -> Self {
+        Self::with_capacity(default_ttl, Self::DEFAULT_MAX_CAPACITY)
+    }
+
+    /// Create a new TTL cache with the specified default time-to-live duration and maximum capacity limit.
+    pub fn with_capacity(default_ttl: Duration, max_capacity: usize) -> Self {
         Self {
             entries: RwLock::new(HashMap::new()),
             default_ttl,
+            max_capacity,
         }
     }
 
     /// Insert an item into the cache with the default TTL.
     pub fn insert(&self, key: K, value: V) {
-        self.insert_with_ttl(key, value, self.default_ttl);
+        self.insert_arc_with_ttl(key, Arc::new(value), self.default_ttl);
+    }
+
+    /// Insert an Arc-wrapped item into the cache with the default TTL.
+    pub fn insert_arc(&self, key: K, value: Arc<V>) {
+        self.insert_arc_with_ttl(key, value, self.default_ttl);
     }
 
     /// Insert an item into the cache with a custom TTL.
     pub fn insert_with_ttl(&self, key: K, value: V, ttl: Duration) {
+        self.insert_arc_with_ttl(key, Arc::new(value), ttl);
+    }
+
+    /// Insert an Arc-wrapped item into the cache with a custom TTL.
+    pub fn insert_arc_with_ttl(&self, key: K, value: Arc<V>, ttl: Duration) {
         let epoch_now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -51,11 +71,17 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
             expires_at_epoch_secs: epoch_now + ttl.as_secs(),
         };
         let mut map = self.entries.write().unwrap();
+        self.ensure_capacity(&mut map);
         map.insert(key, entry);
     }
 
     /// Insert an item with an explicit UNIX epoch expiration timestamp.
     pub fn insert_with_epoch(&self, key: K, value: V, expires_at_epoch_secs: u64) {
+        self.insert_arc_with_epoch(key, Arc::new(value), expires_at_epoch_secs);
+    }
+
+    /// Insert an Arc-wrapped item with an explicit UNIX epoch expiration timestamp.
+    pub fn insert_arc_with_epoch(&self, key: K, value: Arc<V>, expires_at_epoch_secs: u64) {
         let epoch_now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -69,12 +95,29 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
                 expires_at_epoch_secs,
             };
             let mut map = self.entries.write().unwrap();
+            self.ensure_capacity(&mut map);
             map.insert(key, entry);
         }
     }
 
-    /// Retrieve a cloned value from the cache if it exists and has not expired.
-    pub fn get(&self, key: &K) -> Option<V> {
+    fn ensure_capacity(&self, map: &mut HashMap<K, CacheEntry<V>>) {
+        if map.len() >= self.max_capacity {
+            let now = Instant::now();
+            map.retain(|_, entry| entry.expires_at > now);
+            if map.len() >= self.max_capacity {
+                if let Some(oldest_key) = map
+                    .iter()
+                    .min_by_key(|(_, e)| e.expires_at)
+                    .map(|(k, _)| k.clone())
+                {
+                    map.remove(&oldest_key);
+                }
+            }
+        }
+    }
+
+    /// Retrieve an Arc-wrapped value from the cache if it exists and has not expired.
+    pub fn get_arc(&self, key: &K) -> Option<Arc<V>> {
         let now = Instant::now();
         let map = self.entries.read().unwrap();
         if let Some(entry) = map.get(key) {
@@ -85,10 +128,15 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
         None
     }
 
+    /// Retrieve a cloned value from the cache if it exists and has not expired.
+    pub fn get(&self, key: &K) -> Option<V> {
+        self.get_arc(key).map(|v| (*v).clone())
+    }
+
     /// Explicitly remove an entry from the cache.
     pub fn remove(&self, key: &K) -> Option<V> {
         let mut map = self.entries.write().unwrap();
-        map.remove(key).map(|e| e.value)
+        map.remove(key).map(|e| (*e.value).clone())
     }
 
     /// Clear all entries from the cache.
@@ -105,7 +153,7 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
     }
 
     /// Export unexpired entries along with their expiration epoch timestamps.
-    pub fn export_entries(&self) -> Vec<(K, V, u64)> {
+    pub fn export_entries(&self) -> Vec<(K, Arc<V>, u64)> {
         let now = Instant::now();
         let map = self.entries.read().unwrap();
         map.iter()
@@ -202,7 +250,7 @@ impl MetadataCache {
             .into_iter()
             .map(|(key, value, expires_at_epoch_secs)| PersistentItem {
                 key,
-                value,
+                value: (*value).clone(),
                 expires_at_epoch_secs,
             })
             .collect();
@@ -213,7 +261,7 @@ impl MetadataCache {
             .into_iter()
             .map(|(key, value, expires_at_epoch_secs)| PersistentItem {
                 key,
-                value,
+                value: (*value).clone(),
                 expires_at_epoch_secs,
             })
             .collect();
@@ -230,10 +278,20 @@ impl MetadataCache {
 
     /// Store video details in the cache.
     pub fn set_video(&self, video_id: impl Into<String>, details: VideoDetails) {
-        self.videos.insert(video_id.into(), details);
+        self.set_video_arc(video_id, Arc::new(details));
+    }
+
+    /// Store Arc-wrapped video details in the cache.
+    pub fn set_video_arc(&self, video_id: impl Into<String>, details: Arc<VideoDetails>) {
+        self.videos.insert_arc(video_id.into(), details);
         if self.persistence_path.is_some() {
             let _ = self.flush();
         }
+    }
+
+    /// Retrieve Arc-wrapped video details from the cache if not expired.
+    pub fn get_video_arc(&self, video_id: &str) -> Option<Arc<VideoDetails>> {
+        self.videos.get_arc(&video_id.to_string())
     }
 
     /// Retrieve video details from the cache if not expired.
@@ -243,10 +301,20 @@ impl MetadataCache {
 
     /// Store channel details in the cache.
     pub fn set_channel(&self, channel_id: impl Into<String>, details: ChannelDetails) {
-        self.channels.insert(channel_id.into(), details);
+        self.set_channel_arc(channel_id, Arc::new(details));
+    }
+
+    /// Store Arc-wrapped channel details in the cache.
+    pub fn set_channel_arc(&self, channel_id: impl Into<String>, details: Arc<ChannelDetails>) {
+        self.channels.insert_arc(channel_id.into(), details);
         if self.persistence_path.is_some() {
             let _ = self.flush();
         }
+    }
+
+    /// Retrieve Arc-wrapped channel details from the cache if not expired.
+    pub fn get_channel_arc(&self, channel_id: &str) -> Option<Arc<ChannelDetails>> {
+        self.channels.get_arc(&channel_id.to_string())
     }
 
     /// Retrieve channel details from the cache if not expired.
@@ -308,6 +376,17 @@ mod tests {
         cache.prune_expired();
         assert_eq!(cache.len(), 1);
         assert_eq!(cache.get(&"k2".to_string()), Some(2));
+    }
+    #[test]
+    fn test_ttl_cache_capacity_bound() {
+        let cache = TtlCache::with_capacity(Duration::from_secs(60), 3);
+        cache.insert("k1".to_string(), 1);
+        cache.insert("k2".to_string(), 2);
+        cache.insert("k3".to_string(), 3);
+        assert_eq!(cache.len(), 3);
+        cache.insert("k4".to_string(), 4);
+        assert!(cache.len() <= 3);
+        assert_eq!(cache.get(&"k4".to_string()), Some(4));
     }
 
     #[test]

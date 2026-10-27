@@ -20,24 +20,24 @@ pub enum View {
         channel_id: String,
         channel_title: String,
         channel_description: String,
-        videos: Option<Result<Vec<Video>, String>>,
+        videos: Option<Result<Arc<Vec<Video>>, String>>,
     },
     SearchResults {
         query: String,
-        videos: Option<Result<Vec<Video>, String>>,
+        videos: Option<Result<Arc<Vec<Video>>, String>>,
     },
     Playlists {
-        playlists: Option<Result<Vec<Playlist>, String>>,
+        playlists: Option<Result<Arc<Vec<Playlist>>, String>>,
     },
     PlaylistVideos {
         playlist_id: String,
         playlist_title: String,
-        videos: Option<Result<Vec<Video>, String>>,
+        videos: Option<Result<Arc<Vec<Video>>, String>>,
     },
     VideoDetails {
         video: Video,
-        details: Option<Result<VideoDetails, String>>,
-        comments: Option<Result<Vec<Comment>, String>>,
+        details: Option<Result<Arc<VideoDetails>, String>>,
+        comments: Option<Result<Arc<Vec<Comment>>, String>>,
     },
     Settings,
     About,
@@ -82,8 +82,8 @@ pub enum PlayerCommand {
 }
 
 pub struct AppState {
-    pub subscriptions: Option<Result<Vec<Subscription>, String>>,
-    pub new_videos: Option<Result<Vec<Video>, String>>,
+    pub subscriptions: Option<Result<Arc<Vec<Subscription>>, String>>,
+    pub new_videos: Option<Result<Arc<Vec<Video>>, String>>,
     pub cleared_video_ids: HashSet<String>,
     pub thumbnails: HashMap<String, Thumbnail>,
     pub thumbnail_lru: VecDeque<String>,
@@ -93,7 +93,7 @@ pub struct AppState {
     pub login_error: Option<String>,
     pub downloads: HashMap<String, DownloadStatus>,
     pub player_state: PlayerState,
-    pub playlists: Option<Result<Vec<Playlist>, String>>,
+    pub playlists: Option<Result<Arc<Vec<Playlist>>, String>>,
     pub playlist_action_status: Option<Result<String, String>>,
     pub downloads_dir: PathBuf,
     pub log_file: PathBuf,
@@ -103,6 +103,7 @@ pub struct AppState {
     pub quota_tracker: Arc<youtube_client_lib::QuotaTracker>,
     pub quota_path: PathBuf,
     pub mock_backend: Option<youtube_client_lib::MockYoutubeClient>,
+    pub cached_backend: Option<youtube_client_lib::YoutubeBackend>,
     pub toast: Option<(String, std::time::Instant, bool)>,
 }
 
@@ -117,10 +118,14 @@ impl AppState {
     pub const MAX_THUMBNAILS: usize = 150;
 
     pub fn save_playback_positions(&self) {
-        let _ = youtube_client_lib::utils::save_playback_positions_to_file(
-            &self.playback_positions_path,
-            &self.playback_positions,
-        );
+        let path = self.playback_positions_path.clone();
+        let positions = self.playback_positions.clone();
+        std::thread::spawn(move || {
+            let _ = youtube_client_lib::utils::save_playback_positions_to_file(
+                &path,
+                &positions,
+            );
+        });
     }
 
     pub fn set_toast(&mut self, message: impl Into<String>, is_error: bool) {

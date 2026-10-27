@@ -25,6 +25,7 @@ pub fn handle_auth_action(
                 let _ = std::fs::remove_file(&token_path);
             }
             let mut s_lock = state.lock().unwrap();
+            s_lock.cached_backend = None;
             s_lock.subscriptions = None;
             s_lock.new_videos = None;
             s_lock.playlists = None;

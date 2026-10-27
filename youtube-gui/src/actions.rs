@@ -6,12 +6,14 @@ use youtube_client_lib::{Comment, Video, VideoDetails, YoutubeBackend, YoutubeCl
 use crate::types::{AppState, View};
 
 pub async fn get_client_async(state: &Arc<Mutex<AppState>>) -> Result<YoutubeBackend, String> {
-    let mock_opt = {
+    {
         let s = state.lock().unwrap();
-        s.mock_backend.clone()
-    };
-    if let Some(mock) = mock_opt {
-        return Ok(YoutubeBackend::mock(mock));
+        if let Some(mock) = &s.mock_backend {
+            return Ok(YoutubeBackend::mock(mock.clone()));
+        }
+        if let Some(backend) = &s.cached_backend {
+            return Ok(backend.clone());
+        }
     }
 
     let (client_id, client_secret) =
@@ -48,7 +50,12 @@ pub async fn get_client_async(state: &Arc<Mutex<AppState>>) -> Result<YoutubeBac
         .await
         .map_err(|e| format!("Authentication failed: {e}"))?;
 
-    Ok(YoutubeBackend::live(client))
+    let backend = YoutubeBackend::live(client);
+    {
+        let mut s = state.lock().unwrap();
+        s.cached_backend = Some(backend.clone());
+    }
+    Ok(backend)
 }
 
 pub fn spawn_client_action<F, Fut, T>(
@@ -108,7 +115,7 @@ pub fn spawn_fetch_subscriptions(state: Arc<Mutex<AppState>>, ctx: egui::Context
         |res, s, ctx| {
             match res {
                 Ok(subs) => {
-                    s.subscriptions = Some(Ok(subs));
+                    s.subscriptions = Some(Ok(Arc::new(subs)));
                 }
                 Err(e) => {
                     s.subscriptions = Some(Err(e));
@@ -153,7 +160,7 @@ pub fn spawn_fetch_new_videos(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
             match res {
                 Ok(mut vids) => {
                     vids.retain(|v| !s.cleared_video_ids.contains(&v.id));
-                    s.new_videos = Some(Ok(vids));
+                    s.new_videos = Some(Ok(Arc::new(vids)));
                 }
                 Err(e) => {
                     s.new_videos = Some(Err(e));
@@ -174,6 +181,7 @@ pub fn spawn_login_and_auth(
         let mut s = state.lock().unwrap();
         s.logging_in = true;
         s.login_error = None;
+        s.cached_backend = None;
     }
     let state_clone = state.clone();
     let ctx_clone = ctx.clone();
@@ -212,6 +220,7 @@ pub fn spawn_login_and_auth(
         s.logging_in = false;
         match res {
             Ok(_) => {
+                s.cached_backend = None;
                 s.current_view = View::Subscriptions;
                 s.subscriptions = None;
                 drop(s);
@@ -230,6 +239,7 @@ pub fn spawn_default_login(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
         let mut s = state.lock().unwrap();
         s.logging_in = true;
         s.login_error = None;
+        s.cached_backend = None;
     }
     let state_clone = state.clone();
     let ctx_clone = ctx.clone();
@@ -264,6 +274,7 @@ pub fn spawn_default_login(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
         s.logging_in = false;
         match res {
             Ok(_) => {
+                s.cached_backend = None;
                 s.current_view = View::Subscriptions;
                 s.subscriptions = None;
                 drop(s);
@@ -403,7 +414,7 @@ pub fn fetch_videos(
                         channel_id: channel_id_clone,
                         channel_title: current_title.clone(),
                         channel_description: current_desc.clone(),
-                        videos: Some(res),
+                        videos: Some(res.map(Arc::new)),
                     };
                 }
             }
@@ -433,7 +444,7 @@ pub fn fetch_search_results(ctx: egui::Context, state: Arc<Mutex<AppState>>, que
                 if current_q == &query_clone {
                     s.current_view = View::SearchResults {
                         query: query_clone,
-                        videos: Some(res),
+                        videos: Some(res.map(Arc::new)),
                     };
                 }
             }
@@ -454,10 +465,10 @@ pub fn spawn_fetch_playlists(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
                 .map_err(|e| format!("Failed to fetch playlists: {e}"))
         },
         |res, s, ctx| {
-            s.playlists = Some(res.clone());
+            s.playlists = Some(res.clone().map(Arc::new));
             if let View::Playlists { playlists: _ } = &s.current_view {
                 s.current_view = View::Playlists {
-                    playlists: Some(res),
+                    playlists: Some(res.map(Arc::new)),
                 };
             }
             ctx.request_repaint();
@@ -493,7 +504,7 @@ pub fn fetch_playlist_videos(
                     s.current_view = View::PlaylistVideos {
                         playlist_id: playlist_id_clone,
                         playlist_title: current_title.clone(),
-                        videos: Some(res),
+                        videos: Some(res.map(Arc::new)),
                     };
                 }
             }
@@ -530,7 +541,7 @@ pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, vid
             {
                 if current_video.id == video_clone.id {
                     let (details, comments) = match res {
-                        Ok((d, c)) => (Some(d), Some(c)),
+                        Ok((d, c)) => (Some(d.map(Arc::new)), Some(c.map(Arc::new))),
                         Err(e) => (Some(Err(e.clone())), Some(Err(e))),
                     };
                     s.current_view = View::VideoDetails {
@@ -571,7 +582,7 @@ pub fn spawn_post_comment(
             {
                 if current_video.id == video_id_clone {
                     if let Ok(new_comment) = res {
-                        list.insert(0, new_comment);
+                        Arc::make_mut(list).insert(0, new_comment);
                     }
                 }
             }
@@ -599,7 +610,7 @@ pub fn spawn_create_playlist(
         move |res, s, ctx| {
             if let Ok(new_pl) = res {
                 if let Some(Ok(list)) = &mut s.playlists {
-                    list.insert(0, new_pl);
+                    Arc::make_mut(list).insert(0, new_pl);
                 }
             }
             ctx.request_repaint();
@@ -622,7 +633,7 @@ pub fn spawn_delete_playlist(state: Arc<Mutex<AppState>>, ctx: egui::Context, pl
         move |res, s, ctx| {
             if res.is_ok() {
                 if let Some(Ok(list)) = &mut s.playlists {
-                    list.retain(|p| p.id != pid_clone);
+                    Arc::make_mut(list).retain(|p| p.id != pid_clone);
                 }
             }
             ctx.request_repaint();
@@ -749,21 +760,27 @@ pub fn fetch_thumbnail(
         let success = async {
             let cache_path = get_thumbnail_cache_path(&url);
             let bytes = if cache_path.exists() {
-                std::fs::read(&cache_path).ok()
+                tokio::fs::read(&cache_path).await.ok()
             } else {
                 let response = http_client.get(&url).send().await.ok()?;
-                let fetched = response.bytes().await.ok()?.to_vec();
+                let fetched = response.bytes().await.ok()?;
                 if let Some(parent) = cache_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
+                    let _ = tokio::fs::create_dir_all(parent).await;
                 }
-                let _ = std::fs::write(&cache_path, &fetched);
-                Some(fetched)
+                let _ = tokio::fs::write(&cache_path, &fetched).await;
+                Some(fetched.to_vec())
             }?;
 
-            let img = image::load_from_memory(&bytes).ok()?;
-            let size = [img.width() as _, img.height() as _];
-            let rgba = img.to_rgba8();
-            let pixels = rgba.into_raw();
+            let (size, pixels) = tokio::task::spawn_blocking(move || {
+                let img = image::load_from_memory(&bytes).ok()?;
+                let size = [img.width() as usize, img.height() as usize];
+                let rgba = img.to_rgba8();
+                Some((size, rgba.into_raw()))
+            })
+            .await
+            .ok()
+            .flatten()?;
+
             let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
 
             let texture = ctx.load_texture(

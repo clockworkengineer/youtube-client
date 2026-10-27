@@ -11,7 +11,7 @@ pub fn render_new_videos_view(
     audio_tx: &Sender<PlayerCommand>,
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    new_videos: &Option<Result<Vec<Video>, String>>,
+    new_videos: &Option<Result<Arc<Vec<Video>>, String>>,
     cleared_video_count: usize,
 ) -> Option<PendingAction> {
     let mut action = None;
@@ -84,7 +84,7 @@ pub fn render_new_videos_view(
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for video in vids {
+                        for video in vids.iter() {
                             let mut card_action = PendingAction::None;
                             draw_video_card_with_dismiss(
                                 state,

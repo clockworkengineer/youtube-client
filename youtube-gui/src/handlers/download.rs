@@ -11,8 +11,20 @@ pub fn handle_download_action(
     ctx: &egui::Context,
 ) -> bool {
     match action {
-        PendingAction::SpawnDownload { video, is_audio } => {
-            spawn_download(state.clone(), ctx.clone(), video.clone(), *is_audio);
+        PendingAction::SpawnDownload {
+            video,
+            is_audio,
+            resolution,
+            audio_bitrate,
+        } => {
+            spawn_download(
+                state.clone(),
+                ctx.clone(),
+                video.clone(),
+                *is_audio,
+                *resolution,
+                *audio_bitrate,
+            );
             true
         }
         _ => false,

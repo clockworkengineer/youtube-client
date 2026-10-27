@@ -7,6 +7,8 @@ pub struct SettingsFormState {
     pub cookies_from_browser: String,
     pub cookies_file: String,
     pub import_file_path: String,
+    pub preferred_resolution: String,
+    pub preferred_audio_bitrate: String,
 }
 
 impl Default for SettingsFormState {
@@ -20,6 +22,12 @@ impl Default for SettingsFormState {
             cookies_from_browser: config.cookies_from_browser.unwrap_or_default(),
             cookies_file: config.cookies_file.unwrap_or_default(),
             import_file_path: String::new(),
+            preferred_resolution: config
+                .preferred_resolution
+                .unwrap_or_else(|| "1080p".to_string()),
+            preferred_audio_bitrate: config
+                .preferred_audio_bitrate
+                .unwrap_or_else(|| "320".to_string()),
         }
     }
 }
@@ -105,6 +113,66 @@ pub fn render_settings_view(
             ui.horizontal(|ui| {
                 ui.label("Downloads Directory:");
                 ui.text_edit_singleline(&mut form_state.downloads_dir);
+            });
+        });
+    });
+
+    ui.add_space(15.0);
+
+    ui.group(|ui| {
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("🎯 Preferred Download Quality Defaults")
+                    .strong()
+                    .size(15.0),
+            );
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(
+                    "Default video resolution and audio bitrate constraints for new downloads.",
+                )
+                .size(12.0)
+                .color(egui::Color32::LIGHT_GRAY),
+            );
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Default Video Resolution:");
+                let resolutions = ["best", "2160p", "1440p", "1080p", "720p", "480p", "360p"];
+                for &res in &resolutions {
+                    let label = match res {
+                        "best" => "Best",
+                        r => r,
+                    };
+                    if ui
+                        .selectable_label(form_state.preferred_resolution == res, label)
+                        .clicked()
+                    {
+                        form_state.preferred_resolution = res.to_string();
+                    }
+                }
+            });
+
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label("Default Audio Bitrate:");
+                let bitrates = ["best", "320", "256", "192", "128"];
+                for &br in &bitrates {
+                    let label = match br {
+                        "best" => "Best",
+                        "320" => "320 kbps",
+                        "256" => "256 kbps",
+                        "192" => "192 kbps",
+                        "128" => "128 kbps",
+                        _ => br,
+                    };
+                    if ui
+                        .selectable_label(form_state.preferred_audio_bitrate == br, label)
+                        .clicked()
+                    {
+                        form_state.preferred_audio_bitrate = br.to_string();
+                    }
+                }
             });
         });
     });
@@ -346,11 +414,23 @@ pub fn render_settings_view(
             } else {
                 Some(form_state.cookies_from_browser.trim().to_string())
             };
+            let res = if form_state.preferred_resolution.trim().is_empty() {
+                None
+            } else {
+                Some(form_state.preferred_resolution.trim().to_string())
+            };
+            let bitrate = if form_state.preferred_audio_bitrate.trim().is_empty() {
+                None
+            } else {
+                Some(form_state.preferred_audio_bitrate.trim().to_string())
+            };
 
             action = Some(PendingAction::SaveSettings {
                 player_path: player,
                 downloads_dir: dir,
                 cookies_from_browser: cookies,
+                preferred_resolution: res,
+                preferred_audio_bitrate: bitrate,
             });
         }
     });

@@ -75,6 +75,12 @@ pub enum PlayerCommand {
         video_id: Option<String>,
         start_secs: Option<f32>,
     },
+    PlayBytes {
+        data: Vec<u8>,
+        title: String,
+        video_id: Option<String>,
+        start_secs: Option<f32>,
+    },
     Pause,
     Resume,
     Stop,
@@ -197,6 +203,8 @@ pub enum PendingAction {
     SpawnDownload {
         video: Video,
         is_audio: bool,
+        resolution: Option<youtube_client_lib::download::VideoResolution>,
+        audio_bitrate: Option<youtube_client_lib::download::AudioBitrate>,
     },
     PlayLocal {
         path: PathBuf,
@@ -206,6 +214,11 @@ pub enum PendingAction {
     },
     StreamVideo {
         video_id: String,
+        start_secs: Option<f32>,
+    },
+    StreamAudioDirect {
+        video_id: String,
+        title: String,
         start_secs: Option<f32>,
     },
     OpenInBrowser {
@@ -278,6 +291,8 @@ pub enum PendingAction {
         player_path: Option<String>,
         downloads_dir: Option<String>,
         cookies_from_browser: Option<String>,
+        preferred_resolution: Option<String>,
+        preferred_audio_bitrate: Option<String>,
     },
     SignOut,
     ExportSubscriptionsOpml,

@@ -204,16 +204,59 @@ pub fn render_details_view(
             ui.horizontal(|ui| {
                 match &download_status {
                     DownloadStatus::NotStarted => {
-                        if ui.button("📥 Download Video").clicked() {
-                            action = Some(PendingAction::SpawnDownload {
-                                video: video.clone(),
-                                is_audio: false,
-                            });
-                        }
-                        if ui.button("📥 Download Audio").clicked() {
-                            action = Some(PendingAction::SpawnDownload {
-                                video: video.clone(),
-                                is_audio: true,
+                        ui.menu_button("📥 Download Video ▾", |ui| {
+                            let resolutions = [
+                                youtube_client_lib::download::VideoResolution::Best,
+                                youtube_client_lib::download::VideoResolution::Res2160p,
+                                youtube_client_lib::download::VideoResolution::Res1440p,
+                                youtube_client_lib::download::VideoResolution::Res1080p,
+                                youtube_client_lib::download::VideoResolution::Res720p,
+                                youtube_client_lib::download::VideoResolution::Res480p,
+                                youtube_client_lib::download::VideoResolution::Res360p,
+                            ];
+                            for res in resolutions {
+                                if ui.button(res.as_str()).clicked() {
+                                    action = Some(PendingAction::SpawnDownload {
+                                        video: video.clone(),
+                                        is_audio: false,
+                                        resolution: Some(res),
+                                        audio_bitrate: None,
+                                    });
+                                    ui.close_menu();
+                                }
+                            }
+                        });
+
+                        ui.menu_button("📥 Download Audio ▾", |ui| {
+                            let bitrates = [
+                                youtube_client_lib::download::AudioBitrate::Best,
+                                youtube_client_lib::download::AudioBitrate::Kbps320,
+                                youtube_client_lib::download::AudioBitrate::Kbps256,
+                                youtube_client_lib::download::AudioBitrate::Kbps192,
+                                youtube_client_lib::download::AudioBitrate::Kbps128,
+                            ];
+                            for br in bitrates {
+                                if ui.button(br.as_str()).clicked() {
+                                    action = Some(PendingAction::SpawnDownload {
+                                        video: video.clone(),
+                                        is_audio: true,
+                                        resolution: None,
+                                        audio_bitrate: Some(br),
+                                    });
+                                    ui.close_menu();
+                                }
+                            }
+                        });
+
+                        if ui
+                            .button("🎧 Listen (Stream Audio)")
+                            .on_hover_text("Stream audio directly into app without downloading")
+                            .clicked()
+                        {
+                            action = Some(PendingAction::StreamAudioDirect {
+                                video_id: video.id.clone(),
+                                title: video.title.clone(),
+                                start_secs: playback_progress.as_ref().map(|p| p.position_secs),
                             });
                         }
                     }
@@ -409,12 +452,16 @@ pub fn render_details_view(
                             action = Some(PendingAction::SpawnDownload {
                                 video: video.clone(),
                                 is_audio: false,
+                                resolution: None,
+                                audio_bitrate: None,
                             });
                         }
                         if ui.button("❌ Retry Audio").clicked() {
                             action = Some(PendingAction::SpawnDownload {
                                 video: video.clone(),
                                 is_audio: true,
+                                resolution: None,
+                                audio_bitrate: None,
                             });
                         }
                         let fail_text = if is_missing_ytdlp {

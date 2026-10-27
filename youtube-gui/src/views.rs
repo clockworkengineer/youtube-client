@@ -175,10 +175,23 @@ pub fn draw_video_card_with_dismiss(
                     }
                     match &download_status {
                         DownloadStatus::NotStarted => {
-                            if ui.button("📥 Download Video").clicked() {
+                            if ui.button("📥 Download").clicked() {
                                 *action = PendingAction::SpawnDownload {
                                     video: video.clone(),
                                     is_audio: false,
+                                    resolution: None,
+                                    audio_bitrate: None,
+                                };
+                            }
+                            if ui
+                                .button("🎧 Listen")
+                                .on_hover_text("Stream audio directly in-app without downloading")
+                                .clicked()
+                            {
+                                *action = PendingAction::StreamAudioDirect {
+                                    video_id: video.id.clone(),
+                                    title: video.title.clone(),
+                                    start_secs: playback_progress.as_ref().map(|p| p.position_secs),
                                 };
                             }
                         }
@@ -302,6 +315,8 @@ pub fn draw_video_card_with_dismiss(
                                 *action = PendingAction::SpawnDownload {
                                     video: video.clone(),
                                     is_audio: false,
+                                    resolution: None,
+                                    audio_bitrate: None,
                                 };
                             }
                             let fail_text = if is_missing_ytdlp {

@@ -32,6 +32,10 @@ pub struct Config {
     pub window_maximized: Option<bool>,
     /// Google Cloud API key for unauthenticated read operations
     pub api_key: Option<String>,
+    /// Preferred default download video resolution (e.g. "1080p", "720p", "best")
+    pub preferred_resolution: Option<String>,
+    /// Preferred default download audio bitrate (e.g. "320", "256", "192", "best")
+    pub preferred_audio_bitrate: Option<String>,
 }
 
 /// Resolve the path for the client log file.

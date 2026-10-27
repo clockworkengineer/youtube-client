@@ -12,6 +12,8 @@ pub async fn execute_download(
     output: Option<PathBuf>,
     format_str: String,
     quality: Option<String>,
+    resolution: Option<String>,
+    audio_quality: Option<String>,
     additional_args: Vec<String>,
 ) -> anyhow::Result<()> {
     let format = match format_str.to_lowercase().as_str() {
@@ -43,8 +45,12 @@ pub async fn execute_download(
     if let Some(ref cb) = ctx.cookies_from_browser {
         options = options.with_cookies_from_browser(cb);
     }
-    if let Some(q) = quality {
-        options = options.with_quality(q);
+    if let Some(res) = resolution.or(quality) {
+        options = options.with_quality(res);
+    }
+    if let Some(aq) = audio_quality {
+        let bitrate = youtube_client_lib::download::AudioBitrate::from_str_loose(&aq);
+        options = options.with_audio_bitrate(bitrate);
     }
     for arg in additional_args {
         options = options.with_arg(arg);

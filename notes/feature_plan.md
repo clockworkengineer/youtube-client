@@ -140,10 +140,10 @@ An audit of the `youtube-client` workspace reveals substantial core engine capab
 - [x] **2.5:** Add CLI commands `youtube-client library` and `youtube-client history [--clear]`.
 
 ### Phase 3: Direct Streaming & Quality Control
-- [ ] **3.1:** Integrate `stream_audio_rodio` into GUI playback handler (`PendingAction::StreamAudioDirect`), enabling in-app audio listening on any video without full download.
-- [ ] **3.2:** Add `DownloadQuality` resolution and bitrate specifier to `DownloadOptions` in `youtube-client-lib`.
-- [ ] **3.3:** Add quality picker dialog in `youtube-gui/src/views/details_view.rs` and default quality setting in `settings_view.rs`.
-- [ ] **3.4:** Add `--resolution` and `--audio-quality` flags to `youtube-client download`.
+- [x] **3.1:** Integrate `stream_audio_rodio` into GUI playback handler (`PendingAction::StreamAudioDirect`), enabling in-app audio listening on any video without full download.
+- [x] **3.2:** Add `DownloadQuality` resolution and bitrate specifier to `DownloadOptions` in `youtube-client-lib`.
+- [x] **3.3:** Add quality picker dialog in `youtube-gui/src/views/details_view.rs` and default quality setting in `settings_view.rs`.
+- [x] **3.4:** Add `--resolution` and `--audio-quality` flags to `youtube-client download`.
 
 ### Phase 4: SponsorBlock & Search UX Enhancements
 - [ ] **4.1:** Add SponsorBlock category toggles to `Config` and `SettingsView`.

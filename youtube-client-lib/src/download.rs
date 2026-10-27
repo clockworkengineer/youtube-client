@@ -260,6 +260,104 @@ fn parse_eta_seconds(s: &str) -> Option<u64> {
     }
 }
 
+/// Target resolution constraint for video downloads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum VideoResolution {
+    #[default]
+    Best,
+    Res2160p,
+    Res1440p,
+    Res1080p,
+    Res720p,
+    Res480p,
+    Res360p,
+}
+
+impl VideoResolution {
+    pub fn as_height(&self) -> Option<u32> {
+        match self {
+            VideoResolution::Best => None,
+            VideoResolution::Res2160p => Some(2160),
+            VideoResolution::Res1440p => Some(1440),
+            VideoResolution::Res1080p => Some(1080),
+            VideoResolution::Res720p => Some(720),
+            VideoResolution::Res480p => Some(480),
+            VideoResolution::Res360p => Some(360),
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            VideoResolution::Best => "Best Available",
+            VideoResolution::Res2160p => "2160p (4K)",
+            VideoResolution::Res1440p => "1440p (2K)",
+            VideoResolution::Res1080p => "1080p (Full HD)",
+            VideoResolution::Res720p => "720p (HD)",
+            VideoResolution::Res480p => "480p (SD)",
+            VideoResolution::Res360p => "360p (Low)",
+        }
+    }
+
+    pub fn from_str_loose(s: &str) -> Self {
+        let clean = s.trim().to_lowercase();
+        let stripped = clean.trim_end_matches('p');
+        match stripped {
+            "2160" | "4k" => VideoResolution::Res2160p,
+            "1440" | "2k" => VideoResolution::Res1440p,
+            "1080" | "fhd" => VideoResolution::Res1080p,
+            "720" | "hd" => VideoResolution::Res720p,
+            "480" => VideoResolution::Res480p,
+            "360" => VideoResolution::Res360p,
+            _ => VideoResolution::Best,
+        }
+    }
+}
+
+/// Target audio bitrate constraint for extracted audio streams.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum AudioBitrate {
+    #[default]
+    Best,
+    Kbps320,
+    Kbps256,
+    Kbps192,
+    Kbps128,
+}
+
+impl AudioBitrate {
+    pub fn as_kbps(&self) -> Option<u32> {
+        match self {
+            AudioBitrate::Best => None,
+            AudioBitrate::Kbps320 => Some(320),
+            AudioBitrate::Kbps256 => Some(256),
+            AudioBitrate::Kbps192 => Some(192),
+            AudioBitrate::Kbps128 => Some(128),
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AudioBitrate::Best => "Best Quality",
+            AudioBitrate::Kbps320 => "320 kbps (High)",
+            AudioBitrate::Kbps256 => "256 kbps",
+            AudioBitrate::Kbps192 => "192 kbps (Standard)",
+            AudioBitrate::Kbps128 => "128 kbps (Compact)",
+        }
+    }
+
+    pub fn from_str_loose(s: &str) -> Self {
+        let clean = s.trim().to_lowercase();
+        let stripped = clean.trim_end_matches("kbps").trim_end_matches('k');
+        match stripped {
+            "320" => AudioBitrate::Kbps320,
+            "256" => AudioBitrate::Kbps256,
+            "192" => AudioBitrate::Kbps192,
+            "128" => AudioBitrate::Kbps128,
+            _ => AudioBitrate::Best,
+        }
+    }
+}
+
 /// Configuration options for downloading media.
 #[derive(Clone, Debug)]
 pub struct DownloadOptions {
@@ -270,6 +368,8 @@ pub struct DownloadOptions {
     pub cookies_file: Option<std::path::PathBuf>,
     pub cookies_from_browser: Option<String>,
     pub cancellation_token: Option<tokio_util::sync::CancellationToken>,
+    pub resolution: Option<VideoResolution>,
+    pub audio_bitrate: Option<AudioBitrate>,
 }
 
 impl Default for DownloadOptions {
@@ -282,6 +382,8 @@ impl Default for DownloadOptions {
             cookies_file: None,
             cookies_from_browser: None,
             cancellation_token: None,
+            resolution: None,
+            audio_bitrate: None,
         }
     }
 }
@@ -301,6 +403,26 @@ impl DownloadOptions {
         self.additional_args.push("-S".to_string());
         self.additional_args
             .push(format!("res:{}", q.trim_end_matches('p')));
+        self
+    }
+
+    /// Set resolution preference using [`VideoResolution`].
+    pub fn with_resolution(mut self, res: VideoResolution) -> Self {
+        if let Some(h) = res.as_height() {
+            self.additional_args.push("-S".to_string());
+            self.additional_args.push(format!("res:{h}"));
+        }
+        self.resolution = Some(res);
+        self
+    }
+
+    /// Set audio bitrate preference using [`AudioBitrate`].
+    pub fn with_audio_bitrate(mut self, bitrate: AudioBitrate) -> Self {
+        if let Some(kbps) = bitrate.as_kbps() {
+            self.additional_args.push("--audio-quality".to_string());
+            self.additional_args.push(format!("{kbps}K"));
+        }
+        self.audio_bitrate = Some(bitrate);
         self
     }
 

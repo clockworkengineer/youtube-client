@@ -293,6 +293,8 @@ pub fn spawn_download(
     ctx: egui::Context,
     video: Video,
     is_audio: bool,
+    resolution: Option<youtube_client_lib::download::VideoResolution>,
+    audio_bitrate: Option<youtube_client_lib::download::AudioBitrate>,
 ) {
     let video_id = video.id.clone();
     {
@@ -336,8 +338,30 @@ pub fn spawn_download(
             } else {
                 youtube_client_lib::download::DownloadFormat::Mp4
             };
-            let options =
+            let mut options =
                 youtube_client_lib::download::DownloadOptions::new(format).with_log_file(log_file);
+
+            if let Some(res) = resolution {
+                options = options.with_resolution(res);
+            } else {
+                let config = youtube_client_lib::load_config();
+                if let Some(ref r) = config.preferred_resolution {
+                    options = options.with_resolution(
+                        youtube_client_lib::download::VideoResolution::from_str_loose(r),
+                    );
+                }
+            }
+
+            if let Some(ab) = audio_bitrate {
+                options = options.with_audio_bitrate(ab);
+            } else {
+                let config = youtube_client_lib::load_config();
+                if let Some(ref a) = config.preferred_audio_bitrate {
+                    options = options.with_audio_bitrate(
+                        youtube_client_lib::download::AudioBitrate::from_str_loose(a),
+                    );
+                }
+            }
 
             let state_inner = state_clone.clone();
             let ctx_inner = ctx_clone.clone();

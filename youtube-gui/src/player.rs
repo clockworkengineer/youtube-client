@@ -74,6 +74,53 @@ pub fn spawn_audio_worker(
                                 }
                             }
                         }
+                        PlayerCommand::PlayBytes {
+                            data,
+                            title,
+                            video_id,
+                            start_secs,
+                        } => {
+                            if let Some(sink) = &sink_opt {
+                                sink.stop();
+                            }
+                            if stream_opt.is_none() {
+                                if let Ok(stream) = rodio::DeviceSinkBuilder::open_default_sink() {
+                                    let sink = rodio::Player::connect_new(stream.mixer());
+                                    stream_opt = Some(stream);
+                                    sink_opt = Some(sink);
+                                }
+                            }
+                            if let Some(sink) = &sink_opt {
+                                if let Ok(source) = rodio::Decoder::new(std::io::Cursor::new(data)) {
+                                    use rodio::Source;
+                                    let duration_secs = source
+                                        .total_duration()
+                                        .map(|d| d.as_secs_f32())
+                                        .unwrap_or(0.0);
+                                    let mut s = state.lock().unwrap();
+                                    sink.set_volume(s.player_state.volume);
+                                    sink.append(source);
+                                    sink.play();
+                                    s.player_state.current_title = title;
+                                    s.player_state.current_video_id = video_id;
+                                    s.player_state.playing = true;
+                                    s.player_state.duration_secs = duration_secs;
+                                    s.player_state.position_secs = 0.0;
+
+                                    if let Some(start) = start_secs {
+                                        if start > 1.0
+                                            && (duration_secs == 0.0
+                                                || start < duration_secs - 3.0)
+                                        {
+                                            let _ = sink.try_seek(
+                                                std::time::Duration::from_secs_f32(start),
+                                            );
+                                            s.player_state.position_secs = start;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         PlayerCommand::Pause => {
                             if let Some(sink) = &sink_opt {
                                 sink.pause();

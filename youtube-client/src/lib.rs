@@ -163,6 +163,14 @@ pub enum Commands {
         #[arg(short, long)]
         quality: Option<String>,
 
+        /// Video target resolution constraint (e.g. 2160p, 1080p, 720p, 480p)
+        #[arg(long)]
+        resolution: Option<String>,
+
+        /// Audio quality constraint in kbps (e.g. 320, 256, 192, 128)
+        #[arg(long)]
+        audio_quality: Option<String>,
+
         /// Additional arguments passed directly to yt-dlp
         #[arg(long = "arg", allow_hyphen_values = true)]
         additional_args: Vec<String>,
@@ -398,8 +406,22 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             output,
             format,
             quality,
+            resolution,
+            audio_quality,
             additional_args,
-        } => execute_download(&ctx, video_id, output, format, quality, additional_args).await,
+        } => {
+            execute_download(
+                &ctx,
+                video_id,
+                output,
+                format,
+                quality,
+                resolution,
+                audio_quality,
+                additional_args,
+            )
+            .await
+        }
         Commands::Play { file, system } => execute_play(file, system).await,
         Commands::Details { video_id, json } => execute_details(&ctx, video_id, json).await,
         Commands::Channel { channel_id, json } => execute_channel(&ctx, channel_id, json).await,

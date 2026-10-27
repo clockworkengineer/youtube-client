@@ -78,15 +78,42 @@ fn test_download_command_parsing() {
             video_id,
             format,
             quality,
+            resolution,
+            audio_quality,
             additional_args,
             ..
         } => {
             assert_eq!(video_id, "abc123xyz");
             assert_eq!(format, "mp3");
             assert_eq!(quality, Some("1080p".to_string()));
+            assert_eq!(resolution, None);
+            assert_eq!(audio_quality, None);
             assert_eq!(additional_args, vec!["--no-playlist"]);
         }
         _ => panic!("Expected Download command"),
+    }
+
+    let args_quality = vec![
+        "youtube-client",
+        "download",
+        "--video-id",
+        "abc123xyz",
+        "--resolution",
+        "720p",
+        "--audio-quality",
+        "320",
+    ];
+    let cli_q = Cli::try_parse_from(args_quality).expect("Failed to parse quality flags");
+    match cli_q.command {
+        Commands::Download {
+            resolution,
+            audio_quality,
+            ..
+        } => {
+            assert_eq!(resolution, Some("720p".to_string()));
+            assert_eq!(audio_quality, Some("320".to_string()));
+        }
+        _ => panic!("Expected Download command with quality"),
     }
 }
 

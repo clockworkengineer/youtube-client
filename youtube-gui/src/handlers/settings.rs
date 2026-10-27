@@ -10,11 +10,15 @@ pub fn handle_settings_action(action: &PendingAction, state: &Arc<Mutex<AppState
             player_path,
             downloads_dir,
             cookies_from_browser,
+            preferred_resolution,
+            preferred_audio_bitrate,
         } => {
             let mut config = youtube_client_lib::load_config();
             config.player_path = player_path.clone();
             config.downloads_dir = downloads_dir.clone();
             config.cookies_from_browser = cookies_from_browser.clone();
+            config.preferred_resolution = preferred_resolution.clone();
+            config.preferred_audio_bitrate = preferred_audio_bitrate.clone();
 
             let _ = youtube_client_lib::save_config(&config);
 

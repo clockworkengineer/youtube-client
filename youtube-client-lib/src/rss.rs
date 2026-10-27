@@ -194,6 +194,7 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
                             published_at: std::mem::take(&mut current_published),
                             channel_title: current_channel_title.clone(),
                             thumbnail_url,
+                            playlist_item_id: None,
                         });
                     }
                 } else if tag == AtomTag::Author {

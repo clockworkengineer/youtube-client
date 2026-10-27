@@ -39,6 +39,8 @@ struct YoutubeGuiApp {
     playlist_desc_input: String,
     subscription_filter: String,
     settings_form: SettingsFormState,
+    library_state: LibraryViewState,
+    history_state: HistoryViewState,
     volume: f32,
     muted: bool,
     audio_tx: std::sync::mpsc::Sender<PlayerCommand>,
@@ -166,6 +168,8 @@ impl YoutubeGuiApp {
             playlist_desc_input: String::new(),
             subscription_filter: String::new(),
             settings_form: SettingsFormState::default(),
+            library_state: LibraryViewState::default(),
+            history_state: HistoryViewState::default(),
             volume: config.volume.unwrap_or(1.0),
             muted: false,
             audio_tx,
@@ -392,6 +396,16 @@ impl eframe::App for YoutubeGuiApp {
                         action = PendingAction::LoadPlaylists;
                     }
                     ui.add_space(10.0);
+                    let on_library = matches!(current_view, View::Library);
+                    if ui.selectable_label(on_library, "📁 Library").clicked() {
+                        action = PendingAction::GoToLibrary;
+                    }
+                    ui.add_space(10.0);
+                    let on_history = matches!(current_view, View::History);
+                    if ui.selectable_label(on_history, "⏱️ History").clicked() {
+                        action = PendingAction::GoToHistory;
+                    }
+                    ui.add_space(10.0);
                     let on_settings = matches!(current_view, View::Settings);
                     if ui.selectable_label(on_settings, "⚙️ Settings").clicked() {
                         action = PendingAction::GoToSettings;
@@ -590,6 +604,16 @@ impl eframe::App for YoutubeGuiApp {
                         ctx,
                         vctx,
                     ) {
+                        action = act;
+                    }
+                }
+                View::Library => {
+                    if let Some(act) = render_library_view(&self.state, ui, &mut self.library_state) {
+                        action = act;
+                    }
+                }
+                View::History => {
+                    if let Some(act) = render_history_view(&self.state, ui, &mut self.history_state) {
                         action = act;
                     }
                 }

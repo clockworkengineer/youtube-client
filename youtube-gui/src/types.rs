@@ -39,6 +39,8 @@ pub enum View {
         details: Option<Result<Arc<VideoDetails>, String>>,
         comments: Option<Result<Arc<Vec<Comment>>, String>>,
     },
+    Library,
+    History,
     Settings,
     About,
 }
@@ -259,6 +261,19 @@ pub enum PendingAction {
     },
     GoToAbout,
     GoToSettings,
+    GoToLibrary,
+    GoToHistory,
+    DeleteDownloadedFile {
+        path: PathBuf,
+        video_id: Option<String>,
+    },
+    ClearHistory,
+    RemoveHistoryItem {
+        video_id: String,
+    },
+    OpenFolder {
+        path: PathBuf,
+    },
     SaveSettings {
         player_path: Option<String>,
         downloads_dir: Option<String>,

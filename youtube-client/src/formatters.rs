@@ -6,7 +6,7 @@
 use youtube_client_lib::models::{
     ChannelDetails, Comment, Page, Playlist, Subscription, Video, VideoDetails,
 };
-use youtube_client_lib::utils::{format_table, truncate};
+use youtube_client_lib::utils::{DownloadedItem, HistoryEntry, format_table, truncate};
 
 /// Trait defining the contract for formatting domain types to output strings.
 pub trait OutputFormatter<T> {
@@ -141,6 +141,49 @@ impl OutputFormatter<Comment> for CsvFormatter {
                 escape_csv(&c.text_display),
                 c.like_count,
                 escape_csv(&c.published_at)
+            ));
+        }
+        lines.join("\n")
+    }
+}
+
+impl OutputFormatter<DownloadedItem> for CsvFormatter {
+    fn format_item(&self, item: &DownloadedItem) -> String {
+        self.format_list(std::slice::from_ref(item))
+    }
+
+    fn format_list(&self, items: &[DownloadedItem]) -> String {
+        let mut lines = vec!["Type,Video ID,Size Bytes,File Name,Path".to_string()];
+        for item in items {
+            let kind = if item.is_audio { "Audio" } else { "Video" };
+            let vid = item.video_id.as_deref().unwrap_or("");
+            lines.push(format!(
+                "{},{},{},{},{}",
+                escape_csv(kind),
+                escape_csv(vid),
+                item.size_bytes,
+                escape_csv(&item.file_name),
+                escape_csv(&item.path.to_string_lossy())
+            ));
+        }
+        lines.join("\n")
+    }
+}
+
+impl OutputFormatter<HistoryEntry> for CsvFormatter {
+    fn format_item(&self, item: &HistoryEntry) -> String {
+        self.format_list(std::slice::from_ref(item))
+    }
+
+    fn format_list(&self, items: &[HistoryEntry]) -> String {
+        let mut lines = vec!["Video ID,Position Secs,Duration Secs,Updated At".to_string()];
+        for item in items {
+            lines.push(format!(
+                "{},{},{},{}",
+                escape_csv(&item.video_id),
+                item.progress.position_secs,
+                item.progress.duration_secs,
+                item.progress.updated_at
             ));
         }
         lines.join("\n")
@@ -317,6 +360,81 @@ impl OutputFormatter<ChannelDetails> for TableFormatter {
     }
 }
 
+impl OutputFormatter<DownloadedItem> for TableFormatter {
+    fn format_item(&self, item: &DownloadedItem) -> String {
+        self.format_list(std::slice::from_ref(item))
+    }
+
+    fn format_list(&self, items: &[DownloadedItem]) -> String {
+        if items.is_empty() {
+            return "No downloaded media files found.".to_string();
+        }
+        format_table(
+            &["Type", "Video ID", "Size", "File Name"],
+            &[7, 15, 12, 45],
+            items,
+            |item, _idx| {
+                let kind = if item.is_audio { "Audio" } else { "Video" };
+                let vid = item.video_id.as_deref().unwrap_or("-");
+                let size_mb = format!("{:.1} MB", (item.size_bytes as f64) / 1024.0 / 1024.0);
+                vec![
+                    kind.to_string(),
+                    vid.to_string(),
+                    size_mb,
+                    truncate(&item.file_name, 43).into_owned(),
+                ]
+            },
+        )
+    }
+}
+
+impl OutputFormatter<HistoryEntry> for TableFormatter {
+    fn format_item(&self, item: &HistoryEntry) -> String {
+        self.format_list(std::slice::from_ref(item))
+    }
+
+    fn format_list(&self, items: &[HistoryEntry]) -> String {
+        if items.is_empty() {
+            return "No watch history entries found.".to_string();
+        }
+        format_table(
+            &["Index", "Video ID", "Progress", "Percentage"],
+            &[6, 15, 20, 12],
+            items,
+            |entry, idx| {
+                let format_time = |secs: f32| -> String {
+                    let total = secs.max(0.0) as u32;
+                    let m = total / 60;
+                    let s = total % 60;
+                    format!("{m:02}:{s:02}")
+                };
+                let pos = format_time(entry.progress.position_secs);
+                let dur = if entry.progress.duration_secs > 0.0 {
+                    format_time(entry.progress.duration_secs)
+                } else {
+                    "--:--".to_string()
+                };
+                let progress_str = format!("{pos} / {dur}");
+                let pct = if entry.progress.duration_secs > 0.0 {
+                    format!(
+                        "{:.0}%",
+                        (entry.progress.position_secs / entry.progress.duration_secs * 100.0)
+                            .clamp(0.0, 100.0)
+                    )
+                } else {
+                    "-".to_string()
+                };
+                vec![
+                    (idx + 1).to_string(),
+                    entry.video_id.clone(),
+                    progress_str,
+                    pct,
+                ]
+            },
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Selector Helper
 // ---------------------------------------------------------------------------
@@ -347,6 +465,7 @@ mod tests {
             published_at: "2026-01-01T00:00:00Z".to_string(),
             thumbnail_url: "https://example.com/thumb.jpg".to_string(),
             channel_title: "Rust Channel".to_string(),
+            playlist_item_id: None,
         };
 
         let formatter = JsonFormatter;
@@ -364,6 +483,7 @@ mod tests {
             published_at: "2026-01-01T00:00:00Z".to_string(),
             thumbnail_url: "https://example.com/thumb.jpg".to_string(),
             channel_title: "Rust Channel".to_string(),
+            playlist_item_id: None,
         };
 
         let formatter = CsvFormatter;
@@ -382,6 +502,7 @@ mod tests {
                 published_at: "2026-01-01T00:00:00Z".to_string(),
                 thumbnail_url: "https://example.com/thumb.jpg".to_string(),
                 channel_title: "Rust Channel".to_string(),
+                playlist_item_id: None,
             }],
             Some("NEXT_PAGE".to_string()),
         );

@@ -68,6 +68,7 @@ async fn test_streaming_videos_backend() {
                 published_at: String::new(),
                 channel_title: String::new(),
                 thumbnail_url: String::new(),
+                playlist_item_id: None,
             },
             Video {
                 id: "v2".to_string(),
@@ -76,6 +77,7 @@ async fn test_streaming_videos_backend() {
                 published_at: String::new(),
                 channel_title: String::new(),
                 thumbnail_url: String::new(),
+                playlist_item_id: None,
             },
         ];
         vids.insert("UC_test".to_string(), list);

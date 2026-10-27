@@ -281,6 +281,46 @@ fn test_playlist_manage_command_parsing() {
         Commands::PlaylistDelete { playlist_id } => assert_eq!(playlist_id, "PL_DEL_123"),
         _ => panic!("Expected PlaylistDelete command"),
     }
+
+    let remove_item_args = vec![
+        "youtube-client",
+        "playlist-remove-video",
+        "--playlist-item-id",
+        "PLI_ITEM_456",
+    ];
+    let remove_item_cli =
+        Cli::try_parse_from(remove_item_args).expect("Failed to parse playlist-remove-video command");
+    match remove_item_cli.command {
+        Commands::PlaylistRemoveVideo { playlist_item_id } => {
+            assert_eq!(playlist_item_id, "PLI_ITEM_456")
+        }
+        _ => panic!("Expected PlaylistRemoveVideo command"),
+    }
+
+    let update_args = vec![
+        "youtube-client",
+        "playlist-update",
+        "--playlist-id",
+        "PL_UPD_789",
+        "--title",
+        "Updated Title",
+        "--description",
+        "New Description",
+    ];
+    let update_cli =
+        Cli::try_parse_from(update_args).expect("Failed to parse playlist-update command");
+    match update_cli.command {
+        Commands::PlaylistUpdate {
+            playlist_id,
+            title,
+            description,
+        } => {
+            assert_eq!(playlist_id, "PL_UPD_789");
+            assert_eq!(title, "Updated Title");
+            assert_eq!(description, Some("New Description".to_string()));
+        }
+        _ => panic!("Expected PlaylistUpdate command"),
+    }
 }
 
 #[test]
@@ -436,4 +476,50 @@ fn test_api_key_flag_parsing() {
     ];
     let cli = Cli::try_parse_from(args).expect("Failed to parse --api-key");
     assert_eq!(cli.api_key.as_deref(), Some("AIzaSyDummyKey12345"));
+}
+
+#[test]
+fn test_library_command_parsing() {
+    let args = vec!["youtube-client", "library", "--audio-only", "--json"];
+    let cli = Cli::try_parse_from(args).expect("Failed to parse library command");
+    match cli.command {
+        Commands::Library {
+            dir,
+            audio_only,
+            video_only,
+            json,
+        } => {
+            assert_eq!(dir, None);
+            assert!(audio_only);
+            assert!(!video_only);
+            assert!(json);
+        }
+        _ => panic!("Expected Library command"),
+    }
+}
+
+#[test]
+fn test_history_command_parsing() {
+    let clear_args = vec!["youtube-client", "history", "--clear"];
+    let cli = Cli::try_parse_from(clear_args).expect("Failed to parse history --clear");
+    match cli.command {
+        Commands::History { clear, .. } => assert!(clear),
+        _ => panic!("Expected History command"),
+    }
+
+    let remove_args = vec!["youtube-client", "history", "--remove", "vid123", "--limit", "10"];
+    let cli2 = Cli::try_parse_from(remove_args).expect("Failed to parse history --remove");
+    match cli2.command {
+        Commands::History {
+            clear,
+            remove,
+            limit,
+            ..
+        } => {
+            assert!(!clear);
+            assert_eq!(remove, Some("vid123".to_string()));
+            assert_eq!(limit, Some(10));
+        }
+        _ => panic!("Expected History command"),
+    }
 }

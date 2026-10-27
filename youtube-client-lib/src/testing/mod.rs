@@ -5,7 +5,9 @@
 //! and CLI commands without real YouTube credentials or network access.
 
 use crate::error::Result;
-use crate::models::{ChannelDetails, Comment, Playlist, Subscription, Video, VideoDetails};
+use crate::models::{
+    ChannelDetails, Comment, Playlist, SearchFilter, Subscription, Video, VideoDetails,
+};
 use crate::traits::{
     CommentService, MediaDownloader, PlaylistService, SubscriptionService, VideoService,
 };
@@ -78,6 +80,15 @@ impl VideoService for MockYoutubeClient {
     }
 
     async fn search_videos(&self, query: &str, max_results: u32) -> Result<Vec<Video>> {
+        self.search_videos_with_filter(query, max_results, None).await
+    }
+
+    async fn search_videos_with_filter(
+        &self,
+        query: &str,
+        max_results: u32,
+        _filter: Option<&SearchFilter>,
+    ) -> Result<Vec<Video>> {
         let map = self.videos_by_channel.lock().unwrap();
         let mut results = Vec::new();
         for vids in map.values() {
@@ -143,6 +154,7 @@ impl PlaylistService for MockYoutubeClient {
     async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> Result<()> {
         let mut map = self.playlist_items.lock().unwrap();
         let list = map.entry(playlist_id.to_string()).or_default();
+        let item_id = format!("item_{video_id}");
         list.push(Video {
             id: video_id.to_string(),
             title: format!("Video {video_id}"),
@@ -150,7 +162,16 @@ impl PlaylistService for MockYoutubeClient {
             published_at: "2026-01-01T00:00:00Z".to_string(),
             thumbnail_url: String::new(),
             channel_title: "Mock Channel".to_string(),
+            playlist_item_id: Some(item_id),
         });
+        Ok(())
+    }
+
+    async fn remove_from_playlist(&self, playlist_item_id: &str) -> Result<()> {
+        let mut map = self.playlist_items.lock().unwrap();
+        for list in map.values_mut() {
+            list.retain(|v| v.playlist_item_id.as_deref() != Some(playlist_item_id));
+        }
         Ok(())
     }
 
@@ -165,6 +186,23 @@ impl PlaylistService for MockYoutubeClient {
         };
         pls.push(pl.clone());
         Ok(pl)
+    }
+
+    async fn update_playlist(
+        &self,
+        playlist_id: &str,
+        title: &str,
+        description: Option<&str>,
+    ) -> Result<Playlist> {
+        let mut pls = self.playlists.lock().unwrap();
+        if let Some(pl) = pls.iter_mut().find(|p| p.id == playlist_id) {
+            pl.title = title.to_string();
+            if let Some(d) = description {
+                pl.description = d.to_string();
+            }
+            return Ok(pl.clone());
+        }
+        Err(crate::YoutubeError::Other("Playlist not found".to_string()))
     }
 
     async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {

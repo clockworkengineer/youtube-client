@@ -12,7 +12,7 @@ use crate::cache::MetadataCache;
 use crate::config::resolve_credentials;
 use crate::error::{Result, YoutubeError};
 use crate::models::{
-    ChannelDetails, Comment, Page, Playlist, Rating, Subscription, Video, VideoDetails,
+    ChannelDetails, Comment, Page, Playlist, Rating, SearchFilter, Subscription, Video, VideoDetails,
 };
 use crate::quota::QuotaTracker;
 use crate::retry::retry_api_call;
@@ -408,6 +408,7 @@ impl YoutubeClient {
                         published_at: published_at.to_string(),
                         thumbnail_url,
                         channel_title,
+                        playlist_item_id: item.id.clone(),
                     });
                 }
             }
@@ -421,12 +422,13 @@ impl YoutubeClient {
         Ok(page.items)
     }
 
-    /// Search for videos using a query string with pagination.
-    pub async fn search_videos_page(
+    /// Search for videos using a query string with pagination and optional search filter.
+    pub async fn search_videos_page_with_filter(
         &self,
         query: &str,
         max_results: u32,
         page_token: Option<&str>,
+        filter: Option<&SearchFilter>,
     ) -> Result<Page<Video>> {
         let limit = max_results.min(50);
         let (_resp, search_res) = retry_api_call(|| async {
@@ -435,8 +437,27 @@ impl YoutubeClient {
                 .search()
                 .list(&vec!["snippet".to_string()])
                 .q(query)
-                .add_type("video")
                 .max_results(limit);
+
+            if let Some(f) = filter {
+                if let Some(order) = &f.order {
+                    req = req.order(order.as_api_str());
+                }
+                if let Some(duration) = &f.duration {
+                    req = req.video_duration(duration.as_api_str());
+                }
+                if let Some(published_after) = &f.published_after {
+                    req = req.param("publishedAfter", published_after);
+                }
+                if let Some(content_type) = &f.content_type {
+                    req = req.add_type(content_type.as_api_str());
+                } else {
+                    req = req.add_type("video");
+                }
+            } else {
+                req = req.add_type("video");
+            }
+
             if let Some(token) = page_token {
                 req = req.page_token(token);
             }
@@ -474,6 +495,7 @@ impl YoutubeClient {
                         published_at: published_at.to_string(),
                         thumbnail_url,
                         channel_title,
+                        playlist_item_id: None,
                     });
                 }
             }
@@ -481,9 +503,33 @@ impl YoutubeClient {
         Ok(Page::new(videos, next_page_token))
     }
 
+    /// Search for videos using a query string with pagination.
+    pub async fn search_videos_page(
+        &self,
+        query: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<Page<Video>> {
+        self.search_videos_page_with_filter(query, max_results, page_token, None)
+            .await
+    }
+
     /// Search for videos using a query string.
     pub async fn search_videos(&self, query: &str, max_results: u32) -> Result<Vec<Video>> {
         let page = self.search_videos_page(query, max_results, None).await?;
+        Ok(page.items)
+    }
+
+    /// Search for videos using a query string and optional filter.
+    pub async fn search_videos_with_filter(
+        &self,
+        query: &str,
+        max_results: u32,
+        filter: Option<&SearchFilter>,
+    ) -> Result<Vec<Video>> {
+        let page = self
+            .search_videos_page_with_filter(query, max_results, None, filter)
+            .await?;
         Ok(page.items)
     }
 
@@ -863,6 +909,7 @@ impl YoutubeClient {
                         published_at: published_at.to_string(),
                         thumbnail_url,
                         channel_title,
+                        playlist_item_id: None,
                     });
                 }
             }
@@ -1034,6 +1081,44 @@ impl YoutubeClient {
         })
         .await?;
         Ok(())
+    }
+
+    /// Update playlist title and/or description.
+    pub async fn update_playlist(
+        &self,
+        playlist_id: &str,
+        title: &str,
+        description: Option<&str>,
+    ) -> Result<Playlist> {
+        if self.is_api_key_only() {
+            return Err(YoutubeError::AuthenticationRequired(
+                "Updating a playlist requires OAuth2 credentials, but client was initialized with an API key.".to_string(),
+            ));
+        }
+        use google_youtube3::api::{Playlist as GooglePlaylist, PlaylistSnippet};
+        let snippet = PlaylistSnippet {
+            title: Some(title.to_string()),
+            description: description.map(|d| d.to_string()),
+            ..Default::default()
+        };
+        let p = GooglePlaylist {
+            id: Some(playlist_id.to_string()),
+            snippet: Some(snippet),
+            ..Default::default()
+        };
+        let (_resp, updated) = retry_api_call(|| async {
+            self.hub.playlists().update(p.clone()).doit().await
+        })
+        .await?;
+        let id = updated.id.unwrap_or_else(|| playlist_id.to_string());
+        let snip = updated.snippet.unwrap_or_default();
+        Ok(Playlist {
+            id,
+            title: snip.title.unwrap_or_else(|| title.to_string()),
+            description: snip.description.unwrap_or_default(),
+            video_count: 0,
+            thumbnail_url: extract_thumbnail_url(snip.thumbnails),
+        })
     }
 
     /// Rate a video ("like", "dislike", or "none") using a raw string or [`Rating`] enum.
@@ -1330,6 +1415,14 @@ impl VideoService for YoutubeClient {
     async fn search_videos(&self, query: &str, max_results: u32) -> Result<Vec<Video>> {
         self.search_videos(query, max_results).await
     }
+    async fn search_videos_with_filter(
+        &self,
+        query: &str,
+        max_results: u32,
+        filter: Option<&SearchFilter>,
+    ) -> Result<Vec<Video>> {
+        self.search_videos_with_filter(query, max_results, filter).await
+    }
     async fn rate_video(&self, video_id: &str, rating: &str) -> Result<()> {
         self.rate_video(video_id, rating).await
     }
@@ -1355,8 +1448,19 @@ impl PlaylistService for YoutubeClient {
     async fn add_to_playlist(&self, playlist_id: &str, video_id: &str) -> Result<()> {
         self.add_to_playlist(playlist_id, video_id).await
     }
+    async fn remove_from_playlist(&self, playlist_item_id: &str) -> Result<()> {
+        self.remove_from_playlist(playlist_item_id).await
+    }
     async fn create_playlist(&self, title: &str, description: Option<&str>) -> Result<Playlist> {
         self.create_playlist(title, description).await
+    }
+    async fn update_playlist(
+        &self,
+        playlist_id: &str,
+        title: &str,
+        description: Option<&str>,
+    ) -> Result<Playlist> {
+        self.update_playlist(playlist_id, title, description).await
     }
     async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
         self.delete_playlist(playlist_id).await

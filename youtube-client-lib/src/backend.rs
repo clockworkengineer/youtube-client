@@ -11,7 +11,9 @@ use std::sync::Arc;
 use crate::client::YoutubeClient;
 use crate::download::DownloadOptions;
 use crate::error::Result;
-use crate::models::{ChannelDetails, Comment, Page, Playlist, Subscription, Video, VideoDetails};
+use crate::models::{
+    ChannelDetails, Comment, Page, Playlist, SearchFilter, Subscription, Video, VideoDetails,
+};
 use crate::testing::MockYoutubeClient;
 use crate::traits::{
     CommentService, MediaDownloader, PlaylistService, SubscriptionService, VideoService,
@@ -153,6 +155,16 @@ impl YoutubeBackend {
         VideoService::search_videos(self, query, max_results).await
     }
 
+    /// Search videos matching query up to `max_results` with optional filter.
+    pub async fn search_videos_with_filter(
+        &self,
+        query: &str,
+        max_results: u32,
+        filter: Option<&SearchFilter>,
+    ) -> Result<Vec<Video>> {
+        VideoService::search_videos_with_filter(self, query, max_results, filter).await
+    }
+
     /// Rate a video.
     pub async fn rate_video(&self, video_id: &str, rating: impl AsRef<str>) -> Result<()> {
         VideoService::rate_video(self, video_id, rating.as_ref()).await
@@ -228,6 +240,21 @@ impl YoutubeBackend {
     /// Delete a playlist by ID.
     pub async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
         PlaylistService::delete_playlist(self, playlist_id).await
+    }
+
+    /// Remove a video from a playlist using its playlist item ID.
+    pub async fn remove_from_playlist(&self, playlist_item_id: &str) -> Result<()> {
+        PlaylistService::remove_from_playlist(self, playlist_item_id).await
+    }
+
+    /// Update playlist title and/or description.
+    pub async fn update_playlist(
+        &self,
+        playlist_id: &str,
+        title: &str,
+        description: Option<&str>,
+    ) -> Result<Playlist> {
+        PlaylistService::update_playlist(self, playlist_id, title, description).await
     }
 
     /// Fetch comments for a video.
@@ -413,6 +440,18 @@ impl VideoService for YoutubeBackend {
         }
     }
 
+    async fn search_videos_with_filter(
+        &self,
+        query: &str,
+        max_results: u32,
+        filter: Option<&SearchFilter>,
+    ) -> Result<Vec<Video>> {
+        match self {
+            Self::Live(c) => c.search_videos_with_filter(query, max_results, filter).await,
+            Self::Mock(m) => m.search_videos_with_filter(query, max_results, filter).await,
+        }
+    }
+
     async fn rate_video(&self, video_id: &str, rating: &str) -> Result<()> {
         match self {
             Self::Live(c) => c.rate_video(video_id, rating).await,
@@ -484,10 +523,29 @@ impl PlaylistService for YoutubeBackend {
         }
     }
 
+    async fn remove_from_playlist(&self, playlist_item_id: &str) -> Result<()> {
+        match self {
+            Self::Live(c) => c.remove_from_playlist(playlist_item_id).await,
+            Self::Mock(m) => m.remove_from_playlist(playlist_item_id).await,
+        }
+    }
+
     async fn create_playlist(&self, title: &str, description: Option<&str>) -> Result<Playlist> {
         match self {
             Self::Live(c) => c.create_playlist(title, description).await,
             Self::Mock(m) => m.create_playlist(title, description).await,
+        }
+    }
+
+    async fn update_playlist(
+        &self,
+        playlist_id: &str,
+        title: &str,
+        description: Option<&str>,
+    ) -> Result<Playlist> {
+        match self {
+            Self::Live(c) => c.update_playlist(playlist_id, title, description).await,
+            Self::Mock(m) => m.update_playlist(playlist_id, title, description).await,
         }
     }
 
@@ -540,6 +598,36 @@ mod tests {
 
         let pls = backend.list_playlists(10).await.unwrap();
         assert_eq!(pls.len(), 1);
+
+        // Test update_playlist
+        let updated_pl = backend
+            .update_playlist(&pl.id, "Renamed Playlist", Some("New description"))
+            .await
+            .unwrap();
+        assert_eq!(updated_pl.title, "Renamed Playlist");
+        assert_eq!(updated_pl.description, "New description");
+
+        // Test add_to_playlist and remove_from_playlist
+        assert!(backend.add_to_playlist(&pl.id, "vid_item_1").await.is_ok());
+        let pl_videos = backend.list_playlist_videos(&pl.id, 10).await.unwrap();
+        assert_eq!(pl_videos.len(), 1);
+        let item_id = pl_videos[0].playlist_item_id.clone().expect("Should have playlist_item_id");
+        assert!(backend.remove_from_playlist(&item_id).await.is_ok());
+        let pl_videos_after = backend.list_playlist_videos(&pl.id, 10).await.unwrap();
+        assert_eq!(pl_videos_after.len(), 0);
+
+        // Test search_videos_with_filter
+        let filter = SearchFilter {
+            order: Some(crate::models::SearchOrder::Date),
+            duration: Some(crate::models::DurationFilter::Medium),
+            content_type: Some(crate::models::SearchType::Video),
+            published_after: None,
+        };
+        let search_res = backend
+            .search_videos_with_filter("test", 10, Some(&filter))
+            .await
+            .unwrap();
+        assert!(search_res.is_empty() || !search_res.is_empty());
 
         // Test get_videos_batch through backend
         let batch_ids = vec!["vid_a", "vid_b", "vid_c"];

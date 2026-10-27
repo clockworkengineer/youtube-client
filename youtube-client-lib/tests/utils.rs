@@ -138,3 +138,82 @@ fn test_format_table() {
     let empty_table = format_table(&["Name"], &[10], &empty, |(n, _), _| vec![n.to_string()]);
     assert_eq!(empty_table, "No items found.");
 }
+
+#[test]
+fn test_scan_downloaded_items() {
+    use tempfile::tempdir;
+    use youtube_client_lib::utils::scan_downloaded_items;
+
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    let sub = root.join("Channel Alpha");
+    std::fs::create_dir_all(&sub).unwrap();
+
+    let mp3_path = sub.join("Song Title [11111111111].mp3");
+    let mp4_path = root.join("Video Title [22222222222].mp4");
+    let ignore_path = root.join("notes.txt");
+
+    std::fs::write(&mp3_path, b"dummy audio data 1234").unwrap();
+    std::fs::write(&mp4_path, b"dummy video data 12345678").unwrap();
+    std::fs::write(&ignore_path, b"not media").unwrap();
+
+    let scanned = scan_downloaded_items(root);
+    assert_eq!(scanned.len(), 2);
+
+    let audio = scanned.iter().find(|i| i.is_audio).expect("Audio item missing");
+    assert_eq!(audio.video_id, Some("11111111111".to_string()));
+    assert_eq!(audio.size_bytes, 21);
+
+    let video = scanned.iter().find(|i| !i.is_audio).expect("Video item missing");
+    assert_eq!(video.video_id, Some("22222222222".to_string()));
+    assert_eq!(video.size_bytes, 25);
+}
+
+#[test]
+fn test_watch_history_helpers() {
+    use tempfile::tempdir;
+    use youtube_client_lib::utils::{
+        clear_watch_history, get_watch_history, remove_watch_history_entry,
+        save_playback_positions_to_file, PlaybackProgress,
+    };
+
+    let tmp = tempdir().unwrap();
+    let file = tmp.path().join("playback_positions.json");
+
+    let mut map = std::collections::HashMap::new();
+    map.insert(
+        "vid_old".to_string(),
+        PlaybackProgress {
+            position_secs: 10.0,
+            duration_secs: 100.0,
+            updated_at: 1000,
+        },
+    );
+    map.insert(
+        "vid_new".to_string(),
+        PlaybackProgress {
+            position_secs: 50.0,
+            duration_secs: 100.0,
+            updated_at: 2000,
+        },
+    );
+
+    save_playback_positions_to_file(&file, &map).unwrap();
+
+    let history = get_watch_history(&file);
+    assert_eq!(history.len(), 2);
+    // Should be sorted updated_at descending
+    assert_eq!(history[0].video_id, "vid_new");
+    assert_eq!(history[1].video_id, "vid_old");
+
+    // Remove single entry
+    remove_watch_history_entry(&file, "vid_new").unwrap();
+    let history_after_remove = get_watch_history(&file);
+    assert_eq!(history_after_remove.len(), 1);
+    assert_eq!(history_after_remove[0].video_id, "vid_old");
+
+    // Clear history
+    clear_watch_history(&file).unwrap();
+    let history_cleared = get_watch_history(&file);
+    assert!(history_cleared.is_empty());
+}

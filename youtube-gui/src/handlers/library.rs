@@ -331,6 +331,56 @@ pub fn handle_library_action(
             }
             true
         }
+        PendingAction::DeleteDownloadedFile { path, video_id } => {
+            let mut s_lock = state.lock().unwrap();
+            match std::fs::remove_file(path) {
+                Ok(_) => {
+                    if let Some(vid) = video_id {
+                        s_lock.downloads.remove(vid);
+                    }
+                    s_lock.set_toast(
+                        format!(
+                            "Deleted file: {}",
+                            path.file_name().unwrap_or_default().to_string_lossy()
+                        ),
+                        false,
+                    );
+                }
+                Err(e) => {
+                    s_lock.set_toast(format!("Failed to delete file: {e}"), true);
+                }
+            }
+            ctx.request_repaint();
+            true
+        }
+        PendingAction::ClearHistory => {
+            let mut s_lock = state.lock().unwrap();
+            s_lock.playback_positions.clear();
+            s_lock.save_playback_positions();
+            s_lock.set_toast("Watch history cleared.", false);
+            ctx.request_repaint();
+            true
+        }
+        PendingAction::RemoveHistoryItem { video_id } => {
+            let mut s_lock = state.lock().unwrap();
+            s_lock.playback_positions.remove(video_id);
+            s_lock.save_playback_positions();
+            s_lock.set_toast(format!("Removed '{video_id}' from history."), false);
+            ctx.request_repaint();
+            true
+        }
+        PendingAction::OpenFolder { path } => {
+            let folder = if path.is_dir() {
+                path.clone()
+            } else {
+                path.parent().unwrap_or(path).to_path_buf()
+            };
+            if let Err(e) = open::that_detached(&folder) {
+                let mut s_lock = state.lock().unwrap();
+                s_lock.set_toast(format!("Failed to open folder: {e}"), true);
+            }
+            true
+        }
         _ => false,
     }
 }

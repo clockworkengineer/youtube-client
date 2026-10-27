@@ -259,6 +259,70 @@ pub enum Commands {
         playlist_id: String,
     },
 
+    /// Remove an item/video from a playlist
+    PlaylistRemoveVideo {
+        /// The unique playlist item ID (from playlist listing)
+        #[arg(short, long)]
+        playlist_item_id: String,
+    },
+
+    /// Update playlist title and/or description
+    PlaylistUpdate {
+        /// The playlist ID to update
+        #[arg(short, long)]
+        playlist_id: String,
+
+        /// New title for the playlist
+        #[arg(short, long)]
+        title: String,
+
+        /// Optional new description for the playlist
+        #[arg(short, long)]
+        description: Option<String>,
+    },
+
+    /// Browse downloaded offline audio and video media files
+    Library {
+        /// Optional directory path to scan (defaults to configured downloads directory)
+        #[arg(short, long)]
+        dir: Option<PathBuf>,
+
+        /// Filter for audio files only (.mp3, .m4a, etc.)
+        #[arg(long, conflicts_with = "video_only")]
+        audio_only: bool,
+
+        /// Filter for video files only (.mp4, .mkv, etc.)
+        #[arg(long, conflicts_with = "audio_only")]
+        video_only: bool,
+
+        /// Output results as formatted JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
+    /// View or manage persistent video watch progress history
+    History {
+        /// Clear the entire watch progress history
+        #[arg(long)]
+        clear: bool,
+
+        /// Remove a specific video ID from watch history
+        #[arg(short, long)]
+        remove: Option<String>,
+
+        /// Limit the number of history entries displayed
+        #[arg(short, long)]
+        limit: Option<usize>,
+
+        /// Optional path to playback_positions.json
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+
+        /// Output results as formatted JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
     /// Generate shell auto-completion scripts
     Completions {
         /// Shell to generate completions for
@@ -357,5 +421,26 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::PlaylistDelete { playlist_id } => {
             execute_playlist_delete(&ctx, playlist_id).await
         }
+        Commands::PlaylistRemoveVideo { playlist_item_id } => {
+            execute_playlist_remove_video(&ctx, playlist_item_id).await
+        }
+        Commands::PlaylistUpdate {
+            playlist_id,
+            title,
+            description,
+        } => execute_playlist_update(&ctx, playlist_id, title, description).await,
+        Commands::Library {
+            dir,
+            audio_only,
+            video_only,
+            json,
+        } => execute_library(&ctx, dir, audio_only, video_only, json).await,
+        Commands::History {
+            clear,
+            remove,
+            limit,
+            file,
+            json,
+        } => execute_history(&ctx, clear, remove, limit, file, json).await,
     }
 }

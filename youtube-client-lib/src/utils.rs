@@ -117,6 +117,71 @@ pub fn scan_downloads_dir(dir: &Path, downloads: &mut HashMap<String, DownloadSt
     }
 }
 
+/// Metadata for an offline downloaded media item in the local filesystem.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DownloadedItem {
+    pub video_id: Option<String>,
+    pub file_name: String,
+    pub path: PathBuf,
+    pub size_bytes: u64,
+    pub is_audio: bool,
+    pub modified_secs: Option<u64>,
+}
+
+/// Recursively scans a directory for downloaded media files (mp3, mp4, mkv, webm, m4a, etc.).
+pub fn scan_downloaded_items(dir: &Path) -> Vec<DownloadedItem> {
+    let mut items = Vec::new();
+    scan_downloaded_items_inner(dir, &mut items);
+    items.sort_by(|a, b| b.modified_secs.cmp(&a.modified_secs));
+    items
+}
+
+fn scan_downloaded_items_inner(dir: &Path, items: &mut Vec<DownloadedItem>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                scan_downloaded_items_inner(&path, items);
+            } else if path.is_file() {
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    let ext_lower = ext.to_ascii_lowercase();
+                    let is_audio = matches!(
+                        ext_lower.as_str(),
+                        "mp3" | "m4a" | "opus" | "ogg" | "flac" | "wav"
+                    );
+                    let is_video = matches!(
+                        ext_lower.as_str(),
+                        "mp4" | "mkv" | "webm" | "avi" | "mov"
+                    );
+                    if is_audio || is_video {
+                        let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                        let modified_secs = entry
+                            .metadata()
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .and_then(|t| {
+                                t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs())
+                            });
+                        let file_name = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let video_id = extract_video_id_from_path(&path);
+                        items.push(DownloadedItem {
+                            video_id,
+                            file_name,
+                            path,
+                            size_bytes,
+                            is_audio,
+                            modified_secs,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
 use std::borrow::Cow;
 
 /// Truncate a string to max_chars, adding an ellipsis if truncated. Returns a zero-copy reference when not truncated.
@@ -276,6 +341,37 @@ pub fn save_playback_positions_to_file(
     temp.persist(path).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// An entry representing recorded watch progress for a video.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HistoryEntry {
+    pub video_id: String,
+    pub progress: PlaybackProgress,
+}
+
+/// Load watch history sorted by most recently updated descending.
+pub fn get_watch_history(path: &Path) -> Vec<HistoryEntry> {
+    let map = load_playback_positions_from_file(path);
+    let mut entries: Vec<HistoryEntry> = map
+        .into_iter()
+        .map(|(video_id, progress)| HistoryEntry { video_id, progress })
+        .collect();
+    entries.sort_by(|a, b| b.progress.updated_at.cmp(&a.progress.updated_at));
+    entries
+}
+
+/// Remove a single video from the watch history file.
+pub fn remove_watch_history_entry(path: &Path, video_id: &str) -> Result<(), String> {
+    let mut map = load_playback_positions_from_file(path);
+    map.remove(video_id);
+    save_playback_positions_to_file(path, &map)
+}
+
+/// Clear all entries from the watch history file.
+pub fn clear_watch_history(path: &Path) -> Result<(), String> {
+    let empty = std::collections::HashMap::new();
+    save_playback_positions_to_file(path, &empty)
 }
 
 /// Load a set of strings from a JSON array file.

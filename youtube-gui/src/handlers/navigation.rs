@@ -42,6 +42,16 @@ pub fn handle_navigation_action(
             s_lock.navigate_clear_history(View::About);
             true
         }
+        PendingAction::GoToLibrary => {
+            let mut s_lock = state.lock().unwrap();
+            s_lock.navigate_clear_history(View::Library);
+            true
+        }
+        PendingAction::GoToHistory => {
+            let mut s_lock = state.lock().unwrap();
+            s_lock.navigate_clear_history(View::History);
+            true
+        }
         _ => false,
     }
 }

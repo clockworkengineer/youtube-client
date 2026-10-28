@@ -202,7 +202,9 @@ impl MediaPlayer for MpvPlayer {
         }
 
         let target_str = target.to_string_lossy();
-        let is_url = target_str.starts_with("http://") || target_str.starts_with("https://");
+        let is_url = target_str.starts_with("http://")
+            || target_str.starts_with("https://")
+            || target_str.starts_with("edl://");
 
         if is_url {
             if let Some(ref cf) = opts.cookies_file {

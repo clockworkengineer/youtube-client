@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use youtube_client_lib::utils::DownloadStatus;
-use youtube_client_lib::{Comment, Playlist, Subscription, Video, VideoDetails};
+use youtube_client_lib::{
+    ChannelDetails, Comment, Playlist, SearchFilter, SkipSegment, Subscription, Video, VideoDetails,
+};
 
 #[derive(Clone)]
 pub struct Thumbnail {
@@ -20,6 +22,7 @@ pub enum View {
         channel_id: String,
         channel_title: String,
         channel_description: String,
+        channel_details: Option<Result<Arc<ChannelDetails>, String>>,
         videos: Option<Result<Arc<Vec<Video>>, String>>,
     },
     SearchResults {
@@ -38,6 +41,8 @@ pub enum View {
         video: Video,
         details: Option<Result<Arc<VideoDetails>, String>>,
         comments: Option<Result<Arc<Vec<Comment>>, String>>,
+        comments_next_page_token: Option<String>,
+        loading_more_comments: bool,
     },
     Library,
     History,
@@ -113,6 +118,7 @@ pub struct AppState {
     pub mock_backend: Option<youtube_client_lib::MockYoutubeClient>,
     pub cached_backend: Option<youtube_client_lib::YoutubeBackend>,
     pub toast: Option<(String, std::time::Instant, bool)>,
+    pub sponsor_segments: HashMap<String, Vec<SkipSegment>>,
 }
 
 /// Helper function to safely lock AppState with poison recovery.
@@ -226,9 +232,11 @@ pub enum PendingAction {
     },
     Search {
         query: String,
+        filter: Option<SearchFilter>,
     },
     RetrySearch {
         query: String,
+        filter: Option<SearchFilter>,
     },
     LoadPlaylists,
     LoadPlaylistVideos {
@@ -265,6 +273,10 @@ pub enum PendingAction {
         video_id: String,
         text: String,
     },
+    LoadMoreComments {
+        video_id: String,
+        page_token: String,
+    },
     CreatePlaylist {
         title: String,
         description: Option<String>,
@@ -293,6 +305,8 @@ pub enum PendingAction {
         cookies_from_browser: Option<String>,
         preferred_resolution: Option<String>,
         preferred_audio_bitrate: Option<String>,
+        sponsorblock_enabled: bool,
+        sponsorblock_categories: Vec<String>,
     },
     SignOut,
     ExportSubscriptionsOpml,

@@ -12,6 +12,8 @@ pub fn handle_settings_action(action: &PendingAction, state: &Arc<Mutex<AppState
             cookies_from_browser,
             preferred_resolution,
             preferred_audio_bitrate,
+            sponsorblock_enabled,
+            sponsorblock_categories,
         } => {
             let mut config = youtube_client_lib::load_config();
             config.player_path = player_path.clone();
@@ -19,6 +21,8 @@ pub fn handle_settings_action(action: &PendingAction, state: &Arc<Mutex<AppState
             config.cookies_from_browser = cookies_from_browser.clone();
             config.preferred_resolution = preferred_resolution.clone();
             config.preferred_audio_bitrate = preferred_audio_bitrate.clone();
+            config.sponsorblock_enabled = Some(*sponsorblock_enabled);
+            config.sponsorblock_categories = Some(sponsorblock_categories.clone());
 
             let _ = youtube_client_lib::save_config(&config);
 

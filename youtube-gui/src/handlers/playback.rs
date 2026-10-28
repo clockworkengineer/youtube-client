@@ -52,35 +52,127 @@ pub fn handle_playback_action(
             video_id,
             start_secs,
         } => {
-            let url = if let Some(start) = start_secs {
-                if *start > 1.0 {
-                    format!("https://www.youtube.com/watch?v={video_id}&t={start:.0}s")
-                } else {
-                    format!("https://www.youtube.com/watch?v={video_id}")
-                }
-            } else {
-                format!("https://www.youtube.com/watch?v={video_id}")
-            };
-            let log_file = state.lock().unwrap().log_file.clone();
-            append_to_log(&log_file, "INFO", &format!("Video clicked: {url}"));
+            let state_clone = state.clone();
+            let vid = video_id.clone();
+            let start = *start_secs;
 
-            if let Err(e) = launch_external_player_with_options(
-                std::ffi::OsStr::new(&url),
-                Some(&log_file),
-                *start_secs,
-            ) {
-                append_to_log(
-                    &log_file,
-                    "WARN",
-                    &format!("{e} Falling back to default browser."),
-                );
-                let mut s = lock_state(state);
-                s.set_toast("Media player not found; opening in browser", true);
-                let _ = open::that(url);
-            } else {
+            {
                 let mut s = lock_state(state);
                 s.set_toast("Opening stream in external media player...", false);
             }
+
+            tokio::spawn(async move {
+                let base_url = format!("https://www.youtube.com/watch?v={vid}");
+                let browser_url = if let Some(s_sec) = start {
+                    if s_sec > 1.0 {
+                        format!("https://www.youtube.com/watch?v={vid}&t={s_sec:.0}s")
+                    } else {
+                        base_url.clone()
+                    }
+                } else {
+                    base_url.clone()
+                };
+
+                let (log_file, cached_segments, known_dur) = {
+                    let s = lock_state(&state_clone);
+                    let dur = match &s.current_view {
+                        crate::types::View::VideoDetails {
+                            video,
+                            details: Some(Ok(d)),
+                            ..
+                        } if video.id == vid => d.duration_seconds as f64,
+                        _ => s
+                            .playback_positions
+                            .get(&vid)
+                            .map(|p| p.duration_secs as f64)
+                            .unwrap_or(0.0),
+                    };
+                    (
+                        s.log_file.clone(),
+                        s.sponsor_segments.get(&vid).cloned(),
+                        dur,
+                    )
+                };
+
+                let config = youtube_client_lib::load_config();
+                let sb_enabled = config.sponsorblock_enabled.unwrap_or(true);
+
+                let mut target_uri = browser_url.clone();
+
+                if sb_enabled {
+                    let segments = if let Some(segs) = cached_segments {
+                        segs
+                    } else {
+                        let http = reqwest::Client::new();
+                        let cat_refs: Option<Vec<&str>> = config
+                            .sponsorblock_categories
+                            .as_ref()
+                            .map(|v| v.iter().map(|s| s.as_str()).collect());
+                        let fetched = youtube_client_lib::sponsorblock::fetch_skip_segments(
+                            &http,
+                            &vid,
+                            cat_refs.as_deref(),
+                        )
+                        .await
+                        .unwrap_or_default();
+                        if !fetched.is_empty() {
+                            let mut s = lock_state(&state_clone);
+                            s.sponsor_segments.insert(vid.clone(), fetched.clone());
+                        }
+                        fetched
+                    };
+
+                    if !segments.is_empty() {
+                        let effective_dur = if known_dur > 0.0 {
+                            known_dur
+                        } else {
+                            segments
+                                .iter()
+                                .map(|seg| seg.end_secs)
+                                .fold(0.0_f64, f64::max)
+                                + 3600.0
+                        };
+                        if let Some(edl) = youtube_client_lib::sponsorblock::build_mpv_edl(
+                            &base_url,
+                            effective_dur,
+                            &segments,
+                        ) {
+                            let registry = youtube_client_lib::PlayerRegistry::with_defaults();
+                            if registry
+                                .default_player()
+                                .is_some_and(|p| p.id() == "mpv" || p.display_name().to_lowercase().contains("mpv"))
+                            {
+                                append_to_log(
+                                    &log_file,
+                                    "INFO",
+                                    &format!(
+                                        "SponsorBlock active: launching MPV with EDL ({} segments)",
+                                        segments.len()
+                                    ),
+                                );
+                                target_uri = edl;
+                            }
+                        }
+                    }
+                }
+
+                append_to_log(&log_file, "INFO", &format!("Streaming video target: {target_uri}"));
+
+                if let Err(e) = launch_external_player_with_options(
+                    std::ffi::OsStr::new(&target_uri),
+                    Some(&log_file),
+                    start,
+                ) {
+                    append_to_log(
+                        &log_file,
+                        "WARN",
+                        &format!("{e} Falling back to default browser."),
+                    );
+                    let mut s = lock_state(&state_clone);
+                    s.set_toast("Media player not found; opening in browser", true);
+                    let _ = open::that(&browser_url);
+                }
+            });
             true
         }
         PendingAction::StreamAudioDirect {

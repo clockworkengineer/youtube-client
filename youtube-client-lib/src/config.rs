@@ -36,6 +36,10 @@ pub struct Config {
     pub preferred_resolution: Option<String>,
     /// Preferred default download audio bitrate (e.g. "320", "256", "192", "best")
     pub preferred_audio_bitrate: Option<String>,
+    /// Whether SponsorBlock automatic segment skipping is enabled
+    pub sponsorblock_enabled: Option<bool>,
+    /// Active SponsorBlock categories to skip (e.g. ["sponsor", "intro", "outro", "selfpromo", "interaction"])
+    pub sponsorblock_categories: Option<Vec<String>>,
 }
 
 /// Resolve the path for the client log file.
@@ -277,6 +281,18 @@ pub fn load_config() -> Config {
         }
         if merged.window_maximized.is_none() {
             merged.window_maximized = global.window_maximized;
+        }
+        if merged.preferred_resolution.is_none() {
+            merged.preferred_resolution = global.preferred_resolution;
+        }
+        if merged.preferred_audio_bitrate.is_none() {
+            merged.preferred_audio_bitrate = global.preferred_audio_bitrate;
+        }
+        if merged.sponsorblock_enabled.is_none() {
+            merged.sponsorblock_enabled = global.sponsorblock_enabled;
+        }
+        if merged.sponsorblock_categories.is_none() {
+            merged.sponsorblock_categories = global.sponsorblock_categories;
         }
     }
     merged

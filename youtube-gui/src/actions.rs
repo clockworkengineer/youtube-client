@@ -1,7 +1,9 @@
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 use youtube_client_lib::utils::{DownloadStatus, get_download_path};
-use youtube_client_lib::{Comment, Video, VideoDetails, YoutubeBackend, YoutubeClient};
+use youtube_client_lib::{
+    ChannelDetails, Comment, Page, Video, VideoDetails, YoutubeBackend, YoutubeClient,
+};
 
 use crate::types::{AppState, View};
 
@@ -410,7 +412,12 @@ pub fn fetch_videos(
         ctx,
         "fetch_videos",
         move |client| async move {
-            match client.list_videos(&channel_id, 20).await {
+            let details_res = client
+                .get_channel_details(&channel_id)
+                .await
+                .map_err(|e| format!("Failed to fetch channel stats: {e}"));
+
+            let videos_res = match client.list_videos(&channel_id, 20).await {
                 Ok(vids) => Ok(vids),
                 Err(err) => {
                     let http = reqwest::Client::new();
@@ -418,27 +425,38 @@ pub fn fetch_videos(
                         youtube_client_lib::fetch_channel_videos_via_rss(&http, &channel_id).await
                     {
                         if !rss_vids.is_empty() {
-                            return Ok(rss_vids);
+                            Ok(rss_vids)
+                        } else {
+                            Err(format!("Failed to fetch videos: {err}"))
                         }
+                    } else {
+                        Err(format!("Failed to fetch videos: {err}"))
                     }
-                    Err(format!("Failed to fetch videos: {err}"))
                 }
-            }
+            };
+            Ok((details_res, videos_res))
         },
-        move |res, s, ctx| {
+        move |res: Result<(Result<ChannelDetails, String>, Result<Vec<Video>, String>), String>,
+              s,
+              ctx| {
             if let View::ChannelVideos {
                 channel_id: current_id,
                 channel_title: current_title,
                 channel_description: current_desc,
-                videos: _,
+                ..
             } = &s.current_view
             {
                 if current_id == &channel_id_clone {
+                    let (channel_details, videos) = match res {
+                        Ok((d, v)) => (Some(d.map(Arc::new)), Some(v.map(Arc::new))),
+                        Err(e) => (Some(Err(e.clone())), Some(Err(e))),
+                    };
                     s.current_view = View::ChannelVideos {
                         channel_id: channel_id_clone,
                         channel_title: current_title.clone(),
                         channel_description: current_desc.clone(),
-                        videos: Some(res.map(Arc::new)),
+                        channel_details,
+                        videos,
                     };
                 }
             }
@@ -447,15 +465,20 @@ pub fn fetch_videos(
     );
 }
 
-pub fn fetch_search_results(ctx: egui::Context, state: Arc<Mutex<AppState>>, query: String) {
+pub fn fetch_search_results(
+    ctx: egui::Context,
+    state: Arc<Mutex<AppState>>,
+    query: String,
+    filter: Option<youtube_client_lib::SearchFilter>,
+) {
     let query_clone = query.clone();
     spawn_client_action(
         state,
         ctx,
-        "fetch_search_results",
+        "search_videos",
         move |client| async move {
             client
-                .search_videos(&query, 20)
+                .search_videos_with_filter(&query, 20, filter.as_ref())
                 .await
                 .map_err(|e| format!("Failed to search videos: {e}"))
         },
@@ -540,6 +563,33 @@ pub fn fetch_playlist_videos(
 pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, video: Video) {
     let video_clone = video.clone();
     let vid_id = video.id.clone();
+
+    // Also fetch SponsorBlock segments in parallel if SponsorBlock is enabled
+    let config = youtube_client_lib::load_config();
+    if config.sponsorblock_enabled.unwrap_or(true) {
+        let sb_state = state.clone();
+        let sb_ctx = ctx.clone();
+        let sb_vid_id = vid_id.clone();
+        let sb_cats = config.sponsorblock_categories.clone();
+        tokio::spawn(async move {
+            let http = reqwest::Client::new();
+            let cat_refs: Option<Vec<&str>> = sb_cats
+                .as_ref()
+                .map(|v| v.iter().map(|s| s.as_str()).collect());
+            if let Ok(segments) = youtube_client_lib::sponsorblock::fetch_skip_segments(
+                &http,
+                &sb_vid_id,
+                cat_refs.as_deref(),
+            )
+            .await
+            {
+                let mut s = sb_state.lock().unwrap();
+                s.sponsor_segments.insert(sb_vid_id, segments);
+                sb_ctx.request_repaint();
+            }
+        });
+    }
+
     spawn_client_action(
         state,
         ctx,
@@ -550,12 +600,12 @@ pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, vid
                 .await
                 .map_err(|e| e.to_string());
             let comments_res = client
-                .fetch_comments(&vid_id)
+                .fetch_comments_page(&vid_id, 20, None)
                 .await
                 .map_err(|e| e.to_string());
             Ok((details_res, comments_res))
         },
-        move |res: Result<(Result<VideoDetails, String>, Result<Vec<Comment>, String>), String>,
+        move |res: Result<(Result<VideoDetails, String>, Result<Page<Comment>, String>), String>,
               s,
               ctx| {
             if let View::VideoDetails {
@@ -564,15 +614,80 @@ pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, vid
             } = &s.current_view
             {
                 if current_video.id == video_clone.id {
-                    let (details, comments) = match res {
-                        Ok((d, c)) => (Some(d.map(Arc::new)), Some(c.map(Arc::new))),
-                        Err(e) => (Some(Err(e.clone())), Some(Err(e))),
+                    let (details, comments, next_token) = match res {
+                        Ok((d, Ok(page))) => (
+                            Some(d.map(Arc::new)),
+                            Some(Ok(Arc::new(page.items))),
+                            page.next_page_token,
+                        ),
+                        Ok((d, Err(c_err))) => (Some(d.map(Arc::new)), Some(Err(c_err)), None),
+                        Err(e) => (Some(Err(e.clone())), Some(Err(e)), None),
                     };
                     s.current_view = View::VideoDetails {
                         video: video_clone,
                         details,
                         comments,
+                        comments_next_page_token: next_token,
+                        loading_more_comments: false,
                     };
+                }
+            }
+            ctx.request_repaint();
+        },
+    );
+}
+
+pub fn spawn_fetch_more_comments(
+    state: Arc<Mutex<AppState>>,
+    ctx: egui::Context,
+    video_id: String,
+    page_token: String,
+) {
+    {
+        let mut s = state.lock().unwrap();
+        if let View::VideoDetails {
+            video: current_video,
+            loading_more_comments,
+            ..
+        } = &mut s.current_view
+        {
+            if current_video.id == video_id {
+                *loading_more_comments = true;
+            }
+        }
+    }
+
+    let vid_clone = video_id.clone();
+    spawn_client_action(
+        state,
+        ctx,
+        "fetch_more_comments",
+        move |client| async move {
+            client
+                .fetch_comments_page(&video_id, 20, Some(&page_token))
+                .await
+                .map_err(|e| format!("Failed to load more comments: {e}"))
+        },
+        move |res, s, ctx| {
+            if let View::VideoDetails {
+                video: current_video,
+                comments: Some(Ok(list)),
+                comments_next_page_token,
+                loading_more_comments,
+                ..
+            } = &mut s.current_view
+            {
+                if current_video.id == vid_clone {
+                    *loading_more_comments = false;
+                    match res {
+                        Ok(page) => {
+                            Arc::make_mut(list).extend(page.items);
+                            *comments_next_page_token = page.next_page_token;
+                        }
+                        Err(err) => {
+                            s.set_toast(err, true);
+                        }
+                    }
                 }
             }
             ctx.request_repaint();

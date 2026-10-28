@@ -4,9 +4,9 @@ use youtube_client_lib::utils::save_string_set_to_file;
 
 use crate::actions::{
     fetch_playlist_videos, fetch_search_results, fetch_videos, spawn_add_to_playlist,
-    spawn_create_playlist, spawn_delete_playlist, spawn_fetch_comments, spawn_fetch_new_videos,
-    spawn_fetch_playlists, spawn_fetch_subscriptions, spawn_post_comment, spawn_rate_video,
-    spawn_subscribe, spawn_unsubscribe,
+    spawn_create_playlist, spawn_delete_playlist, spawn_fetch_comments, spawn_fetch_more_comments,
+    spawn_fetch_new_videos, spawn_fetch_playlists, spawn_fetch_subscriptions, spawn_post_comment,
+    spawn_rate_video, spawn_subscribe, spawn_unsubscribe,
 };
 use crate::types::{AppState, PendingAction, View};
 
@@ -89,6 +89,7 @@ pub fn handle_library_action(
                     channel_id: id.clone(),
                     channel_title: title.clone(),
                     channel_description: description.clone(),
+                    channel_details: None,
                     videos: None,
                 });
             }
@@ -106,13 +107,14 @@ pub fn handle_library_action(
                     channel_id: id.clone(),
                     channel_title: title.clone(),
                     channel_description: description.clone(),
+                    channel_details: None,
                     videos: None,
                 };
             }
             fetch_videos(ctx.clone(), state.clone(), id.clone(), title.clone());
             true
         }
-        PendingAction::Search { query } => {
+        PendingAction::Search { query, filter } => {
             {
                 let mut s_lock = state.lock().unwrap();
                 s_lock.navigate_to(View::SearchResults {
@@ -120,10 +122,10 @@ pub fn handle_library_action(
                     videos: None,
                 });
             }
-            fetch_search_results(ctx.clone(), state.clone(), query.clone());
+            fetch_search_results(ctx.clone(), state.clone(), query.clone(), filter.clone());
             true
         }
-        PendingAction::RetrySearch { query } => {
+        PendingAction::RetrySearch { query, filter } => {
             {
                 let mut s_lock = state.lock().unwrap();
                 s_lock.current_view = View::SearchResults {
@@ -131,7 +133,7 @@ pub fn handle_library_action(
                     videos: None,
                 };
             }
-            fetch_search_results(ctx.clone(), state.clone(), query.clone());
+            fetch_search_results(ctx.clone(), state.clone(), query.clone(), filter.clone());
             true
         }
         PendingAction::LoadPlaylists => {
@@ -189,6 +191,8 @@ pub fn handle_library_action(
                     video: video.clone(),
                     details: None,
                     comments: None,
+                    comments_next_page_token: None,
+                    loading_more_comments: false,
                 });
                 s_lock.playlists.clone()
             };
@@ -206,6 +210,8 @@ pub fn handle_library_action(
                     video: video.clone(),
                     details: None,
                     comments: None,
+                    comments_next_page_token: None,
+                    loading_more_comments: false,
                 };
                 s_lock.playlists.clone()
             };
@@ -217,6 +223,18 @@ pub fn handle_library_action(
         }
         PendingAction::PostComment { video_id, text } => {
             spawn_post_comment(state.clone(), ctx.clone(), video_id.clone(), text.clone());
+            true
+        }
+        PendingAction::LoadMoreComments {
+            video_id,
+            page_token,
+        } => {
+            spawn_fetch_more_comments(
+                state.clone(),
+                ctx.clone(),
+                video_id.clone(),
+                page_token.clone(),
+            );
             true
         }
         PendingAction::CreatePlaylist { title, description } => {

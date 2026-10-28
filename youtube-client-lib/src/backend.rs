@@ -141,10 +141,25 @@ impl YoutubeBackend {
         max_results: u32,
         page_token: Option<&str>,
     ) -> Result<Page<Video>> {
+        self.search_videos_page_with_filter(query, max_results, page_token, None)
+            .await
+    }
+
+    /// Search for videos with pagination and optional search filter.
+    pub async fn search_videos_page_with_filter(
+        &self,
+        query: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+        filter: Option<&SearchFilter>,
+    ) -> Result<Page<Video>> {
         match self {
-            Self::Live(c) => c.search_videos_page(query, max_results, page_token).await,
+            Self::Live(c) => {
+                c.search_videos_page_with_filter(query, max_results, page_token, filter)
+                    .await
+            }
             Self::Mock(m) => {
-                let items = m.search_videos(query, max_results).await?;
+                let items = m.search_videos_with_filter(query, max_results, filter).await?;
                 Ok(Page::new(items, None))
             }
         }
@@ -260,6 +275,16 @@ impl YoutubeBackend {
     /// Fetch comments for a video.
     pub async fn fetch_comments(&self, video_id: &str) -> Result<Vec<Comment>> {
         CommentService::fetch_comments(self, video_id).await
+    }
+
+    /// Fetch comments for a video with pagination.
+    pub async fn fetch_comments_page(
+        &self,
+        video_id: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<Page<Comment>> {
+        CommentService::fetch_comments_page(self, video_id, max_results, page_token).await
     }
 
     /// Post a comment to a video.
@@ -562,6 +587,18 @@ impl CommentService for YoutubeBackend {
         match self {
             Self::Live(c) => c.fetch_comments(video_id).await,
             Self::Mock(m) => m.fetch_comments(video_id).await,
+        }
+    }
+
+    async fn fetch_comments_page(
+        &self,
+        video_id: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<Page<Comment>> {
+        match self {
+            Self::Live(c) => c.fetch_comments_page(video_id, max_results, page_token).await,
+            Self::Mock(m) => m.fetch_comments_page(video_id, max_results, page_token).await,
         }
     }
 

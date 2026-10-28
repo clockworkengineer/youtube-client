@@ -218,6 +218,32 @@ impl CommentService for MockYoutubeClient {
         Ok(map.get(video_id).cloned().unwrap_or_default())
     }
 
+    async fn fetch_comments_page(
+        &self,
+        video_id: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<crate::models::Page<Comment>> {
+        let map = self.comments_by_video.lock().unwrap();
+        let all = map.get(video_id).cloned().unwrap_or_default();
+        let offset: usize = page_token
+            .and_then(|t| t.strip_prefix("offset_"))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let end = (offset + max_results as usize).min(all.len());
+        let items = if offset < all.len() {
+            all[offset..end].to_vec()
+        } else {
+            Vec::new()
+        };
+        let next_token = if end < all.len() {
+            Some(format!("offset_{end}"))
+        } else {
+            None
+        };
+        Ok(crate::models::Page::new(items, next_token))
+    }
+
     async fn post_comment(&self, video_id: &str, text: &str) -> Result<Comment> {
         let mut map = self.comments_by_video.lock().unwrap();
         let list = map.entry(video_id.to_string()).or_default();

@@ -24,15 +24,48 @@ fn test_search_command_parsing() {
         Commands::Search {
             query,
             limit,
+            order,
+            duration,
+            content_type,
             page_token,
             json,
         } => {
             assert_eq!(query, "rust async");
             assert_eq!(limit, 15);
+            assert_eq!(order, None);
+            assert_eq!(duration, None);
+            assert_eq!(content_type, None);
             assert_eq!(page_token, None);
             assert!(json);
         }
         _ => panic!("Expected Search command"),
+    }
+
+    let filter_args = vec![
+        "youtube-client",
+        "search",
+        "--query",
+        "rust async",
+        "--order",
+        "view-count",
+        "--duration",
+        "medium",
+        "--type",
+        "video",
+    ];
+    let cli_f = Cli::try_parse_from(filter_args).expect("Failed to parse search filter flags");
+    match cli_f.command {
+        Commands::Search {
+            order,
+            duration,
+            content_type,
+            ..
+        } => {
+            assert_eq!(order, Some("view-count".to_string()));
+            assert_eq!(duration, Some("medium".to_string()));
+            assert_eq!(content_type, Some("video".to_string()));
+        }
+        _ => panic!("Expected Search command with filters"),
     }
 }
 
@@ -274,6 +307,42 @@ fn test_subscription_manage_command_parsing() {
         Commands::Unsubscribe { subscription_id } => assert_eq!(subscription_id, "SUB_999"),
         _ => panic!("Expected Unsubscribe command"),
     }
+
+    let export_args = vec![
+        "youtube-client",
+        "export-subscriptions",
+        "--format",
+        "opml",
+        "--output",
+        "backup.opml",
+    ];
+    let export_cli =
+        Cli::try_parse_from(export_args).expect("Failed to parse export-subscriptions command");
+    match export_cli.command {
+        Commands::ExportSubscriptions { format, output } => {
+            assert_eq!(format, "opml");
+            assert_eq!(output, std::path::PathBuf::from("backup.opml"));
+        }
+        _ => panic!("Expected ExportSubscriptions command"),
+    }
+
+    let import_args = vec![
+        "youtube-client",
+        "import-subscriptions",
+        "--format",
+        "csv",
+        "--file",
+        "takeout.csv",
+    ];
+    let import_cli =
+        Cli::try_parse_from(import_args).expect("Failed to parse import-subscriptions command");
+    match import_cli.command {
+        Commands::ImportSubscriptions { format, file } => {
+            assert_eq!(format, "csv");
+            assert_eq!(file, std::path::PathBuf::from("takeout.csv"));
+        }
+        _ => panic!("Expected ImportSubscriptions command"),
+    }
 }
 
 #[test]
@@ -472,6 +541,29 @@ async fn test_mock_backend_injection_and_execution() {
         .await
         .expect("Delete playlist failed");
     assert_eq!(mock.playlists.lock().unwrap().len(), 0);
+
+    // 5. Test export-subscriptions and import-subscriptions round-trip via mock backend
+    use youtube_client::commands::{execute_export_subscriptions, execute_import_subscriptions};
+    execute_subscribe(&ctx, "UC_export_1".to_string())
+        .await
+        .expect("Subscribe 1 failed");
+    execute_subscribe(&ctx, "UC_export_2".to_string())
+        .await
+        .expect("Subscribe 2 failed");
+
+    let opml_path = std::env::temp_dir().join("youtube_client_test_subs_backup.opml");
+    execute_export_subscriptions(&ctx, "opml".to_string(), opml_path.clone())
+        .await
+        .expect("Export OPML failed");
+    assert!(opml_path.exists());
+
+    let mock2 = MockYoutubeClient::new();
+    let ctx2 = CliContext::with_mock(mock2.clone());
+    execute_import_subscriptions(&ctx2, "auto".to_string(), opml_path.clone())
+        .await
+        .expect("Import OPML failed");
+    let _ = std::fs::remove_file(&opml_path);
+    assert_eq!(mock2.subscriptions.lock().unwrap().len(), 2);
 }
 
 #[test]

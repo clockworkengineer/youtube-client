@@ -9,11 +9,17 @@ pub struct SettingsFormState {
     pub import_file_path: String,
     pub preferred_resolution: String,
     pub preferred_audio_bitrate: String,
+    pub sponsorblock_enabled: bool,
+    pub sponsorblock_categories: Vec<String>,
 }
 
 impl Default for SettingsFormState {
     fn default() -> Self {
         let config = youtube_client_lib::load_config();
+        let default_cats = youtube_client_lib::sponsorblock::DEFAULT_CATEGORIES
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         Self {
             player_path: config.player_path.unwrap_or_default(),
             downloads_dir: config
@@ -28,6 +34,8 @@ impl Default for SettingsFormState {
             preferred_audio_bitrate: config
                 .preferred_audio_bitrate
                 .unwrap_or_else(|| "320".to_string()),
+            sponsorblock_enabled: config.sponsorblock_enabled.unwrap_or(true),
+            sponsorblock_categories: config.sponsorblock_categories.unwrap_or(default_cats),
         }
     }
 }
@@ -174,6 +182,67 @@ pub fn render_settings_view(
                     }
                 }
             });
+        });
+    });
+
+    ui.add_space(15.0);
+
+    ui.group(|ui| {
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("🛡️ SponsorBlock Integration")
+                    .strong()
+                    .size(15.0),
+            );
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(
+                    "Automatically skip sponsored segments, intros, outros, and reminders in MPV streams and highlight them on the timeline.",
+                )
+                .size(12.0)
+                .color(egui::Color32::LIGHT_GRAY),
+            );
+            ui.add_space(8.0);
+
+            ui.checkbox(
+                &mut form_state.sponsorblock_enabled,
+                "Enable SponsorBlock automatic skipping & segment markers",
+            );
+
+            if form_state.sponsorblock_enabled {
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Categories to skip:");
+                    let available_categories = [
+                        ("sponsor", "🟩 Sponsor"),
+                        ("selfpromo", "🟨 Self-Promotion"),
+                        ("interaction", "🟪 Interaction Reminder"),
+                        ("intro", "🟦 Intro / Intermission"),
+                        ("outro", "🟦 Endcards / Credits"),
+                        ("preview", "🟦 Preview / Recap"),
+                        ("music_offtopic", "🟧 Non-Music Section"),
+                    ];
+                    for (cat_id, label) in available_categories {
+                        let mut is_checked = form_state
+                            .sponsorblock_categories
+                            .iter()
+                            .any(|c| c == cat_id);
+                        if ui.checkbox(&mut is_checked, label).changed() {
+                            if is_checked {
+                                if !form_state
+                                    .sponsorblock_categories
+                                    .iter()
+                                    .any(|c| c == cat_id)
+                                {
+                                    form_state.sponsorblock_categories.push(cat_id.to_string());
+                                }
+                            } else {
+                                form_state.sponsorblock_categories.retain(|c| c != cat_id);
+                            }
+                        }
+                    }
+                });
+            }
         });
     });
 
@@ -431,6 +500,8 @@ pub fn render_settings_view(
                 cookies_from_browser: cookies,
                 preferred_resolution: res,
                 preferred_audio_bitrate: bitrate,
+                sponsorblock_enabled: form_state.sponsorblock_enabled,
+                sponsorblock_categories: form_state.sponsorblock_categories.clone(),
             });
         }
     });

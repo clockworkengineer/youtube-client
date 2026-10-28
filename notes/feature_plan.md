@@ -146,17 +146,17 @@ An audit of the `youtube-client` workspace reveals substantial core engine capab
 - [x] **3.4:** Add `--resolution` and `--audio-quality` flags to `youtube-client download`.
 
 ### Phase 4: SponsorBlock & Search UX Enhancements
-- [ ] **4.1:** Add SponsorBlock category toggles to `Config` and `SettingsView`.
-- [ ] **4.2:** Integrate `build_mpv_edl` into media player launcher when SponsorBlock is active.
-- [ ] **4.3:** Display detected sponsor intervals as visual markers in `details_view.rs`.
-- [ ] **4.4:** Add search filter toolbar (Sort, Duration, Type, Date) in `youtube-gui/src/views/search_view.rs`.
-- [ ] **4.5:** Add `--order`, `--duration`, and `--type` flags to `youtube-client search`.
+- [x] **4.1:** Add SponsorBlock category toggles to `Config` and `SettingsView`.
+- [x] **4.2:** Integrate `build_mpv_edl` into media player launcher when SponsorBlock is active.
+- [x] **4.3:** Display detected sponsor intervals as visual markers in `details_view.rs`.
+- [x] **4.4:** Add search filter toolbar (Sort, Duration, Type, Date) in `youtube-gui/src/views/search_view.rs`.
+- [x] **4.5:** Add `--order`, `--duration`, and `--type` flags to `youtube-client search`.
 
 ### Phase 5: CLI Backup Interoperability & Channel Header
-- [ ] **5.1:** Add `export-subscriptions` and `import-subscriptions` commands to `youtube-client`.
-- [ ] **5.2:** Fetch and render channel header statistics (`subscriber_count`, `video_count`, `view_count`) in `youtube-gui/src/views/channel_view.rs`.
-- [ ] **5.3:** Add "Load More Comments" pagination button in `youtube-gui/src/views/details_view.rs`.
-- [ ] **5.4:** Verify all existing and new unit/integration tests pass (`cargo test --workspace`).
+- [x] **5.1:** Add `export-subscriptions` and `import-subscriptions` commands to `youtube-client`.
+- [x] **5.2:** Fetch and render channel header statistics (`subscriber_count`, `video_count`, `view_count`) in `youtube-gui/src/views/channel_view.rs`.
+- [x] **5.3:** Add "Load More Comments" pagination button in `youtube-gui/src/views/details_view.rs`.
+- [x] **5.4:** Verify all existing and new unit/integration tests pass (`cargo test --workspace`).
 
 ---
 

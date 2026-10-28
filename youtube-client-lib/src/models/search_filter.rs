@@ -26,6 +26,28 @@ impl SearchOrder {
             Self::Title => "title",
         }
     }
+
+    /// Human-readable display label.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Relevance => "Relevance",
+            Self::Date => "Upload Date",
+            Self::ViewCount => "View Count",
+            Self::Rating => "Rating",
+            Self::Title => "Title",
+        }
+    }
+
+    /// Parse loosely from string.
+    pub fn from_str_loose(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "date" | "upload-date" | "upload_date" => Self::Date,
+            "viewcount" | "view-count" | "view_count" | "views" => Self::ViewCount,
+            "rating" => Self::Rating,
+            "title" => Self::Title,
+            _ => Self::Relevance,
+        }
+    }
 }
 
 /// Video duration filter criteria for YouTube search results.
@@ -51,6 +73,26 @@ impl DurationFilter {
             Self::Long => "long",
         }
     }
+
+    /// Human-readable display label.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Any => "Any Duration",
+            Self::Short => "Short (< 4 min)",
+            Self::Medium => "Medium (4–20 min)",
+            Self::Long => "Long (> 20 min)",
+        }
+    }
+
+    /// Parse loosely from string.
+    pub fn from_str_loose(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "short" => Self::Short,
+            "medium" => Self::Medium,
+            "long" => Self::Long,
+            _ => Self::Any,
+        }
+    }
 }
 
 /// Content type filter for search results.
@@ -74,6 +116,26 @@ impl SearchType {
             Self::Channel => "channel",
             Self::Playlist => "playlist",
             Self::All => "video,channel,playlist",
+        }
+    }
+
+    /// Human-readable display label.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Video => "Videos",
+            Self::Channel => "Channels",
+            Self::Playlist => "Playlists",
+            Self::All => "All",
+        }
+    }
+
+    /// Parse loosely from string.
+    pub fn from_str_loose(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "channel" | "channels" => Self::Channel,
+            "playlist" | "playlists" => Self::Playlist,
+            "all" => Self::All,
+            _ => Self::Video,
         }
     }
 }

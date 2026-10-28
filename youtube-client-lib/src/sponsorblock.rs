@@ -35,6 +35,20 @@ impl SegmentCategory {
             Self::Other => "other",
         }
     }
+
+    /// Human-readable display label for the category.
+    pub fn display_name(&self) -> &str {
+        match self {
+            Self::Sponsor => "Sponsor",
+            Self::Selfpromo => "Self-Promotion",
+            Self::Interaction => "Interaction Reminder",
+            Self::Intro => "Intro / Intermission",
+            Self::Outro => "Endcards / Credits",
+            Self::Preview => "Preview / Recap",
+            Self::MusicOfftopic => "Non-Music Section",
+            Self::Other => "Other",
+        }
+    }
 }
 
 /// A skip segment timestamp range with categorization.

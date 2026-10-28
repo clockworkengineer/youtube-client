@@ -1139,17 +1139,26 @@ impl YoutubeClient {
         self.rate_video(video_id, rating.as_api_str()).await
     }
 
-    /// Fetch top comment threads for a video.
-    pub async fn fetch_comments(&self, video_id: &str) -> Result<Vec<Comment>> {
+    /// Fetch top comment threads for a video with pagination.
+    pub async fn fetch_comments_page(
+        &self,
+        video_id: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<Page<Comment>> {
+        let limit = max_results.clamp(1, 100);
         let (_resp, comment_res) = retry_api_call(|| async {
             let mut req = self
                 .hub
                 .comment_threads()
                 .list(&vec!["snippet".to_string()])
                 .video_id(video_id)
-                .max_results(20)
+                .max_results(limit)
                 .clear_scopes()
                 .add_scope(google_youtube3::api::Scope::Readonly);
+            if let Some(token) = page_token {
+                req = req.page_token(token);
+            }
             if let Some(key) = &self.api_key {
                 req = req.param("key", key);
             }
@@ -1157,6 +1166,7 @@ impl YoutubeClient {
         })
         .await?;
 
+        let next_page_token = comment_res.next_page_token;
         let mut comments = Vec::new();
         if let Some(items) = comment_res.items {
             for item in items {
@@ -1181,7 +1191,13 @@ impl YoutubeClient {
                 }
             }
         }
-        Ok(comments)
+        Ok(Page::new(comments, next_page_token))
+    }
+
+    /// Fetch top comment threads for a video.
+    pub async fn fetch_comments(&self, video_id: &str) -> Result<Vec<Comment>> {
+        let page = self.fetch_comments_page(video_id, 20, None).await?;
+        Ok(page.items)
     }
 
     /// Post a new top-level comment on a video.
@@ -1470,6 +1486,15 @@ impl PlaylistService for YoutubeClient {
 impl CommentService for YoutubeClient {
     async fn fetch_comments(&self, video_id: &str) -> Result<Vec<Comment>> {
         self.fetch_comments(video_id).await
+    }
+    async fn fetch_comments_page(
+        &self,
+        video_id: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+    ) -> Result<Page<Comment>> {
+        self.fetch_comments_page(video_id, max_results, page_token)
+            .await
     }
     async fn post_comment(&self, video_id: &str, text: &str) -> Result<Comment> {
         self.post_comment(video_id, text).await

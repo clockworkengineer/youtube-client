@@ -11,6 +11,8 @@ pub struct VideoDetailsContext<'a> {
     pub video: &'a Video,
     pub details: &'a Option<Result<Arc<VideoDetails>, String>>,
     pub comments: &'a Option<Result<Arc<Vec<Comment>>, String>>,
+    pub comments_next_page_token: &'a Option<String>,
+    pub loading_more_comments: bool,
     pub player_state: &'a PlayerState,
     pub playlists: &'a Option<Result<Arc<Vec<Playlist>>, String>>,
     pub playlist_action_status: &'a Option<Result<String, String>>,
@@ -29,6 +31,8 @@ pub fn render_details_view(
         video,
         details,
         comments,
+        comments_next_page_token,
+        loading_more_comments,
         player_state,
         playlists,
         playlist_action_status,
@@ -45,7 +49,7 @@ pub fn render_details_view(
     });
     ui.add_space(15.0);
 
-    let (download_status, playback_progress) = {
+    let (download_status, playback_progress, sponsor_segments) = {
         let s_lock = state.lock().unwrap();
         (
             s_lock
@@ -54,6 +58,7 @@ pub fn render_details_view(
                 .cloned()
                 .unwrap_or(DownloadStatus::NotStarted),
             s_lock.playback_positions.get(&video.id).cloned(),
+            s_lock.sponsor_segments.get(&video.id).cloned().unwrap_or_default(),
         )
     };
 
@@ -198,6 +203,109 @@ pub fn render_details_view(
                     .size(11.0)
                     .color(egui::Color32::from_rgb(130, 130, 140)),
             );
+
+            if !sponsor_segments.is_empty() {
+                ui.add_space(6.0);
+                let total_dur = details
+                    .as_ref()
+                    .and_then(|res| res.as_ref().ok())
+                    .map(|d| d.duration_seconds as f64)
+                    .unwrap_or_else(|| {
+                        sponsor_segments
+                            .iter()
+                            .map(|s| s.end_secs)
+                            .fold(0.0_f64, f64::max)
+                    });
+
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "🛡️ SponsorBlock: {} segment(s) detected",
+                                sponsor_segments.len()
+                            ))
+                            .size(12.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(100, 220, 120)),
+                        );
+                    });
+
+                    if total_dur > 0.0 {
+                        ui.add_space(2.0);
+                        let bar_width = 340.0_f32;
+                        let bar_height = 8.0_f32;
+                        let (bar_rect, bar_resp) = ui.allocate_exact_size(
+                            egui::vec2(bar_width, bar_height),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().rect_filled(
+                            bar_rect,
+                            3.0,
+                            egui::Color32::from_rgb(55, 60, 70),
+                        );
+
+                        for seg in &sponsor_segments {
+                            let start_ratio = (seg.start_secs / total_dur).clamp(0.0, 1.0) as f32;
+                            let end_ratio = (seg.end_secs / total_dur).clamp(0.0, 1.0) as f32;
+                            let seg_min_x = bar_rect.min.x + start_ratio * bar_width;
+                            let seg_max_x = (bar_rect.min.x + end_ratio * bar_width)
+                                .max(seg_min_x + 2.0)
+                                .min(bar_rect.max.x);
+                            let seg_rect = egui::Rect::from_min_max(
+                                egui::pos2(seg_min_x, bar_rect.min.y),
+                                egui::pos2(seg_max_x, bar_rect.max.y),
+                            );
+                            let color = match seg.category {
+                                youtube_client_lib::SegmentCategory::Sponsor => {
+                                    egui::Color32::from_rgb(0, 212, 0)
+                                }
+                                youtube_client_lib::SegmentCategory::Selfpromo => {
+                                    egui::Color32::from_rgb(255, 255, 0)
+                                }
+                                youtube_client_lib::SegmentCategory::Interaction => {
+                                    egui::Color32::from_rgb(204, 0, 255)
+                                }
+                                youtube_client_lib::SegmentCategory::Intro => {
+                                    egui::Color32::from_rgb(0, 255, 255)
+                                }
+                                youtube_client_lib::SegmentCategory::Outro => {
+                                    egui::Color32::from_rgb(2, 2, 237)
+                                }
+                                youtube_client_lib::SegmentCategory::Preview => {
+                                    egui::Color32::from_rgb(0, 143, 214)
+                                }
+                                youtube_client_lib::SegmentCategory::MusicOfftopic => {
+                                    egui::Color32::from_rgb(255, 153, 0)
+                                }
+                                youtube_client_lib::SegmentCategory::Other => {
+                                    egui::Color32::from_rgb(180, 180, 180)
+                                }
+                            };
+                            ui.painter().rect_filled(seg_rect, 2.0, color);
+                        }
+
+                        let hover_summary = sponsor_segments
+                            .iter()
+                            .map(|seg| {
+                                let sm = (seg.start_secs as u32) / 60;
+                                let ss = (seg.start_secs as u32) % 60;
+                                let em = (seg.end_secs as u32) / 60;
+                                let es = (seg.end_secs as u32) % 60;
+                                format!(
+                                    "• {}: {:02}:{:02} – {:02}:{:02}",
+                                    seg.category.display_name(),
+                                    sm,
+                                    ss,
+                                    em,
+                                    es
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        bar_resp.on_hover_text(hover_summary);
+                    }
+                });
+            }
 
             ui.add_space(12.0);
 
@@ -698,6 +806,22 @@ pub fn render_details_view(
                                     ui.add_space(5.0);
                                 });
                             });
+                        }
+
+                        if loading_more_comments {
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                ui.label("Loading more comments...");
+                            });
+                        } else if let Some(next_token) = comments_next_page_token {
+                            ui.add_space(10.0);
+                            if ui.button("💬 Load More Comments").clicked() {
+                                action = Some(PendingAction::LoadMoreComments {
+                                    video_id: video.id.clone(),
+                                    page_token: next_token.clone(),
+                                });
+                            }
                         }
                     });
             }

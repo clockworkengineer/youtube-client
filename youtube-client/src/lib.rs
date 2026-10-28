@@ -110,6 +110,18 @@ pub enum Commands {
         #[arg(short, long, default_value_t = 20)]
         limit: u32,
 
+        /// Sort order (relevance, date, view-count, rating, title)
+        #[arg(long)]
+        order: Option<String>,
+
+        /// Video duration filter (any, short, medium, long)
+        #[arg(long)]
+        duration: Option<String>,
+
+        /// Content type filter (video, channel, playlist, all)
+        #[arg(long = "type")]
+        content_type: Option<String>,
+
         /// Resumption page token for pagination
         #[arg(long)]
         page_token: Option<String>,
@@ -247,6 +259,28 @@ pub enum Commands {
         /// The subscription ID to remove
         #[arg(short, long)]
         subscription_id: String,
+    },
+
+    /// Export your YouTube subscriptions to OPML, Google Takeout CSV, or NewPipe JSON
+    ExportSubscriptions {
+        /// Output format: opml, csv, or json
+        #[arg(short, long, default_value = "opml")]
+        format: String,
+
+        /// Output file path
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+
+    /// Import YouTube subscriptions from an OPML, Google Takeout CSV, or NewPipe JSON file
+    ImportSubscriptions {
+        /// Input format: auto, opml, csv, or json
+        #[arg(short, long, default_value = "auto")]
+        format: String,
+
+        /// Path to the backup file to import
+        #[arg(long, short = 'i', alias = "input")]
+        file: PathBuf,
     },
 
     /// Create a new playlist
@@ -392,9 +426,24 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Search {
             query,
             limit,
+            order,
+            duration,
+            content_type,
             page_token,
             json,
-        } => execute_search(&ctx, query, limit, page_token, json).await,
+        } => {
+            execute_search(
+                &ctx,
+                query,
+                limit,
+                order,
+                duration,
+                content_type,
+                page_token,
+                json,
+            )
+            .await
+        }
         Commands::Rate { video_id, rating } => execute_rate(&ctx, video_id, rating.into()).await,
         Commands::Playlists {
             limit,
@@ -436,6 +485,12 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Subscribe { channel_id } => execute_subscribe(&ctx, channel_id).await,
         Commands::Unsubscribe { subscription_id } => {
             execute_unsubscribe(&ctx, subscription_id).await
+        }
+        Commands::ExportSubscriptions { format, output } => {
+            execute_export_subscriptions(&ctx, format, output).await
+        }
+        Commands::ImportSubscriptions { format, file } => {
+            execute_import_subscriptions(&ctx, format, file).await
         }
         Commands::PlaylistCreate { title, description } => {
             execute_playlist_create(&ctx, title, description).await

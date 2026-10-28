@@ -31,6 +31,9 @@ pub use playlist_manage::{
 pub use playlists::execute_playlists;
 pub use rate::execute_rate;
 pub use search::execute_search;
-pub use subscription_manage::{execute_subscribe, execute_unsubscribe};
+pub use subscription_manage::{
+    execute_export_subscriptions, execute_import_subscriptions, execute_subscribe,
+    execute_unsubscribe,
+};
 pub use subscriptions::execute_subscriptions;
 pub use videos::execute_videos;

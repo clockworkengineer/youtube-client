@@ -41,6 +41,7 @@ struct YoutubeGuiApp {
     settings_form: SettingsFormState,
     library_state: LibraryViewState,
     history_state: HistoryViewState,
+    search_filter_state: SearchFilterState,
     volume: f32,
     muted: bool,
     audio_tx: std::sync::mpsc::Sender<PlayerCommand>,
@@ -132,6 +133,7 @@ impl YoutubeGuiApp {
             mock_backend: None,
             cached_backend: None,
             toast: None,
+            sponsor_segments: HashMap::new(),
         }));
 
         let http_client = reqwest::Client::new();
@@ -170,6 +172,7 @@ impl YoutubeGuiApp {
             settings_form: SettingsFormState::default(),
             library_state: LibraryViewState::default(),
             history_state: HistoryViewState::default(),
+            search_filter_state: SearchFilterState::default(),
             volume: config.volume.unwrap_or(1.0),
             muted: false,
             audio_tx,
@@ -367,7 +370,10 @@ impl eframe::App for YoutubeGuiApp {
                     {
                         let q = self.search_input.trim().to_string();
                         if !q.is_empty() {
-                            action = PendingAction::Search { query: q };
+                            action = PendingAction::Search {
+                                query: q,
+                                filter: Some(self.search_filter_state.to_search_filter()),
+                            };
                         }
                     }
                 });
@@ -509,6 +515,7 @@ impl eframe::App for YoutubeGuiApp {
                     channel_id,
                     channel_title,
                     channel_description,
+                    channel_details,
                     videos,
                 } => {
                     let subs = {
@@ -524,6 +531,7 @@ impl eframe::App for YoutubeGuiApp {
                         &channel_id,
                         &channel_title,
                         &channel_description,
+                        &channel_details,
                         &videos,
                         &subs,
                     ) {
@@ -538,6 +546,7 @@ impl eframe::App for YoutubeGuiApp {
                         ui,
                         ctx,
                         &mut self.search_input,
+                        &mut self.search_filter_state,
                         &videos,
                     ) {
                         action = act;
@@ -578,6 +587,8 @@ impl eframe::App for YoutubeGuiApp {
                     video,
                     details,
                     comments,
+                    comments_next_page_token,
+                    loading_more_comments,
                 } => {
                     let (p_state, pls, status) = {
                         let s = lock_state(&self.state);
@@ -591,6 +602,8 @@ impl eframe::App for YoutubeGuiApp {
                         video: &video,
                         details: &details,
                         comments: &comments,
+                        comments_next_page_token: &comments_next_page_token,
+                        loading_more_comments,
                         player_state: &p_state,
                         playlists: &pls,
                         playlist_action_status: &status,

@@ -244,3 +244,56 @@ fn test_validate_video_and_channel_ids_and_sanitize() {
     assert_eq!(sanitize_identifier("../../evil/vid?123"), "evilvid123");
     assert_eq!(sanitize_identifier("---"), "default_id");
 }
+
+#[test]
+fn test_format_table_mismatched_widths() {
+    use youtube_client_lib::utils::format_table;
+
+    let items = vec![("Alpha", 1, "Extra")];
+    // Fewer widths than headers and columns — must not panic
+    let table = format_table(&["Col1", "Col2", "Col3"], &[5], &items, |(a, b, c), _| {
+        vec![a.to_string(), b.to_string(), c.to_string()]
+    });
+    assert!(table.contains("Col1"));
+    assert!(table.contains("Col3"));
+    assert!(table.contains("Alpha"));
+    assert!(table.contains("Extra"));
+
+    // Empty widths slice — must not panic
+    let table_empty_widths = format_table(&["Col1", "Col2"], &[], &items, |(a, b, _), _| {
+        vec![a.to_string(), b.to_string()]
+    });
+    assert!(table_empty_widths.contains("Alpha"));
+}
+
+#[test]
+fn test_scan_downloads_depth_bound() {
+    use tempfile::tempdir;
+    use youtube_client_lib::utils::{MAX_SCAN_DEPTH, scan_downloaded_items, scan_downloads_dir};
+
+    let tmp = tempdir().unwrap();
+    let mut current = tmp.path().to_path_buf();
+
+    // Create a file at root (depth 0)
+    std::fs::write(current.join("root_vid [11111111111].mp4"), b"root").unwrap();
+
+    // Create nested directories up to MAX_SCAN_DEPTH + 2
+    for d in 1..=(MAX_SCAN_DEPTH + 2) {
+        current = current.join(format!("level_{d}"));
+        std::fs::create_dir_all(&current).unwrap();
+        let file_name = format!("vid_d{d} [{d:011}].mp4");
+        std::fs::write(current.join(file_name), b"nested").unwrap();
+    }
+
+    let mut map = HashMap::new();
+    scan_downloads_dir(tmp.path(), &mut map);
+    let items = scan_downloaded_items(tmp.path());
+
+    // Depth 0 ..= MAX_SCAN_DEPTH should be found (MAX_SCAN_DEPTH + 1 files total)
+    assert_eq!(map.len(), MAX_SCAN_DEPTH + 1);
+    assert_eq!(items.len(), MAX_SCAN_DEPTH + 1);
+
+    // Deeper than MAX_SCAN_DEPTH must be ignored
+    let too_deep_id = format!("{:011}", MAX_SCAN_DEPTH + 1);
+    assert!(!map.contains_key(&too_deep_id));
+}

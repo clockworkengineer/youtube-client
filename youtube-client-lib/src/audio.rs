@@ -38,6 +38,9 @@ pub async fn play_audio_rodio(_file_path: PathBuf) -> Result<()> {
     ))
 }
 
+/// Maximum number of bytes buffered in memory when streaming audio directly via `stream_audio_rodio` (256 MB).
+pub const MAX_AUDIO_STREAM_BYTES: usize = 256 * 1024 * 1024;
+
 /// Stream audio directly from YouTube via `yt-dlp` piping without intermediate disk writes.
 #[cfg(feature = "audio")]
 pub async fn stream_audio_rodio(
@@ -101,6 +104,12 @@ pub async fn stream_audio_rodio(
 
         if n == 0 {
             break;
+        }
+        if audio_bytes.len().saturating_add(n) > MAX_AUDIO_STREAM_BYTES {
+            let _ = child.kill().await;
+            return Err(YoutubeError::Media(
+                "Audio stream exceeded maximum 256 MB in-memory buffer limit".to_string(),
+            ));
         }
         audio_bytes.extend_from_slice(&temp[..n]);
     }

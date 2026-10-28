@@ -5,11 +5,11 @@ use youtube_client_lib::{
     ChannelDetails, Comment, Page, Video, VideoDetails, YoutubeBackend, YoutubeClient,
 };
 
-use crate::types::{AppState, View};
+use crate::types::{AppState, View, lock_state};
 
 pub async fn get_client_async(state: &Arc<Mutex<AppState>>) -> Result<YoutubeBackend, String> {
     {
-        let s = state.lock().unwrap();
+        let s = lock_state(state);
         if let Some(mock) = &s.mock_backend {
             return Ok(YoutubeBackend::mock(mock.clone()));
         }
@@ -54,7 +54,7 @@ pub async fn get_client_async(state: &Arc<Mutex<AppState>>) -> Result<YoutubeBac
 
     let backend = YoutubeBackend::live(client);
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock_state(state);
         s.cached_backend = Some(backend.clone());
     }
     Ok(backend)
@@ -79,7 +79,7 @@ pub fn spawn_client_action<F, Fut, T>(
         }
         .await;
 
-        let mut s = state_clone.lock().unwrap();
+        let mut s = lock_state(&state_clone);
         if let Err(e) = &res {
             youtube_client_lib::utils::append_to_log(
                 &s.log_file,
@@ -184,7 +184,7 @@ pub fn spawn_login_and_auth(
     secret: String,
 ) {
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock_state(&state);
         s.logging_in = true;
         s.login_error = None;
         s.cached_backend = None;
@@ -215,7 +215,7 @@ pub fn spawn_login_and_auth(
         }
         .await;
 
-        let mut s = state_clone.lock().unwrap();
+        let mut s = lock_state(&state_clone);
         if !s.logging_in {
             // Cancelled by user
             return;
@@ -240,7 +240,7 @@ pub fn spawn_login_and_auth(
 
 pub fn spawn_default_login(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock_state(&state);
         s.logging_in = true;
         s.login_error = None;
         s.cached_backend = None;
@@ -274,7 +274,7 @@ pub fn spawn_default_login(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
         }
         .await;
 
-        let mut s = state_clone.lock().unwrap();
+        let mut s = lock_state(&state_clone);
         if !s.logging_in {
             // Cancelled by user
             return;
@@ -308,7 +308,7 @@ pub fn spawn_download(
     let video_id = video.id.clone();
     let video_title = video.title.clone();
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock_state(&state);
         s.downloads.insert(
             video_id.clone(),
             DownloadStatus::Downloading {
@@ -330,7 +330,7 @@ pub fn spawn_download(
     tokio::spawn(async move {
         let res: Result<std::path::PathBuf, String> = async {
             let (downloads_base, log_file) = {
-                let s = state_clone.lock().unwrap();
+                let s = lock_state(&state_clone);
                 (s.downloads_dir.clone(), s.log_file.clone())
             };
 
@@ -387,14 +387,13 @@ pub fn spawn_download(
             let vid_id = video_id.clone();
             client
                 .download_video_with_options(&video_id, &output_path, &options, move |prog| {
-                    if let Ok(mut s) = state_inner.lock() {
-                        s.downloads.insert(
-                            vid_id.clone(),
-                            DownloadStatus::Downloading {
-                                progress: prog.to_string(),
-                            },
-                        );
-                    }
+                    let mut s = lock_state(&state_inner);
+                    s.downloads.insert(
+                        vid_id.clone(),
+                        DownloadStatus::Downloading {
+                            progress: prog.to_string(),
+                        },
+                    );
                     ctx_inner.request_repaint();
                 })
                 .await
@@ -404,7 +403,7 @@ pub fn spawn_download(
         }
         .await;
 
-        let mut s = state_clone.lock().unwrap();
+        let mut s = lock_state(&state_clone);
         match res {
             Ok(path) => {
                 s.downloads.insert(video_id, DownloadStatus::Finished(path));
@@ -440,7 +439,7 @@ pub fn fetch_videos(
             let videos_res = match client.list_videos(&channel_id, 20).await {
                 Ok(vids) => Ok(vids),
                 Err(err) => {
-                    let http = reqwest::Client::new();
+                    let http = youtube_client_lib::utils::default_http_client();
                     if let Ok(rss_vids) =
                         youtube_client_lib::fetch_channel_videos_via_rss(&http, &channel_id).await
                     {
@@ -592,7 +591,7 @@ pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, vid
         let sb_vid_id = vid_id.clone();
         let sb_cats = config.sponsorblock_categories.clone();
         tokio::spawn(async move {
-            let http = reqwest::Client::new();
+            let http = youtube_client_lib::utils::default_http_client();
             let cat_refs: Option<Vec<&str>> = sb_cats
                 .as_ref()
                 .map(|v| v.iter().map(|s| s.as_str()).collect());
@@ -603,7 +602,7 @@ pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, vid
             )
             .await
             {
-                let mut s = sb_state.lock().unwrap();
+                let mut s = lock_state(&sb_state);
                 s.sponsor_segments.insert(sb_vid_id, segments);
                 sb_ctx.request_repaint();
             }
@@ -667,7 +666,7 @@ pub fn spawn_fetch_more_comments(
     page_token: String,
 ) {
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock_state(&state);
         if let View::VideoDetails {
             video: current_video,
             loading_more_comments,
@@ -1017,6 +1016,8 @@ fn get_thumbnail_cache_path(url: &str) -> std::path::PathBuf {
     cache_dir.join(format!("{hash_val:016x}.bin"))
 }
 
+const MAX_THUMBNAIL_BYTES: usize = 10 * 1024 * 1024;
+
 pub fn fetch_thumbnail(
     ctx: egui::Context,
     state: Arc<Mutex<AppState>>,
@@ -1028,16 +1029,32 @@ pub fn fetch_thumbnail(
         let success = async {
             let cache_path = get_thumbnail_cache_path(&url);
             let bytes = if cache_path.exists() {
+                let meta = tokio::fs::metadata(&cache_path).await.ok()?;
+                if meta.len() > MAX_THUMBNAIL_BYTES as u64 {
+                    return None;
+                }
                 tokio::fs::read(&cache_path).await.ok()
             } else {
                 let response = http_client.get(&url).send().await.ok()?;
+                if response
+                    .content_length()
+                    .is_some_and(|len| len > MAX_THUMBNAIL_BYTES as u64)
+                {
+                    return None;
+                }
                 let fetched = response.bytes().await.ok()?;
+                if fetched.len() > MAX_THUMBNAIL_BYTES {
+                    return None;
+                }
                 if let Some(parent) = cache_path.parent() {
                     let _ = tokio::fs::create_dir_all(parent).await;
                 }
                 let _ = tokio::fs::write(&cache_path, &fetched).await;
                 Some(fetched.to_vec())
             }?;
+            if bytes.len() > MAX_THUMBNAIL_BYTES {
+                return None;
+            }
 
             let (size, pixels) = tokio::task::spawn_blocking(move || {
                 let img = image::load_from_memory(&bytes).ok()?;
@@ -1057,7 +1074,7 @@ pub fn fetch_thumbnail(
                 Default::default(),
             );
 
-            let mut s = state.lock().unwrap();
+            let mut s = lock_state(&state);
             if let Some(t) = s.thumbnails.get_mut(&channel_id) {
                 t.texture = Some(texture);
                 t.loading = false;
@@ -1068,7 +1085,7 @@ pub fn fetch_thumbnail(
         .await;
 
         if success.is_none() {
-            let mut s = state.lock().unwrap();
+            let mut s = lock_state(&state);
             if let Some(t) = s.thumbnails.get_mut(&channel_id) {
                 t.loading = false;
             }

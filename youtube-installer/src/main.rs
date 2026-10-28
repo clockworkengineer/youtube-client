@@ -231,7 +231,10 @@ fn main() -> anyhow::Result<()> {
     // 4. Copy Binaries
     if install_cli {
         if cli_src.exists() {
-            let cli_dest = install_dir.join(cli_src.file_name().unwrap());
+            let cli_file_name = cli_src
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("Invalid CLI binary path: {}", cli_src.display()))?;
+            let cli_dest = install_dir.join(cli_file_name);
             if let Err(e) = std::fs::copy(&cli_src, &cli_dest) {
                 eprintln!(
                     "❌ Error copying youtube-client to {}: {}. If the application is currently running, please close it and retry.",
@@ -251,7 +254,10 @@ fn main() -> anyhow::Result<()> {
 
     if install_gui {
         if gui_src.exists() {
-            let gui_dest = install_dir.join(gui_src.file_name().unwrap());
+            let gui_file_name = gui_src
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("Invalid GUI binary path: {}", gui_src.display()))?;
+            let gui_dest = install_dir.join(gui_file_name);
             if let Err(e) = std::fs::copy(&gui_src, &gui_dest) {
                 eprintln!(
                     "❌ Error copying youtube-gui to {}: {}. If the application is currently running, please close it and retry.",

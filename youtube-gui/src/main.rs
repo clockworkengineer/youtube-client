@@ -54,7 +54,8 @@ struct YoutubeGuiApp {
 
 impl YoutubeGuiApp {
     fn save_window_state(&mut self) {
-        if let Ok(s_lock) = self.state.lock() {
+        {
+            let s_lock = lock_state(&self.state);
             s_lock.save_playback_positions();
         }
 
@@ -140,7 +141,7 @@ impl YoutubeGuiApp {
             audio_cancel_token: None,
         }));
 
-        let http_client = reqwest::Client::new();
+        let http_client = youtube_client_lib::utils::default_http_client();
 
         // Spawn Rodio background audio thread and channel listener
         let (audio_tx, audio_rx) = std::sync::mpsc::channel::<PlayerCommand>();

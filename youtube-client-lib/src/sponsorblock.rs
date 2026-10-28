@@ -140,18 +140,31 @@ pub fn build_mpv_edl(
     total_duration_secs: f64,
     skip_segments: &[SkipSegment],
 ) -> Option<String> {
-    if skip_segments.is_empty() || total_duration_secs <= 0.0 {
+    if skip_segments.is_empty() || !total_duration_secs.is_finite() || total_duration_secs <= 0.0 {
         return None;
     }
 
-    // Sort segments by start time
-    let mut sorted = skip_segments.to_vec();
-    sorted.sort_by(|a, b| a.start_secs.partial_cmp(&b.start_secs).unwrap());
+    // Filter out non-finite or inverted segments and sort by start time
+    let mut sorted: Vec<&SkipSegment> = skip_segments
+        .iter()
+        .filter(|seg| {
+            seg.start_secs.is_finite()
+                && seg.end_secs.is_finite()
+                && seg.start_secs >= 0.0
+                && seg.end_secs > seg.start_secs
+        })
+        .collect();
+
+    if sorted.is_empty() {
+        return None;
+    }
+
+    sorted.sort_by(|a, b| a.start_secs.total_cmp(&b.start_secs));
 
     let mut parts: Vec<(f64, f64)> = Vec::new();
     let mut current_pos = 0.0;
 
-    for seg in &sorted {
+    for seg in sorted {
         if seg.start_secs > current_pos {
             let duration = seg.start_secs - current_pos;
             if duration > 0.1 {
@@ -221,5 +234,36 @@ mod tests {
         assert!(edl.contains(",10.00,40.00"));
         // Second cut: 80.0 to 100.0 (duration 20.0)
         assert!(edl.contains(",80.00,20.00"));
+    }
+
+    #[test]
+    fn test_sponsorblock_edl_nan_and_invalid_ranges() {
+        let nan_segments = vec![
+            SkipSegment {
+                category: SegmentCategory::Sponsor,
+                action_type: "skip".to_string(),
+                start_secs: f64::NAN,
+                end_secs: 20.0,
+                uuid: "nan1".to_string(),
+            },
+            SkipSegment {
+                category: SegmentCategory::Intro,
+                action_type: "skip".to_string(),
+                start_secs: 50.0,
+                end_secs: 30.0, // inverted
+                uuid: "inv1".to_string(),
+            },
+            SkipSegment {
+                category: SegmentCategory::Outro,
+                action_type: "skip".to_string(),
+                start_secs: -5.0, // negative
+                end_secs: 10.0,
+                uuid: "neg1".to_string(),
+            },
+        ];
+
+        assert!(build_mpv_edl("https://example.com/video", 100.0, &nan_segments).is_none());
+        assert!(build_mpv_edl("https://example.com/video", f64::NAN, &nan_segments).is_none());
+        assert!(build_mpv_edl("https://example.com/video", f64::INFINITY, &nan_segments).is_none());
     }
 }

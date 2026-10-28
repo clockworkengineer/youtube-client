@@ -44,6 +44,14 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
         }
     }
 
+    fn read_entries(&self) -> std::sync::RwLockReadGuard<'_, HashMap<K, CacheEntry<V>>> {
+        self.entries.read().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn write_entries(&self) -> std::sync::RwLockWriteGuard<'_, HashMap<K, CacheEntry<V>>> {
+        self.entries.write().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Insert an item into the cache with the default TTL.
     pub fn insert(&self, key: K, value: V) {
         self.insert_arc_with_ttl(key, Arc::new(value), self.default_ttl);
@@ -70,7 +78,7 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
             expires_at: Instant::now() + ttl,
             expires_at_epoch_secs: epoch_now + ttl.as_secs(),
         };
-        let mut map = self.entries.write().unwrap();
+        let mut map = self.write_entries();
         self.ensure_capacity(&mut map);
         map.insert(key, entry);
     }
@@ -94,7 +102,7 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
                 expires_at: Instant::now() + ttl,
                 expires_at_epoch_secs,
             };
-            let mut map = self.entries.write().unwrap();
+            let mut map = self.write_entries();
             self.ensure_capacity(&mut map);
             map.insert(key, entry);
         }
@@ -119,7 +127,7 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
     /// Retrieve an Arc-wrapped value from the cache if it exists and has not expired.
     pub fn get_arc(&self, key: &K) -> Option<Arc<V>> {
         let now = Instant::now();
-        let map = self.entries.read().unwrap();
+        let map = self.read_entries();
         if let Some(entry) = map.get(key) {
             if entry.expires_at > now {
                 return Some(entry.value.clone());
@@ -135,27 +143,27 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
 
     /// Explicitly remove an entry from the cache.
     pub fn remove(&self, key: &K) -> Option<V> {
-        let mut map = self.entries.write().unwrap();
+        let mut map = self.write_entries();
         map.remove(key).map(|e| (*e.value).clone())
     }
 
     /// Clear all entries from the cache.
     pub fn clear(&self) {
-        let mut map = self.entries.write().unwrap();
+        let mut map = self.write_entries();
         map.clear();
     }
 
     /// Prune expired entries to reclaim memory.
     pub fn prune_expired(&self) {
         let now = Instant::now();
-        let mut map = self.entries.write().unwrap();
+        let mut map = self.write_entries();
         map.retain(|_, entry| entry.expires_at > now);
     }
 
     /// Export unexpired entries along with their expiration epoch timestamps.
     pub fn export_entries(&self) -> Vec<(K, Arc<V>, u64)> {
         let now = Instant::now();
-        let map = self.entries.read().unwrap();
+        let map = self.read_entries();
         map.iter()
             .filter(|(_, entry)| entry.expires_at > now)
             .map(|(k, entry)| (k.clone(), entry.value.clone(), entry.expires_at_epoch_secs))
@@ -164,7 +172,7 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
 
     /// Returns the total number of entries currently stored (including potentially un-pruned expired ones).
     pub fn len(&self) -> usize {
-        self.entries.read().unwrap().len()
+        self.read_entries().len()
     }
 
     /// Returns `true` if the cache contains no entries.

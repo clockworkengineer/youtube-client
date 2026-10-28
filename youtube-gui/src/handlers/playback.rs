@@ -29,7 +29,7 @@ pub fn handle_playback_action(
                     || e.eq_ignore_ascii_case("ogg")
                     || e.eq_ignore_ascii_case("flac")
             });
-            let log_file = state.lock().unwrap().log_file.clone();
+            let log_file = lock_state(state).log_file.clone();
             let vid = video_id
                 .clone()
                 .or_else(|| youtube_client_lib::utils::extract_video_id_from_path(path));
@@ -119,7 +119,7 @@ pub fn handle_playback_action(
                     let segments = if let Some(segs) = cached_segments {
                         segs
                     } else {
-                        let http = reqwest::Client::new();
+                        let http = youtube_client_lib::utils::default_http_client();
                         let cat_refs: Option<Vec<&str>> = config
                             .sponsorblock_categories
                             .as_ref()
@@ -228,6 +228,7 @@ pub fn handle_playback_action(
                 let safe_vid = youtube_client_lib::utils::sanitize_identifier(&vid);
                 let cache_dir = std::env::temp_dir().join("youtube-client-audio");
                 let _ = std::fs::create_dir_all(&cache_dir);
+                prune_temp_audio_cache(&cache_dir, 25);
 
                 let mp3_path = cache_dir.join(format!("{safe_vid}.mp3"));
                 let m4a_path = cache_dir.join(format!("{safe_vid}.m4a"));
@@ -367,13 +368,61 @@ pub fn handle_playback_action(
             true
         }
         PendingAction::OpenInBrowser { url } => {
-            let log_file = state.lock().unwrap().log_file.clone();
+            let log_file = {
+                let mut s = lock_state(state);
+                s.set_toast("Opening in web browser...", false);
+                s.log_file.clone()
+            };
             append_to_log(&log_file, "INFO", &format!("Opening in web browser: {url}"));
-            let mut s = lock_state(state);
-            s.set_toast("Opening in web browser...", false);
             let _ = open::that(url);
             true
         }
         _ => false,
+    }
+}
+
+/// Prune temporary audio stream cache directory to keep at most `max_files` recent files
+/// and remove any leftover `.part`, `.ytdl`, or 0-byte files.
+fn prune_temp_audio_cache(cache_dir: &std::path::Path, max_files: usize) {
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return;
+    };
+
+    let mut media_files: Vec<(std::path::PathBuf, std::time::SystemTime)> = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+        if ft.is_symlink() || !ft.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.len() == 0
+            || ext.eq_ignore_ascii_case("part")
+            || ext.eq_ignore_ascii_case("ytdl")
+            || ext.eq_ignore_ascii_case("temp")
+        {
+            let _ = std::fs::remove_file(&path);
+            continue;
+        }
+        if ext.eq_ignore_ascii_case("mp3") || ext.eq_ignore_ascii_case("m4a") {
+            let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+            media_files.push((path, mtime));
+        }
+    }
+
+    if media_files.len() > max_files {
+        media_files.sort_by_key(|(_, mtime)| *mtime);
+        let to_remove = media_files.len() - max_files;
+        for (old_path, _) in media_files.into_iter().take(to_remove) {
+            let _ = std::fs::remove_file(old_path);
+        }
     }
 }

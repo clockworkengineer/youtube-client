@@ -619,6 +619,9 @@ where
         .take()
         .ok_or_else(|| YoutubeError::Download("Failed to capture stderr".to_string()))?;
 
+    const MAX_STDERR_BUF_BYTES: usize = 256 * 1024;
+    const MAX_LINE_BUF_BYTES: usize = 64 * 1024;
+
     let log_path_clone = log_file_path.clone();
     let stderr_handle = tokio::spawn(async move {
         let mut err_buf = Vec::new();
@@ -629,6 +632,10 @@ where
                 break;
             }
             err_buf.extend_from_slice(&temp_err[..n]);
+            if err_buf.len() > MAX_STDERR_BUF_BYTES {
+                let excess = err_buf.len() - MAX_STDERR_BUF_BYTES;
+                err_buf.drain(..excess);
+            }
             line_buf.extend_from_slice(&temp_err[..n]);
             let mut batch: Vec<String> = Vec::new();
             while let Some(pos) = line_buf.iter().position(|&b| b == b'\n' || b == b'\r') {
@@ -640,6 +647,9 @@ where
                     }
                 }
                 line_buf.drain(..pos + 1);
+            }
+            if line_buf.len() > MAX_LINE_BUF_BYTES {
+                line_buf.clear();
             }
             if !batch.is_empty() {
                 let batch_refs: Vec<&str> = batch.iter().map(|s| s.as_str()).collect();
@@ -698,6 +708,9 @@ where
                 }
             }
             buffer.drain(..pos + 1);
+        }
+        if buffer.len() > MAX_LINE_BUF_BYTES {
+            buffer.clear();
         }
     }
 

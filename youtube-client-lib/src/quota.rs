@@ -142,10 +142,14 @@ impl QuotaTracker {
         Ok(())
     }
 
+    fn lock_status(&self) -> std::sync::MutexGuard<'_, QuotaStatus> {
+        self.status.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Check if the date has changed (UTC day rollover), resetting daily counters if necessary.
     fn check_day_rollover(&self) {
         let today = current_utc_date_string();
-        let mut guard = self.status.lock().unwrap();
+        let mut guard = self.lock_status();
         if guard.date != today {
             guard.date = today;
             guard.units_used = 0;
@@ -192,7 +196,7 @@ impl QuotaTracker {
             .unwrap_or_default()
             .as_secs();
 
-        let mut guard = self.status.lock().unwrap();
+        let mut guard = self.lock_status();
         guard.units_used = guard.units_used.saturating_add(cost);
         if is_search {
             guard.search_count = guard.search_count.saturating_add(1);
@@ -210,7 +214,7 @@ impl QuotaTracker {
     /// Get a snapshot of the current quota status.
     pub fn status(&self) -> QuotaStatus {
         self.check_day_rollover();
-        self.status.lock().unwrap().clone()
+        self.lock_status().clone()
     }
 }
 

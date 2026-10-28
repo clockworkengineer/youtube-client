@@ -133,14 +133,45 @@ pub fn sanitize_filename(name: &str) -> String {
     }
 }
 
+/// Maximum directory recursion depth when scanning local download folders.
+pub const MAX_SCAN_DEPTH: usize = 4;
+
+/// Maximum number of files inspected during a directory scan to prevent DoS/OOM.
+pub const MAX_SCANNED_FILES: usize = 5_000;
+
 /// Scan a downloads directory and populate a map of known downloads.
+///
+/// Recursion is bounded by [`MAX_SCAN_DEPTH`] and [`MAX_SCANNED_FILES`], and symlinks are skipped.
 pub fn scan_downloads_dir(dir: &Path, downloads: &mut HashMap<String, DownloadStatus>) {
+    let mut scanned_files = 0usize;
+    scan_downloads_dir_inner(dir, downloads, 0, &mut scanned_files);
+}
+
+fn scan_downloads_dir_inner(
+    dir: &Path,
+    downloads: &mut HashMap<String, DownloadStatus>,
+    depth: usize,
+    scanned_files: &mut usize,
+) {
+    if depth > MAX_SCAN_DEPTH || *scanned_files >= MAX_SCANNED_FILES {
+        return;
+    }
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
+            if *scanned_files >= MAX_SCANNED_FILES {
+                break;
+            }
+            let Ok(ft) = entry.file_type() else {
+                continue;
+            };
+            if ft.is_symlink() {
+                continue;
+            }
             let path = entry.path();
-            if path.is_dir() {
-                scan_downloads_dir(&path, downloads);
-            } else if path.is_file() {
+            if ft.is_dir() {
+                scan_downloads_dir_inner(&path, downloads, depth + 1, scanned_files);
+            } else if ft.is_file() {
+                *scanned_files += 1;
                 if let Some(ext) = path.extension() {
                     let ext_str = ext.to_string_lossy();
                     if ext_str == "mp3" || ext_str == "mp4" {
@@ -168,20 +199,41 @@ pub struct DownloadedItem {
 }
 
 /// Recursively scans a directory for downloaded media files (mp3, mp4, mkv, webm, m4a, etc.).
+///
+/// Recursion is bounded by [`MAX_SCAN_DEPTH`] and [`MAX_SCANNED_FILES`], and symlinks are skipped.
 pub fn scan_downloaded_items(dir: &Path) -> Vec<DownloadedItem> {
     let mut items = Vec::new();
-    scan_downloaded_items_inner(dir, &mut items);
+    let mut scanned_files = 0usize;
+    scan_downloaded_items_inner(dir, &mut items, 0, &mut scanned_files);
     items.sort_by_key(|a| std::cmp::Reverse(a.modified_secs));
     items
 }
 
-fn scan_downloaded_items_inner(dir: &Path, items: &mut Vec<DownloadedItem>) {
+fn scan_downloaded_items_inner(
+    dir: &Path,
+    items: &mut Vec<DownloadedItem>,
+    depth: usize,
+    scanned_files: &mut usize,
+) {
+    if depth > MAX_SCAN_DEPTH || *scanned_files >= MAX_SCANNED_FILES {
+        return;
+    }
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
+            if *scanned_files >= MAX_SCANNED_FILES {
+                break;
+            }
+            let Ok(ft) = entry.file_type() else {
+                continue;
+            };
+            if ft.is_symlink() {
+                continue;
+            }
             let path = entry.path();
-            if path.is_dir() {
-                scan_downloaded_items_inner(&path, items);
-            } else if path.is_file() {
+            if ft.is_dir() {
+                scan_downloaded_items_inner(&path, items, depth + 1, scanned_files);
+            } else if ft.is_file() {
+                *scanned_files += 1;
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                     let ext_lower = ext.to_ascii_lowercase();
                     let is_audio = matches!(
@@ -247,18 +299,24 @@ pub fn format_table<T>(
 
     let mut out = String::new();
     for (i, header) in headers.iter().enumerate() {
-        out.push_str(&format!("{:<width$} ", header, width = widths[i]));
+        let width = widths.get(i).copied().unwrap_or(12);
+        out.push_str(&format!("{header:<width$} "));
     }
     out.push('\n');
 
-    let total_width: usize = widths.iter().sum::<usize>() + widths.len() - 1;
+    let col_count = headers.len().max(widths.len());
+    let sum_widths: usize = (0..col_count)
+        .map(|i| widths.get(i).copied().unwrap_or(12))
+        .sum();
+    let total_width = sum_widths.saturating_add(col_count.saturating_sub(1));
     out.push_str(&"-".repeat(total_width));
     out.push('\n');
 
     for (idx, item) in items.iter().enumerate() {
         let cols = row_formatter(item, idx);
         for (i, col) in cols.iter().enumerate() {
-            out.push_str(&format!("{:<width$} ", col, width = widths[i]));
+            let width = widths.get(i).copied().unwrap_or(12);
+            out.push_str(&format!("{col:<width$} "));
         }
         out.push('\n');
     }
@@ -525,11 +583,30 @@ pub fn append_lines_to_log(path: &Path, prefix: &str, lines: &[&str]) {
     }
 }
 
+/// Return a shared, timeout-configured [`reqwest::Client`] with a 5-second connect timeout
+/// and 15-second total request timeout.
+pub fn default_http_client() -> reqwest::Client {
+    static SHARED_HTTP_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    SHARED_HTTP_CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(5))
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .unwrap_or_default()
+        })
+        .clone()
+}
+
 /// Query the public Return YouTube Dislike (RYD) API for estimated video dislike counts.
 pub async fn fetch_dislike_count(video_id: &str) -> Option<u64> {
+    if !is_valid_video_id(video_id) {
+        return None;
+    }
     static HTTP_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     let client = HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(2))
             .timeout(std::time::Duration::from_secs(3))
             .build()
             .unwrap_or_default()

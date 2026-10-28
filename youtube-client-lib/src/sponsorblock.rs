@@ -82,6 +82,12 @@ pub async fn fetch_skip_segments(
     video_id: &str,
     categories: Option<&[&str]>,
 ) -> Result<Vec<SkipSegment>> {
+    if !crate::utils::is_valid_video_id(video_id) {
+        return Err(YoutubeError::InvalidInput(format!(
+            "Invalid video ID '{video_id}'"
+        )));
+    }
+
     let cats = categories.unwrap_or(DEFAULT_CATEGORIES);
     let cats_json = serde_json::to_string(&cats)
         .map_err(|e| YoutubeError::Other(format!("Failed to serialize categories: {e}")))?;

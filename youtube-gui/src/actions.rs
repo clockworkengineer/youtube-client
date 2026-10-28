@@ -193,17 +193,10 @@ pub fn spawn_login_and_auth(
     let ctx_clone = ctx.clone();
     tokio::spawn(async move {
         let res = async {
-            #[derive(serde::Serialize)]
-            struct ConfigSave {
-                client_id: String,
-                client_secret: String,
-            }
-            let config_data = ConfigSave {
-                client_id: id.clone(),
-                client_secret: secret.clone(),
-            };
-            let content = serde_json::to_string_pretty(&config_data).map_err(|e| e.to_string())?;
-            std::fs::write("private_config.json", content).map_err(|e| e.to_string())?;
+            let mut config = youtube_client_lib::load_config();
+            config.client_id = Some(id.clone());
+            config.client_secret = Some(secret.clone());
+            youtube_client_lib::save_config(&config).map_err(|e| e.to_string())?;
 
             let token_cache_path = youtube_client_lib::resolve_token_cache_path();
             let client = YoutubeClient::new_oauth_with_scopes(

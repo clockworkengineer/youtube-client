@@ -10,13 +10,11 @@ pub fn get_global_config_dir() -> Option<PathBuf> {
                 .join("Application Support")
                 .join("youtube-client")
         })
+    } else if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+        Some(PathBuf::from(xdg).join("youtube-client"))
     } else {
-        if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
-            Some(PathBuf::from(xdg).join("youtube-client"))
-        } else {
-            std::env::var_os("HOME")
-                .map(|home| PathBuf::from(home).join(".config").join("youtube-client"))
-        }
+        std::env::var_os("HOME")
+            .map(|home| PathBuf::from(home).join(".config").join("youtube-client"))
     }
 }
 
@@ -31,7 +29,14 @@ pub fn setup_global_config() -> anyhow::Result<()> {
                 "player_path": null,
                 "downloads_dir": null
             });
-            std::fs::write(&config_file, serde_json::to_string_pretty(&default_config)?)?;
+            let json_str = serde_json::to_string_pretty(&default_config)?;
+            std::fs::write(&config_file, json_str)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ =
+                    std::fs::set_permissions(&config_file, std::fs::Permissions::from_mode(0o600));
+            }
             println!(
                 "✓ Created global config template at: {}",
                 config_file.display()

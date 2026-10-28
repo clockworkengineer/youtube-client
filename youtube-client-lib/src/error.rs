@@ -37,6 +37,9 @@ pub enum YoutubeError {
     #[error("Operation was cancelled")]
     Cancelled,
 
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     #[error("Other error: {0}")]
     Other(String),
 }

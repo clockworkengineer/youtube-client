@@ -222,7 +222,7 @@ impl MediaPlayer for MpvPlayer {
         }
 
         configure_process_logging(&mut cmd, opts.log_file.as_deref());
-        cmd.arg(target);
+        cmd.arg("--").arg(target);
 
         cmd.spawn()
             .map_err(|e| format!("Failed to spawn MPV ({exe}): {e}"))
@@ -298,7 +298,7 @@ impl MediaPlayer for VlcPlayer {
         }
 
         configure_process_logging(&mut cmd, opts.log_file.as_deref());
-        cmd.arg(target);
+        cmd.arg("--").arg(target);
 
         cmd.spawn()
             .map_err(|e| format!("Failed to spawn VLC ({exe}): {e}"))
@@ -355,7 +355,7 @@ impl MediaPlayer for IinaPlayer {
         }
 
         configure_process_logging(&mut cmd, opts.log_file.as_deref());
-        cmd.arg(target);
+        cmd.arg("--").arg(target);
 
         cmd.spawn()
             .map_err(|e| format!("Failed to spawn IINA ({exe}): {e}"))
@@ -419,7 +419,7 @@ impl MediaPlayer for CustomExecutablePlayer {
         }
 
         configure_process_logging(&mut cmd, opts.log_file.as_deref());
-        cmd.arg(target);
+        cmd.arg("--").arg(target);
 
         cmd.spawn()
             .map_err(|e| format!("Failed to spawn custom player ({}): {e}", self.executable))
@@ -444,10 +444,24 @@ impl MediaPlayer for SystemDefaultPlayer {
     }
 
     fn launch(&self, target: &OsStr, opts: &PlayOptions) -> Result<Child, String> {
+        let target_str = target.to_string_lossy();
+        let is_valid_url = (target_str.starts_with("http://")
+            || target_str.starts_with("https://"))
+            && !target_str
+                .chars()
+                .any(|c| c.is_control() || c == '"' || c == '\'');
+        let is_existing_file = Path::new(target).exists();
+
+        if !is_valid_url && !is_existing_file {
+            return Err(format!(
+                "Refusing to launch untrusted or non-existent target in system default handler: {target_str}"
+            ));
+        }
+
         #[cfg(target_os = "windows")]
         {
-            let mut cmd = Command::new("cmd");
-            cmd.arg("/C").arg("start").arg("").arg(target);
+            let mut cmd = Command::new("rundll32.exe");
+            cmd.arg("url.dll,FileProtocolHandler").arg(target);
             configure_process_logging(&mut cmd, opts.log_file.as_deref());
             cmd.spawn()
                 .map_err(|e| format!("Failed to launch default Windows handler: {e}"))
@@ -456,7 +470,7 @@ impl MediaPlayer for SystemDefaultPlayer {
         #[cfg(target_os = "macos")]
         {
             let mut cmd = Command::new("open");
-            cmd.arg(target);
+            cmd.arg("--").arg(target);
             configure_process_logging(&mut cmd, opts.log_file.as_deref());
             cmd.spawn()
                 .map_err(|e| format!("Failed to launch macOS 'open': {e}"))
@@ -465,7 +479,7 @@ impl MediaPlayer for SystemDefaultPlayer {
         #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
         {
             let mut cmd = Command::new("xdg-open");
-            cmd.arg(target);
+            cmd.arg("--").arg(target);
             configure_process_logging(&mut cmd, opts.log_file.as_deref());
             cmd.spawn()
                 .map_err(|e| format!("Failed to launch 'xdg-open': {e}"))

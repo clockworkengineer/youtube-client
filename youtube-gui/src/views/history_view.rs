@@ -23,7 +23,7 @@ pub fn render_history_view(
 
     let mut entries: Vec<(String, youtube_client_lib::utils::PlaybackProgress)> =
         playback_positions.into_iter().collect();
-    entries.sort_by(|a, b| b.1.updated_at.cmp(&a.1.updated_at));
+    entries.sort_by_key(|a| std::cmp::Reverse(a.1.updated_at));
 
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

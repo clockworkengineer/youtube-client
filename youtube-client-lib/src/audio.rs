@@ -46,6 +46,12 @@ pub async fn stream_audio_rodio(
 ) -> Result<()> {
     use tokio::io::AsyncReadExt;
 
+    if !crate::utils::is_valid_video_id(video_id) {
+        return Err(YoutubeError::InvalidInput(format!(
+            "Invalid video ID '{video_id}'"
+        )));
+    }
+
     let url = format!("https://www.youtube.com/watch?v={video_id}");
     let mut cmd = tokio::process::Command::new("yt-dlp");
     cmd.arg("-f")

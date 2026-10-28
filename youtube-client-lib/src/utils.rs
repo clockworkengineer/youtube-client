@@ -16,6 +16,45 @@ pub enum DownloadStatus {
     Failed(String),
 }
 
+/// Validate that a YouTube video ID contains only safe identifier characters (`[A-Za-z0-9_-]`)
+/// and has a reasonable length (between 4 and 64 characters) to prevent URL parameter injection
+/// and path traversal.
+pub fn is_valid_video_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && !id.starts_with('-')
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Validate that a YouTube channel ID or handle contains only safe characters (`[A-Za-z0-9_@-]`)
+/// and has a reasonable length (between 1 and 128 characters).
+pub fn is_valid_channel_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && !id.starts_with('-')
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '@')
+}
+
+/// Sanitize an arbitrary identifier string so it contains only `[A-Za-z0-9_-]`, preventing
+/// path traversal (`../`) or separator injection in temporary filenames and IPC socket names.
+pub fn sanitize_identifier(id: &str) -> String {
+    let cleaned: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(64)
+        .collect();
+    let trimmed = cleaned.trim_start_matches('-');
+    if trimmed.is_empty() {
+        "default_id".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// Extract a YouTube video ID from a file path (expects a stem of length 11 or bracketed `[ID]`).
 pub fn extract_video_id_from_path(path: &Path) -> Option<String> {
     let stem = path.file_stem()?.to_str()?;
@@ -132,7 +171,7 @@ pub struct DownloadedItem {
 pub fn scan_downloaded_items(dir: &Path) -> Vec<DownloadedItem> {
     let mut items = Vec::new();
     scan_downloaded_items_inner(dir, &mut items);
-    items.sort_by(|a, b| b.modified_secs.cmp(&a.modified_secs));
+    items.sort_by_key(|a| std::cmp::Reverse(a.modified_secs));
     items
 }
 
@@ -357,7 +396,7 @@ pub fn get_watch_history(path: &Path) -> Vec<HistoryEntry> {
         .into_iter()
         .map(|(video_id, progress)| HistoryEntry { video_id, progress })
         .collect();
-    entries.sort_by(|a, b| b.progress.updated_at.cmp(&a.progress.updated_at));
+    entries.sort_by_key(|a| std::cmp::Reverse(a.progress.updated_at));
     entries
 }
 

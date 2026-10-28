@@ -235,6 +235,9 @@ pub async fn fetch_channel_videos_via_rss(
     http_client: &Client,
     channel_id: &str,
 ) -> std::result::Result<Vec<Video>, String> {
+    if !crate::utils::is_valid_channel_id(channel_id) {
+        return Err(format!("Invalid channel ID '{channel_id}'"));
+    }
     let url = format!("https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}");
     let response = http_client
         .get(&url)

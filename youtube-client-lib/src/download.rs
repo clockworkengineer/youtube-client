@@ -508,6 +508,12 @@ where
 {
     use tokio::io::AsyncReadExt;
 
+    if !crate::utils::is_valid_video_id(video_id) {
+        return Err(YoutubeError::InvalidInput(format!(
+            "Invalid video ID '{video_id}'"
+        )));
+    }
+
     let url = format!("https://www.youtube.com/watch?v={video_id}");
     let is_mp3 = match &options.format {
         DownloadFormat::Mp3 => true,

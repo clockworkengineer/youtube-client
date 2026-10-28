@@ -314,7 +314,9 @@ pub fn save_config(config: &Config) -> std::io::Result<()> {
 
     let json = serde_json::to_string_pretty(config)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    std::fs::write(&target_file, json)
+    crate::utils::write_atomic(&target_file, &json).map_err(std::io::Error::other)?;
+    secure_sensitive_file(&target_file);
+    Ok(())
 }
 
 pub fn load_config_from_dir(dir: &Path) -> Config {

@@ -22,13 +22,14 @@ impl MpvIpcClient {
 
     /// Generate a platform-appropriate default IPC socket/pipe path for an instance ID.
     pub fn generate_pipe_path(instance_id: &str) -> String {
+        let safe_id = crate::utils::sanitize_identifier(instance_id);
         #[cfg(windows)]
         {
-            format!(r"\\.\pipe\mpv-ipc-{instance_id}")
+            format!(r"\\.\pipe\mpv-ipc-{safe_id}")
         }
         #[cfg(not(windows))]
         {
-            format!("/tmp/mpv-ipc-{instance_id}.sock")
+            format!("/tmp/mpv-ipc-{safe_id}.sock")
         }
     }
 
@@ -145,5 +146,9 @@ mod tests {
         assert!(path.starts_with(r"\\.\pipe\"));
         #[cfg(not(windows))]
         assert!(path.starts_with("/tmp/"));
+
+        let traversal = MpvIpcClient::generate_pipe_path("../../evil/socket");
+        assert!(!traversal.contains(".."));
+        assert!(traversal.contains("evilsocket"));
     }
 }

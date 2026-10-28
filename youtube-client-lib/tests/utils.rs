@@ -223,3 +223,24 @@ fn test_watch_history_helpers() {
     let history_cleared = get_watch_history(&file);
     assert!(history_cleared.is_empty());
 }
+
+#[test]
+fn test_validate_video_and_channel_ids_and_sanitize() {
+    use youtube_client_lib::utils::{is_valid_channel_id, is_valid_video_id, sanitize_identifier};
+
+    assert!(is_valid_video_id("dQw4w9WgXcQ"));
+    assert!(is_valid_video_id("vid_123-ABC"));
+    assert!(!is_valid_video_id(""));
+    assert!(!is_valid_video_id("-flag_injection"));
+    assert!(!is_valid_video_id("../evil/path"));
+    assert!(!is_valid_video_id("id?extra=1&foo=bar"));
+
+    assert!(is_valid_channel_id("UC_x5XG1OV2P6uZZ5FSM9Ttw"));
+    assert!(is_valid_channel_id("@rustlang"));
+    assert!(!is_valid_channel_id(""));
+    assert!(!is_valid_channel_id("-flag"));
+    assert!(!is_valid_channel_id("../../etc/passwd"));
+
+    assert_eq!(sanitize_identifier("../../evil/vid?123"), "evilvid123");
+    assert_eq!(sanitize_identifier("---"), "default_id");
+}

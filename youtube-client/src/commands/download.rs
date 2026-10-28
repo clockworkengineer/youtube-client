@@ -6,6 +6,7 @@ use std::time::Instant;
 use youtube_client_lib::download::{DownloadFormat, DownloadOptions};
 use youtube_client_lib::download_video_with_options;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_download(
     ctx: &crate::commands::context::CliContext,
     video_id: String,

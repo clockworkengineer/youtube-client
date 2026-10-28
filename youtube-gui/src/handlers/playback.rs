@@ -73,6 +73,11 @@ pub fn handle_playback_action(
             }
 
             tokio::spawn(async move {
+                if !youtube_client_lib::utils::is_valid_video_id(&vid) {
+                    let mut s = lock_state(&state_clone);
+                    s.set_toast(format!("Invalid video ID: {vid}"), true);
+                    return;
+                }
                 let base_url = format!("https://www.youtube.com/watch?v={vid}");
                 let browser_url = if let Some(s_sec) = start {
                     if s_sec > 1.0 {
@@ -220,11 +225,12 @@ pub fn handle_playback_action(
             ctx.request_repaint();
 
             tokio::spawn(async move {
+                let safe_vid = youtube_client_lib::utils::sanitize_identifier(&vid);
                 let cache_dir = std::env::temp_dir().join("youtube-client-audio");
                 let _ = std::fs::create_dir_all(&cache_dir);
 
-                let mp3_path = cache_dir.join(format!("{vid}.mp3"));
-                let m4a_path = cache_dir.join(format!("{vid}.m4a"));
+                let mp3_path = cache_dir.join(format!("{safe_vid}.mp3"));
+                let m4a_path = cache_dir.join(format!("{safe_vid}.m4a"));
 
                 // Reuse cached audio stream file if already downloaded and non-empty
                 if mp3_path.metadata().map(|m| m.len() > 1024).unwrap_or(false) {

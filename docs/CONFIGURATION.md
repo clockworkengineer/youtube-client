@@ -1,4 +1,4 @@
-# Configuration, State & Secrets Management Guide (v0.2.0)
+# Configuration, State & Secrets Management Guide (v0.3.0)
 
 This document defines how the YouTube Client ecosystem manages API credentials, local settings, media player paths, default download resolution/bitrate, SponsorBlock preferences, window geometry, persistent session states, and security tokens.
 

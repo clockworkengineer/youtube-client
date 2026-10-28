@@ -1,7 +1,7 @@
-# `youtube-client-lib` (v0.2.0)
+# `youtube-client-lib` (v0.3.0)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
-[![Crate](https://img.shields.io/badge/crates.io-v0.2.0-orange.svg)](https://crates.io/crates/youtube-client-lib)
+[![Crate](https://img.shields.io/badge/crates.io-v0.3.0-orange.svg)](https://crates.io/crates/youtube-client-lib)
 [![Documentation](https://docs.rs/youtube-client-lib/badge.svg)](https://docs.rs/youtube-client-lib)
 
 A modular, asynchronous Rust library for interacting with the YouTube Data API v3, managing subscriptions, browsing uploaded videos and playlists, querying SponsorBlock skip segments, controlling MPV over IPC, streaming audio via Rodio, and downloading media streams via `yt-dlp`.
@@ -36,7 +36,7 @@ A modular, asynchronous Rust library for interacting with the YouTube Data API v
 
 ```toml
 [dependencies]
-youtube-client-lib = { version = "0.2.0", features = ["full"] }
+youtube-client-lib = { version = "0.3.0", features = ["full"] }
 ```
 
 ---

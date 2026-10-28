@@ -1,7 +1,7 @@
 # API Quota Management, Caching & Resiliency Guide
 
 **Workspace:** `youtube-client`  
-**Target Version:** 0.2.0  
+**Target Version:** 0.3.0  
 
 ---
 

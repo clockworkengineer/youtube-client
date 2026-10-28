@@ -1,4 +1,4 @@
-# `youtube-client` (v0.2.0)
+# `youtube-client` (v0.3.0)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 [![CLI: clap](https://img.shields.io/badge/CLI-clap%20v4-blue.svg)](https://github.com/clap-rs/clap)

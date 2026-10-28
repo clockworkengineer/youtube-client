@@ -1,4 +1,4 @@
-# Developer & Testing Guide (v0.2.0)
+# Developer & Testing Guide (v0.3.0)
 
 This guide provides setup instructions, testing conventions, mocking architectures, static analysis requirements, and CI guidelines for developers contributing to the `youtube-client` workspace.
 

@@ -1,4 +1,4 @@
-# Subscription Backup, Migration & Data Portability Guide (v0.2.0)
+# Subscription Backup, Migration & Data Portability Guide (v0.3.0)
 
 This guide explains how to export, import, back up, and migrate your YouTube subscriptions, offline media library, and watch history across platforms (Google Takeout, FreeTube, NewPipe, RSS readers, and other YouTube accounts) using both the `youtube-client` CLI and `youtube-gui` desktop application.
 

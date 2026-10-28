@@ -1,4 +1,4 @@
-# `youtube-installer` (v0.2.0)
+# `youtube-installer` (v0.3.0)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 

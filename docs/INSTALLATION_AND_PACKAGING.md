@@ -1,4 +1,4 @@
-# Installation, Packaging & Lifecycle Guide (v0.2.0)
+# Installation, Packaging & Lifecycle Guide (v0.3.0)
 
 This guide explains how to build, install, verify, package, and uninstall the YouTube Client suite (`youtube-client`, `youtube-gui`, and `youtube-installer`) using the native `youtube-installer` utility, the Inno Setup Windows installer, or GitHub Actions release artifacts.
 
@@ -35,7 +35,7 @@ This guide explains how to build, install, verify, package, and uninstall the Yo
 
 ### Option A: Inno Setup Windows Installer (`setup.exe`)
 
-For Windows users, the repository provides an Inno Setup script ([`dist/windows/setup.iss`](file:///c:/Projects/youtube-client/dist/windows/setup.iss)) that compiles a single-file, professional installer: `youtube-client-setup-0.2.0.exe`.
+For Windows users, the repository provides an Inno Setup script ([`dist/windows/setup.iss`](file:///c:/Projects/youtube-client/dist/windows/setup.iss)) that compiles a single-file, professional installer: `youtube-client-setup-0.3.0.exe`.
 
 #### Features:
 * Automatic architecture detection (x86_64).
@@ -53,7 +53,7 @@ For Windows users, the repository provides an Inno Setup script ([`dist/windows/
    ```powershell
    iscc dist\windows\setup.iss
    ```
-   The compiled setup executable is generated in `dist\windows\Output\youtube-client-setup-0.2.0.exe`.
+   The compiled setup executable is generated in `dist\windows\Output\youtube-client-setup-0.3.0.exe`.
 
 ---
 

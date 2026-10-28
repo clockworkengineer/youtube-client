@@ -1,4 +1,4 @@
-# `youtube-gui` (v0.2.0)
+# `youtube-gui` (v0.3.0)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 [![GUI: egui](https://img.shields.io/badge/GUI-egui%200.26-blue.svg)](https://github.com/emilk/egui)

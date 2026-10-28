@@ -1,4 +1,4 @@
-# Usability Heuristics, Error Recovery & Keyboard Shortcuts Guide (v0.2.0)
+# Usability Heuristics, Error Recovery & Keyboard Shortcuts Guide (v0.3.0)
 
 This guide documents the human-computer interaction (HCI) architecture of `youtube-gui`, mapping its design directly to **Jakob Nielsen's 10 Usability Heuristics**, detailing the automated error diagnosis and recovery system, and providing a complete keyboard shortcut reference.
 

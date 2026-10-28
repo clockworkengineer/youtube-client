@@ -1,4 +1,4 @@
-# Video & Audio Playback Architecture Guide (v0.2.0)
+# Video & Audio Playback Architecture Guide (v0.3.0)
 
 The YouTube Client suite provides four complementary avenues for consuming media:
 1. **Direct Video Streaming:** Stream online YouTube videos via desktop media players (**MPV**, **VLC**, **IINA**, or custom binaries) with automatic SponsorBlock segment skipping, start-offset resumption, and browser fallback.

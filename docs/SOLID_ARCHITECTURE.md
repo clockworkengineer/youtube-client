@@ -1,7 +1,7 @@
 # SOLID Clean Architecture Specification
 
 **Workspace:** `youtube-client`  
-**Target Version:** 0.2.0  
+**Target Version:** 0.3.0  
 **Status:** Implemented & Verified  
 
 ---

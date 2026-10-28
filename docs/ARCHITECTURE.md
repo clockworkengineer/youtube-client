@@ -1,4 +1,4 @@
-# Workspace Architecture & Design Specification (v0.2.0)
+# Workspace Architecture & Design Specification (v0.3.0)
 
 This document details the architectural design, component topology, concurrency model, persistence subsystems, usability engineering, and security boundaries across the `youtube-client` workspace.
 

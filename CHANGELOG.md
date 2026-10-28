@@ -4,7 +4,7 @@ All notable changes to the `youtube-client` workspace are documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Feature Phases 1–5, Usability Heuristics Overhaul & Direct Audio Streaming
+## [0.3.0] - Feature Phases 1–5, Usability Heuristics Overhaul, Direct Audio Streaming & Security Hardening
 
 ### Added
 - **6 New CLI Subcommands (23 Total in `youtube-client`)**:
@@ -38,8 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Asynchronous Pagination Streams, Batch Lookups & Disk Caching (`youtube-client-lib` & `youtube-gui`)**:
   - Implemented `stream_subscriptions`, `stream_videos`, `stream_search`, `stream_playlists`, and `stream_playlist_videos`.
   - Added `get_videos_batch` (up to 50 IDs per request), disk-backed `MetadataCache` (`cache.json`), and disk-backed GUI thumbnail caching (`thumbnails/`).
+- **Security, Concurrency & Resource Hardening Across All Crates**:
+  - Added strict allowlist identifier validators (`is_valid_video_id`, `is_valid_channel_id`, `sanitize_identifier`) across download, audio streaming, SponsorBlock, RSS, and MPV IPC entry points.
+  - Hardened external media player launching with `--` end-of-options terminators and replaced Windows `cmd /C start` shell invocation with `rundll32.exe url.dll,FileProtocolHandler`.
+  - Enforced atomic writes (`write_atomic`) and `0600` Unix permissions (`secure_sensitive_file`) for OAuth credentials in `config.json`.
+  - Eliminated raw lock `.unwrap()` calls across `youtube-gui` and `youtube-client-lib` (`TtlCache`, `QuotaTracker`) and added `NaN`/bounds guards in `build_mpv_edl` and `format_table`.
+  - Added recursion depth (`MAX_SCAN_DEPTH = 4`), file count (`MAX_SCANNED_FILES = 5,000`), and symlink skipping to directory scanners; capped in-memory audio, subprocess stdout/stderr, and thumbnail buffers; added automatic LRU pruning for `%TEMP%/youtube-client-audio`; and standardized pooled HTTP/IPC timeouts (`default_http_client`).
 - **Comprehensive Documentation Suite Expansion (`docs/`)**:
-  - Added [`docs/USABILITY_AND_SHORTCUTS.md`](docs/USABILITY_AND_SHORTCUTS.md) and [`docs/BACKUP_AND_MIGRATION.md`](docs/BACKUP_AND_MIGRATION.md), and updated all existing guides to cover 23 CLI subcommands, 7 GUI views, and 86 automated tests.
+  - Added [`docs/USABILITY_AND_SHORTCUTS.md`](docs/USABILITY_AND_SHORTCUTS.md) and [`docs/BACKUP_AND_MIGRATION.md`](docs/BACKUP_AND_MIGRATION.md), standardized all documentation filenames to `UPPERCASE.md`, and updated all guides to cover 23 CLI subcommands, 7 GUI views, and 90 automated tests.
 
 ### Fixed
 - **Direct Audio Streaming (`🎧 Listen` / `PendingAction::StreamAudioDirect` in `youtube-gui`)**:

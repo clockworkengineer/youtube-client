@@ -1,7 +1,7 @@
-# YouTube Client Workspace (v0.2.0)
+# YouTube Client Workspace (v0.3.0)
 
 [![CI](https://github.com/clockworkengineer/youtube-client/actions/workflows/ci.yml/badge.svg)](https://github.com/clockworkengineer/youtube-client/actions/workflows/ci.yml)
-[![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-orange.svg)](Cargo.toml)
+[![Version: 0.3.0](https://img.shields.io/badge/version-0.3.0-orange.svg)](Cargo.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tests: 86 Passed](https://img.shields.io/badge/tests-86%20passed-brightgreen.svg)](docs/DEVELOPMENT_AND_TESTING.md)
 [![CLI: 23 Subcommands](https://img.shields.io/badge/CLI-23%20subcommands-blue.svg)](docs/CLI_REFERENCE.md)
@@ -59,7 +59,7 @@ Or perform an unattended automated install:
 ```bash
 cargo run --bin youtube-installer -- --yes
 ```
-Alternatively, on Windows, download and execute the standalone installer `youtube-client-setup-0.2.0.exe` built via Inno Setup.
+Alternatively, on Windows, download and execute the standalone installer `youtube-client-setup-0.3.0.exe` built via Inno Setup.
 
 ### 2. Run the Native GUI App
 

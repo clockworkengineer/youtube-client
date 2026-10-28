@@ -70,7 +70,7 @@ Because the OAuth app is in "Testing" mode, Google will only allow specified tes
 
 ## Step 5: Configure Credentials in the Application
 
-You can provide your credentials using any of the following methods (see [Configuration Guide](configuration.md) for full details):
+You can provide your credentials using any of the following methods (see [Configuration Guide](CONFIGURATION.md) for full details):
 
 ### Method A: `private_config.json` (Recommended)
 Create a file named `private_config.json` in the root directory (this file is git-ignored for safety):

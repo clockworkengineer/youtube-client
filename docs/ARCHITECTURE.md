@@ -181,7 +181,7 @@ graph LR
 
 | Attribute | Implementation Details |
 | :--- | :--- |
-| **1. Intuitive API & UI Design** | Fluent builder [`YoutubeClientBuilder`](file:///c:/Projects/youtube-client/youtube-client-lib/src/builder.rs); strongly typed models; GUI engineered around Jakob Nielsen's 10 Usability Heuristics ([`usability_and_shortcuts.md`](usability_and_shortcuts.md)). |
+| **1. Intuitive API & UI Design** | Fluent builder [`YoutubeClientBuilder`](file:///c:/Projects/youtube-client/youtube-client-lib/src/builder.rs); strongly typed models; GUI engineered around Jakob Nielsen's 10 Usability Heuristics ([`USABILITY_AND_SHORTCUTS.md`](USABILITY_AND_SHORTCUTS.md)). |
 | **2. Comprehensive Documentation** | Complete rustdoc with executable doc-tests; 12 specialized markdown guides in `docs/`; 4 standalone runnable examples in `examples/`. |
 | **3. High Reliability & Resilience** | Exponential backoff with jitter ([`retry_api_call`](file:///c:/Projects/youtube-client/youtube-client-lib/src/retry.rs)); atomic sibling file writes ([`write_json_atomically`](file:///c:/Projects/youtube-client/youtube-client-lib/src/utils.rs)); mutex poison recovery; cooperative `CancellationToken` aborting; automated error diagnosis banners (`diagnose_error`). |
 | **4. Performance & Efficiency** | Capped LRU texture queue (150 textures); lazy stream pagination (`BoxStream<'a, T>`); chunked batch video fetching (`get_videos_batch`); persistent disk metadata & audio stream caching. |

@@ -56,7 +56,7 @@ All subcommands inherit the following global options. They may be passed before 
 | `-V, --version` | — | — | Print version information. |
 
 > [!TIP]
-> Credentials can also be placed in `private_config.json` in the current directory or in the OS global configuration directory (see [Configuration Guide](configuration.md)).
+> Credentials can also be placed in `private_config.json` in the current directory or in the OS global configuration directory (see [Configuration Guide](CONFIGURATION.md)).
 > You can also bypass OAuth2 completely for read-only actions by passing `--api-key <KEY>` or setting the `YOUTUBE_API_KEY` environment variable.
 
 ---

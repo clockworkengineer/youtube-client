@@ -211,7 +211,7 @@ When adding new features or refactoring existing modules:
 3. **Liskov Substitution (LSP):** Ensure any new operations added to `YoutubeApiService` are implemented identically by both `YoutubeClient` and `MockYoutubeClient`.
 4. **Interface Segregation (ISP):** Group view rendering data into cohesive context objects (like `VideoDetailsContext`).
 5. **Dependency Inversion (DIP):** Consumer crates must depend on `YoutubeBackend` or service traits, never on concrete Google API network structs.
-6. **Jakob Nielsen's 10 Usability Heuristics:** Any new GUI destructive action must include a two-step confirmation flag in `AppState`, long-running tasks must show progress and support cancellation where applicable, and errors must route through `render_error_banner` (see [`docs/usability_and_shortcuts.md`](usability_and_shortcuts.md)).
+6. **Jakob Nielsen's 10 Usability Heuristics:** Any new GUI destructive action must include a two-step confirmation flag in `AppState`, long-running tasks must show progress and support cancellation where applicable, and errors must route through `render_error_banner` (see [`docs/USABILITY_AND_SHORTCUTS.md`](USABILITY_AND_SHORTCUTS.md)).
 
 ---
 

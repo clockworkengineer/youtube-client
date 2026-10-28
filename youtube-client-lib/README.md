@@ -68,8 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Documentation
 
 For full architectural details, see the workspace documentation:
-* [Architecture Specification](../docs/architecture.md)
-* [SOLID Architecture](../docs/solid_architecture.md)
-* [Video & Audio Playback Architecture](../docs/video_playback.md)
-* [API Quota & Caching Guide](../docs/caching_and_quota.md)
-* [Configuration Guide](../docs/configuration.md)
+* [Architecture Specification](../docs/ARCHITECTURE.md)
+* [SOLID Architecture](../docs/solid_ARCHITECTURE.md)
+* [Video & Audio Playback Architecture](../docs/VIDEO_PLAYBACK.md)
+* [API Quota & Caching Guide](../docs/CACHING_AND_QUOTA.md)
+* [Configuration Guide](../docs/CONFIGURATION.md)

@@ -2,35 +2,35 @@
 
 ## 1. Executive Summary & Audit Findings
 
-Following the implementation of **Phases 1–5** (`notes/feature_plan.md`), the **Usability & Heuristics Overhaul** (`notes/ui.md`), and the **Direct Audio Streaming (`🎧 Listen`) Enhancement**, a full audit of all workspace crates (`youtube-client-lib`, `youtube-client`, `youtube-gui`, `youtube-installer`) against the existing markdown documentation (`README.md`, `CHANGELOG.md`, `docs/*.md`, and crate `README.md`s) identified the following discrepancies and gaps:
+Following the implementation of **Phases 1–5** (`notes/FEATURE_PLAN.md`), the **Usability & Heuristics Overhaul** (`notes/UI.md`), and the **Direct Audio Streaming (`🎧 Listen`) Enhancement**, a full audit of all workspace crates (`youtube-client-lib`, `youtube-client`, `youtube-gui`, `youtube-installer`) against the existing markdown documentation (`README.md`, `CHANGELOG.md`, `docs/*.md`, and crate `README.md`s) identified the following discrepancies and gaps:
 
 1. **CLI Subcommand Count & Missing Commands (`youtube-client`):**
-   - `README.md`, `youtube-client/README.md`, `docs/architecture.md`, `docs/cli_reference.md`, and `docs/development_and_testing.md` still state **17 subcommands**, whereas `youtube-client/src/cli.rs` now provides **23 subcommands**.
-   - Six new subcommands (`library`, `history`, `playlist-add`, `playlist-remove`, `subscriptions-export`, `subscriptions-import`) and new flags on `search` (`--sort`, `--duration`, `--type`, `--after`), `download` (`--resolution`, `--audio-bitrate`), and `comments` (`--page-token`) are undocumented in `docs/cli_reference.md`.
+   - `README.md`, `youtube-client/README.md`, `docs/ARCHITECTURE.md`, `docs/CLI_REFERENCE.md`, and `docs/DEVELOPMENT_AND_TESTING.md` still state **17 subcommands**, whereas `youtube-client/src/cli.rs` now provides **23 subcommands**.
+   - Six new subcommands (`library`, `history`, `playlist-add`, `playlist-remove`, `subscriptions-export`, `subscriptions-import`) and new flags on `search` (`--sort`, `--duration`, `--type`, `--after`), `download` (`--resolution`, `--audio-bitrate`), and `comments` (`--page-token`) are undocumented in `docs/CLI_REFERENCE.md`.
 2. **GUI Navigation Views, Features & Usability Heuristics (`youtube-gui`):**
-   - `docs/gui_user_guide.md` still references outdated top tabs (`Downloads`, `Logs`) instead of the actual 7 navigation views (`📺 Subscriptions`, `🆕 New Videos`, `📂 Playlists`, `📁 Library`, `⏱ History`, `⚙ Settings`, `ℹ About & Help`).
-   - Major GUI capabilities are missing from `docs/gui_user_guide.md` and `youtube-gui/README.md`:
+   - `docs/GUI_USER_GUIDE.md` still references outdated top tabs (`Downloads`, `Logs`) instead of the actual 7 navigation views (`📺 Subscriptions`, `🆕 New Videos`, `📂 Playlists`, `📁 Library`, `⏱ History`, `⚙ Settings`, `ℹ About & Help`).
+   - Major GUI capabilities are missing from `docs/GUI_USER_GUIDE.md` and `youtube-gui/README.md`:
      - **Offline Media Library View (`library_view.rs`)** and **Watch Progress History View (`history_view.rs`)**.
      - **Advanced Search Filters & Recent Search Chips (`search_view.rs`)**.
      - **Video Details Enhancements (`details_view.rs`)**: Resolution & bitrate selector menus, SponsorBlock color-coded timeline bar, expandable description & tags, and paginated comment loading (`💬 Load More Comments`).
      - **Channel Header Statistics (`channel_view.rs`)**: Avatar, `@handle`, subscriber/video/view counters, and confirmation dialogs.
      - **Jakob Nielsen's 10 Usability Heuristics (`views.rs`)**: Plain-language error diagnosis banners (`diagnose_error` / `render_error_banner`), contextual `ⓘ` help badges (`help_badge`), `↩ Undo Dismiss` stack in New Videos, destructive action confirmations, and full keyboard accelerator matrix (`Alt+1..7`, `Ctrl+F`/`/`, `F5`/`Ctrl+R`, `Esc`/`Alt+Left`, `Ctrl+S`, `Space`).
 3. **Direct Audio Streaming (`🎧 Listen`) & SponsorBlock Architecture:**
-   - `docs/architecture.md` and `docs/video_playback.md` describe `StreamAudioDirect` as piping raw stdout bytes into memory or omit it, whereas `youtube-gui/src/handlers/playback.rs` now extracts/caches compatible `.mp3` (with `.m4a` fallback) streams into `%TEMP%/youtube-client-audio/<video_id>.mp3` via `yt-dlp` with real-time buffering percentages and `CancellationToken` support (`⏹ Cancel Audio`).
-   - SponsorBlock API integration (`sponsorblock.rs`) and MPV `--script-opts=ytdl_hook-try_ytdl_first=yes` / `--ytdl-raw-options= sponsorblock-mark=...` are missing from `docs/video_playback.md` and `docs/architecture.md`.
-4. **Configuration Schema (`docs/configuration.md`):**
+   - `docs/ARCHITECTURE.md` and `docs/VIDEO_PLAYBACK.md` describe `StreamAudioDirect` as piping raw stdout bytes into memory or omit it, whereas `youtube-gui/src/handlers/playback.rs` now extracts/caches compatible `.mp3` (with `.m4a` fallback) streams into `%TEMP%/youtube-client-audio/<video_id>.mp3` via `yt-dlp` with real-time buffering percentages and `CancellationToken` support (`⏹ Cancel Audio`).
+   - SponsorBlock API integration (`sponsorblock.rs`) and MPV `--script-opts=ytdl_hook-try_ytdl_first=yes` / `--ytdl-raw-options= sponsorblock-mark=...` are missing from `docs/VIDEO_PLAYBACK.md` and `docs/ARCHITECTURE.md`.
+4. **Configuration Schema (`docs/CONFIGURATION.md`):**
    - Missing 5 fields added to `Config` in `youtube-client-lib/src/config.rs`: `volume`, `preferred_resolution`, `preferred_audio_bitrate`, `sponsorblock_enabled`, and `sponsorblock_categories`.
-5. **Test Counts & LRU Constants (`docs/development_and_testing.md`, `README.md`, `docs/architecture.md`):**
+5. **Test Counts & LRU Constants (`docs/DEVELOPMENT_AND_TESTING.md`, `README.md`, `docs/ARCHITECTURE.md`):**
    - Documentation states `67` or `79` passing tests; the workspace now has **86 passing tests** (`35` in `youtube-client-lib`, `41` across `youtube-client` unit & integration suites, `7` in `youtube-gui`, `2` in `youtube-installer`, and `1` doc-test).
-   - `docs/architecture.md` states `120` max thumbnails, whereas `AppState::MAX_THUMBNAILS` in `youtube-gui/src/types.rs` is `150`.
+   - `docs/ARCHITECTURE.md` states `120` max thumbnails, whereas `AppState::MAX_THUMBNAILS` in `youtube-gui/src/types.rs` is `150`.
 
 ---
 
 ## 2. Phase 1: Add New Documentation Guides (`docs/`)
 
-Create two focused reference guides in `docs/` and link them from `README.md` and `docs/gui_user_guide.md`:
+Create two focused reference guides in `docs/` and link them from `README.md` and `docs/GUI_USER_GUIDE.md`:
 
-### 2.1. Create `docs/usability_and_shortcuts.md`
+### 2.1. Create `docs/USABILITY_AND_SHORTCUTS.md`
 * **Purpose:** Document the GUI's human-computer interaction (HCI) design, accessibility features, error recovery system, and complete keyboard shortcut reference.
 * **Sections to Include:**
   1. **Jakob Nielsen's 10 Usability Heuristics Implementation Matrix:** Map each heuristic to concrete UI features in `youtube-gui`:
@@ -52,7 +52,7 @@ Create two focused reference guides in `docs/` and link them from `README.md` an
      - `Space`: Toggle Play/Pause on the active background audio stream (when no text input is focused).
      - `Ctrl + S`: Save changes immediately when in the `⚙ Settings` view.
 
-### 2.2. Create `docs/backup_and_migration.md`
+### 2.2. Create `docs/BACKUP_AND_MIGRATION.md`
 * **Purpose:** Provide an end-to-end guide for exporting, importing, and migrating subscriptions and local media across platforms (YouTube / Google Takeout, FreeTube, NewPipe, RSS readers).
 * **Sections to Include:**
   1. **Supported Formats (`SubscriptionFormatRegistry`):**
@@ -72,8 +72,8 @@ Create two focused reference guides in `docs/` and link them from `README.md` an
 
 ## 3. Phase 2: Modify Existing Documentation in `docs/`
 
-### 3.1. Update `docs/cli_reference.md`
-* **File:** `c:\Projects\youtube-client\docs\cli_reference.md`
+### 3.1. Update `docs/CLI_REFERENCE.md`
+* **File:** `c:\Projects\youtube-client\docs\CLI_REFERENCE.md`
 * **Modifications:**
   1. Update Table of Contents and Overview from **17 subcommands** to **23 subcommands**.
   2. Update **Subcommand 4 (`search`)**: Document new filter flags:
@@ -91,8 +91,8 @@ Create two focused reference guides in `docs/` and link them from `README.md` an
      - **22. `library`**: List, filter, search, or delete local downloaded media files (`--audio`, `--video`, `--search <QUERY>`, `--delete <FILENAME>`, `--json`, Cost: `0 units`).
      - **23. `history`**: Inspect, search, or clear local watch progress history (`--search <QUERY>`, `--remove <VIDEO_ID>`, `--clear`, `--json`, Cost: `0 units`).
 
-### 3.2. Update `docs/gui_user_guide.md`
-* **File:** `c:\Projects\youtube-client\docs\gui_user_guide.md`
+### 3.2. Update `docs/GUI_USER_GUIDE.md`
+* **File:** `c:\Projects\youtube-client\docs\GUI_USER_GUIDE.md`
 * **Modifications:**
   1. **Application Layout & Navigation Bar:** Update the navigation tabs table to reflect all 7 primary views (`📺 Subscriptions`, `🆕 New Videos`, `📂 Playlists`, `📁 Library`, `⏱ History`, `⚙ Settings`, `ℹ About & Help`) plus contextual drill-down views (`ChannelVideos`, `PlaylistVideos`, `Search`, `VideoDetails`).
   2. **Search View (`search_view.rs`):** Document the interactive filter bar (Sort Order, Duration, Type, Upload Date presets `Any`/`Today`/`ThisWeek`/`ThisMonth`/`ThisYear`), clickable **Recent Searches** chips (`🕒 Recent:`) with `✖` clear button, and the API Quota impact badge.
@@ -109,8 +109,8 @@ Create two focused reference guides in `docs/` and link them from `README.md` an
      - **💬 Load More Comments** pagination button (`next_page_token`).
   9. **Error Diagnosis & Recovery Banners (`views.rs`):** Document how network, OAuth, quota, and `yt-dlp` errors are translated into actionable recovery banners.
 
-### 3.3. Update `docs/configuration.md`
-* **File:** `c:\Projects\youtube-client\docs\configuration.md`
+### 3.3. Update `docs/CONFIGURATION.md`
+* **File:** `c:\Projects\youtube-client\docs\CONFIGURATION.md`
 * **Modifications:**
   1. Expand the `config.json` Schema Reference table and example JSON block with the 5 new `Config` fields in `youtube-client-lib/src/config.rs`:
      - `volume` (`Option<f32>`, default `1.0`): Persistent audio player volume (`0.0` to `1.0`).
@@ -120,28 +120,28 @@ Create two focused reference guides in `docs/` and link them from `README.md` an
      - `sponsorblock_categories` (`Option<Vec<String>>`, default `["sponsor", "selfpromo", "interaction", "intro", "outro"]`): Active SponsorBlock categories.
   2. Document the temporary audio stream cache directory (`%TEMP%/youtube-client-audio/` on Windows, `/tmp/youtube-client-audio/` on Linux/macOS) used by `🎧 Listen`.
 
-### 3.4. Update `docs/video_playback.md`
-* **File:** `c:\Projects\youtube-client\docs\video_playback.md`
+### 3.4. Update `docs/VIDEO_PLAYBACK.md`
+* **File:** `c:\Projects\youtube-client\docs\VIDEO_PLAYBACK.md`
 * **Modifications:**
   1. **Direct Audio Streaming (`🎧 Listen`) Architecture:** Document how `PendingAction::StreamAudioDirect` extracts/caches compatible `.mp3` (with `.m4a` fallback when `ffmpeg` is absent) into `<TEMP>/youtube-client-audio/<video_id>.mp3`, reports real-time download/buffering progress to the GUI header and details view, supports instant replay from cache on subsequent listens, and aborts cleanly via `tokio_util::sync::CancellationToken` (`⏹ Cancel Audio`).
   2. **SponsorBlock Integration:** Document how `youtube-client-lib/src/sponsorblock.rs` queries `https://sponsor.ajay.app/api/skipSegments` and how `MpvPlayer` passes `--ytdl-raw-options=sponsorblock-mark=<categories>` (and how the GUI renders the color-coded segment timeline).
   3. **Resolution & Audio Bitrate Selection:** Document how `DownloadOptions` in `youtube-client-lib/src/downloader.rs` maps resolution heights (`-f bestvideo[height<=1080]+bestaudio/best[height<=1080]`) and audio bitrates (`--audio-quality 320K`) to `yt-dlp`.
 
-### 3.5. Update `docs/architecture.md`, `docs/caching_and_quota.md`, and `docs/development_and_testing.md`
+### 3.5. Update `docs/ARCHITECTURE.md`, `docs/CACHING_AND_QUOTA.md`, and `docs/DEVELOPMENT_AND_TESTING.md`
 * **Files:**
-  - `c:\Projects\youtube-client\docs\architecture.md`
-  - `c:\Projects\youtube-client\docs\caching_and_quota.md`
-  - `c:\Projects\youtube-client\docs\development_and_testing.md`
+  - `c:\Projects\youtube-client\docs\ARCHITECTURE.md`
+  - `c:\Projects\youtube-client\docs\CACHING_AND_QUOTA.md`
+  - `c:\Projects\youtube-client\docs\DEVELOPMENT_AND_TESTING.md`
 * **Modifications:**
-  1. In `docs/architecture.md`:
+  1. In `docs/ARCHITECTURE.md`:
      - Update CLI subcommand count from `17` to `23`.
      - Update `youtube-client-lib` module map to include `sponsorblock.rs` (SponsorBlock segment API client) and `DownloadOptions` in `downloader.rs`.
      - Update `youtube-gui` module map to include `views/library_view.rs`, `views/history_view.rs`, and error diagnosis/usability helpers in `views.rs`.
      - Update Section 5 (Audio & Video Playback Architecture) sequence diagram to reflect `%TEMP%/youtube-client-audio` extraction, real-time progress reporting, `CancellationToken` cancellation, and `has_active_track` state preservation in `youtube-gui/src/player.rs`.
      - Update thumbnail LRU limit from `120` to `150` (`AppState::MAX_THUMBNAILS`).
-  2. In `docs/caching_and_quota.md`:
+  2. In `docs/CACHING_AND_QUOTA.md`:
      - Add quota entries for `playlist-add` (`playlistItems.insert` = `50 units`), `playlist-remove` (`playlistItems.delete` = `50 units`), `subscriptions-export` (`1 unit` per page), `subscriptions-import` (`0 units` dry-run / `50 units` per channel with `--subscribe`), and zero-quota `library`, `history`, and SponsorBlock API calls (`0 units`).
-  3. In `docs/development_and_testing.md`:
+  3. In `docs/DEVELOPMENT_AND_TESTING.md`:
      - Update test suite count from `67` to **86 passing tests**:
        - `youtube-client-lib`: 35 unit tests (including `sponsorblock`, `importers`, `player`, `cache`, `quota`, `rss`, `retry`, `window_state`).
        - `youtube-client`: 13 binary unit tests (`formatters`, `utils`) + 28 integration tests (`cli_tests.rs` with 22 tests covering all 23 subcommands, `sanitization_tests.rs` with 5 tests, `pagination_tests.rs` with 1 test).
@@ -156,7 +156,7 @@ Create two focused reference guides in `docs/` and link them from `README.md` an
 1. **`c:\Projects\youtube-client\README.md`**:
    - Update badges (`Tests: 86 Passed`, `CLI: 23 Subcommands`).
    - Add highlights for Offline Library, Watch History, SponsorBlock, Advanced Search Filters, Subscription Import/Export (`subscriptions-export`, `subscriptions-import`), Usability/Keyboard Shortcuts, and `🎧 Listen` background audio streaming.
-   - Add links to `docs/usability_and_shortcuts.md` and `docs/backup_and_migration.md` in the Documentation Index table.
+   - Add links to `docs/USABILITY_AND_SHORTCUTS.md` and `docs/BACKUP_AND_MIGRATION.md` in the Documentation Index table.
    - Update CLI Subcommands Overview table from 17 to 23 commands.
 2. **`c:\Projects\youtube-client\CHANGELOG.md`**:
    - Add a new `[0.3.0] - Unreleased` (or update `[0.2.0]`) section detailing:

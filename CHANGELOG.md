@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented `stream_subscriptions`, `stream_videos`, `stream_search`, `stream_playlists`, and `stream_playlist_videos`.
   - Added `get_videos_batch` (up to 50 IDs per request), disk-backed `MetadataCache` (`cache.json`), and disk-backed GUI thumbnail caching (`thumbnails/`).
 - **Comprehensive Documentation Suite Expansion (`docs/`)**:
-  - Added [`docs/usability_and_shortcuts.md`](docs/usability_and_shortcuts.md) and [`docs/backup_and_migration.md`](docs/backup_and_migration.md), and updated all existing guides to cover 23 CLI subcommands, 7 GUI views, and 86 automated tests.
+  - Added [`docs/USABILITY_AND_SHORTCUTS.md`](docs/USABILITY_AND_SHORTCUTS.md) and [`docs/BACKUP_AND_MIGRATION.md`](docs/BACKUP_AND_MIGRATION.md), and updated all existing guides to cover 23 CLI subcommands, 7 GUI views, and 86 automated tests.
 
 ### Fixed
 - **Direct Audio Streaming (`🎧 Listen` / `PendingAction::StreamAudioDirect` in `youtube-gui`)**:

@@ -54,8 +54,8 @@ cargo run --bin youtube-gui -- --log-file custom_client.log
 
 ## Documentation
 
-* [Desktop GUI User Guide](../docs/gui_user_guide.md)
-* [Usability Heuristics & Keyboard Shortcuts Guide](../docs/usability_and_shortcuts.md)
-* [Video & Audio Playback Configuration](../docs/video_playback.md)
-* [Subscription Backup & Migration Guide](../docs/backup_and_migration.md)
-* [Configuration & Secrets Guide](../docs/configuration.md)
+* [Desktop GUI User Guide](../docs/GUI_USER_GUIDE.md)
+* [Usability Heuristics & Keyboard Shortcuts Guide](../docs/USABILITY_AND_SHORTCUTS.md)
+* [Video & Audio Playback Configuration](../docs/VIDEO_PLAYBACK.md)
+* [Subscription Backup & Migration Guide](../docs/BACKUP_AND_MIGRATION.md)
+* [Configuration & Secrets Guide](../docs/CONFIGURATION.md)

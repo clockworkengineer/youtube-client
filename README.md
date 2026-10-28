@@ -3,8 +3,8 @@
 [![CI](https://github.com/clockworkengineer/youtube-client/actions/workflows/ci.yml/badge.svg)](https://github.com/clockworkengineer/youtube-client/actions/workflows/ci.yml)
 [![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-orange.svg)](Cargo.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests: 86 Passed](https://img.shields.io/badge/tests-86%20passed-brightgreen.svg)](docs/development_and_testing.md)
-[![CLI: 23 Subcommands](https://img.shields.io/badge/CLI-23%20subcommands-blue.svg)](docs/cli_reference.md)
+[![Tests: 86 Passed](https://img.shields.io/badge/tests-86%20passed-brightgreen.svg)](docs/DEVELOPMENT_AND_TESTING.md)
+[![CLI: 23 Subcommands](https://img.shields.io/badge/CLI-23%20subcommands-blue.svg)](docs/CLI_REFERENCE.md)
 
 A modular, high-performance Rust workspace engineered under **SOLID Clean Architecture** and **Jakob Nielsen's 10 Usability Heuristics**, providing YouTube Data API v3 integration, a native 60 FPS desktop GUI application (`youtube-gui`), a 23-subcommand CLI client (`youtube-client`), and a cross-platform system installer (`youtube-installer`).
 
@@ -43,7 +43,7 @@ The workspace is refactored across 5 distinct SOLID phases:
 4. **Decoupled GUI Domain Handlers (SRP & ISP):** GUI event dispatching is partitioned into dedicated domain handlers (`auth`, `navigation`, `playback`, `download`, `settings`, `library`) and 12 modular view files under `youtube-gui/src/views/`.
 5. **Decoupled CLI Output Formatters (SRP & OCP):** Terminal presentation is separated from API querying via the `OutputFormatter<T>` trait, providing formatted tables, pretty JSON, and RFC-4180 CSV outputs.
 
-See [SOLID Architecture Specification](docs/solid_architecture.md) for complete details.
+See [SOLID Architecture Specification](docs/solid_ARCHITECTURE.md) for complete details.
 
 ---
 
@@ -113,18 +113,18 @@ The `docs/` directory contains 12 comprehensive specifications and user guides:
 
 | Guide | Description |
 | :--- | :--- |
-| 📖 [CLI Reference Manual](docs/cli_reference.md) | Exhaustive guide to all **23 subcommands**, filter flags, `OutputFormatter`, JSON output, and `jq` pipelining. |
-| 🖥️ [Desktop GUI User Guide](docs/gui_user_guide.md) | Tour of the **7 primary GUI views**, Library & History tabs, SponsorBlock timeline, `🎧 Listen` audio streaming, and Settings. |
-| ⌨️ [Usability Heuristics & Shortcuts Guide](docs/usability_and_shortcuts.md) | Jakob Nielsen's 10 Usability Heuristics mapping, global keyboard shortcuts (`Alt+1..7`, `Ctrl+F`, `F5`), error diagnosis, and confirmation safeguards. |
-| 📦 [Subscription Backup & Migration Guide](docs/backup_and_migration.md) | Exporting, previewing, and migrating subscriptions across OPML XML, Google Takeout CSV, and NewPipe JSON via CLI & GUI. |
-| ⚙️ [Configuration & Secrets Guide](docs/configuration.md) | 6-tier configuration hierarchy, complete 16-field `config.json` schema, and persistent state files. |
-| 🔑 [Google OAuth2 Credentials Setup](docs/google_setup.md) | Step-by-step setup in Google Cloud Console with all required API scopes. |
-| 🎥 [Video & Audio Playback Guide](docs/video_playback.md) | Configuring MPV, VLC, IINA, SponsorBlock EDL skipping, start offsets, and `🎧 Listen` Rodio audio caching. |
-| 💿 [Installation & Packaging Guide](docs/installation_and_packaging.md) | Using `youtube-installer`, Inno Setup Windows installer, and GitHub Actions release workflows. |
-| 🏗️ [Architecture & Design Specification](docs/architecture.md) | Workspace design, component topology, concurrency model, and 10 quality attributes. |
-| 🏛️ [SOLID Architecture Specification](docs/solid_architecture.md) | In-depth breakdown of the 5 SOLID refactoring phases, design patterns, and extension recipes. |
-| 📊 [Caching & API Quota Guide](docs/caching_and_quota.md) | YouTube API quota economics across all 23 subcommands, `QuotaTracker`, TTL cache, and public RSS Atom feed fallback. |
-| 🛠️ [Developer & Testing Guide](docs/development_and_testing.md) | Environment setup, **86 passing tests**, `MockYoutubeClient`, GUI usability tests, Clippy standards, and CI pipelines. |
+| 📖 [CLI Reference Manual](docs/CLI_REFERENCE.md) | Exhaustive guide to all **23 subcommands**, filter flags, `OutputFormatter`, JSON output, and `jq` pipelining. |
+| 🖥️ [Desktop GUI User Guide](docs/GUI_USER_GUIDE.md) | Tour of the **7 primary GUI views**, Library & History tabs, SponsorBlock timeline, `🎧 Listen` audio streaming, and Settings. |
+| ⌨️ [Usability Heuristics & Shortcuts Guide](docs/USABILITY_AND_SHORTCUTS.md) | Jakob Nielsen's 10 Usability Heuristics mapping, global keyboard shortcuts (`Alt+1..7`, `Ctrl+F`, `F5`), error diagnosis, and confirmation safeguards. |
+| 📦 [Subscription Backup & Migration Guide](docs/BACKUP_AND_MIGRATION.md) | Exporting, previewing, and migrating subscriptions across OPML XML, Google Takeout CSV, and NewPipe JSON via CLI & GUI. |
+| ⚙️ [Configuration & Secrets Guide](docs/CONFIGURATION.md) | 6-tier configuration hierarchy, complete 16-field `config.json` schema, and persistent state files. |
+| 🔑 [Google OAuth2 Credentials Setup](docs/GOOGLE_SETUP.md) | Step-by-step setup in Google Cloud Console with all required API scopes. |
+| 🎥 [Video & Audio Playback Guide](docs/VIDEO_PLAYBACK.md) | Configuring MPV, VLC, IINA, SponsorBlock EDL skipping, start offsets, and `🎧 Listen` Rodio audio caching. |
+| 💿 [Installation & Packaging Guide](docs/INSTALLATION_AND_PACKAGING.md) | Using `youtube-installer`, Inno Setup Windows installer, and GitHub Actions release workflows. |
+| 🏗️ [Architecture & Design Specification](docs/ARCHITECTURE.md) | Workspace design, component topology, concurrency model, and 10 quality attributes. |
+| 🏛️ [SOLID Architecture Specification](docs/solid_ARCHITECTURE.md) | In-depth breakdown of the 5 SOLID refactoring phases, design patterns, and extension recipes. |
+| 📊 [Caching & API Quota Guide](docs/CACHING_AND_QUOTA.md) | YouTube API quota economics across all 23 subcommands, `QuotaTracker`, TTL cache, and public RSS Atom feed fallback. |
+| 🛠️ [Developer & Testing Guide](docs/DEVELOPMENT_AND_TESTING.md) | Environment setup, **86 passing tests**, `MockYoutubeClient`, GUI usability tests, Clippy standards, and CI pipelines. |
 
 ---
 

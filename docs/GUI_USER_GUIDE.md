@@ -3,7 +3,7 @@
 `youtube-gui` is a native, 60 FPS desktop application built with `egui` and `eframe` for browsing YouTube subscriptions, filtering searches, managing playlists, inspecting SponsorBlock segments, downloading video/audio at custom resolutions and bitrates, managing an offline media library and watch history, and listening to background audio with an integrated hardware-accelerated `rodio` player.
 
 > [!TIP]
-> For a complete reference of keyboard shortcuts (`Alt+1..7`, `Ctrl+F`, `F5`, `Space`, `Esc`) and Jakob Nielsen's 10 Usability Heuristics implemented across the GUI, see the **[Usability & Keyboard Shortcuts Guide](usability_and_shortcuts.md)**.
+> For a complete reference of keyboard shortcuts (`Alt+1..7`, `Ctrl+F`, `F5`, `Space`, `Esc`) and Jakob Nielsen's 10 Usability Heuristics implemented across the GUI, see the **[Usability & Keyboard Shortcuts Guide](USABILITY_AND_SHORTCUTS.md)**.
 
 ---
 
@@ -190,7 +190,7 @@ Configure all persistent application settings (`Ctrl+S` to save immediately):
 * **SponsorBlock Configuration:** Enable/disable automatic SponsorBlock segment skipping and toggle individual categories (`sponsor`, `selfpromo`, `interaction`, `intro`, `outro`).
 * **Downloads Directory & Cookies:** Native folder picker for `downloads_dir` and browser selector (`firefox`, `chrome`, `edge`, `brave`) for `--cookies-from-browser`.
 * **API Quota Budget Gauge:** Visual progress bar (`Used: X / 10,000 units`) with manual reset safeguard.
-* **Subscriptions Backup:** One-click **`📤 Export OPML`** and **`📥 Import Subscriptions (OPML/CSV/JSON)`** (see [Backup & Migration Guide](backup_and_migration.md)).
+* **Subscriptions Backup:** One-click **`📤 Export OPML`** and **`📥 Import Subscriptions (OPML/CSV/JSON)`** (see [Backup & Migration Guide](BACKUP_AND_MIGRATION.md)).
 * **Account Disconnection:** Two-step confirmed **`🚪 Sign Out & Disconnect Account`**.
 
 ---

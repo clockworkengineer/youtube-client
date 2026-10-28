@@ -41,5 +41,5 @@ youtube-installer --uninstall
 
 ## Documentation
 
-* [Installation, Packaging & Lifecycle Guide](../docs/installation_and_packaging.md)
-* [Configuration Guide](../docs/configuration.md)
+* [Installation, Packaging & Lifecycle Guide](../docs/INSTALLATION_AND_PACKAGING.md)
+* [Configuration Guide](../docs/CONFIGURATION.md)

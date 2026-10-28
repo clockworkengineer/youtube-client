@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 [![CLI: clap](https://img.shields.io/badge/CLI-clap%20v4-blue.svg)](https://github.com/clap-rs/clap)
-[![Subcommands: 23](https://img.shields.io/badge/subcommands-23-brightgreen.svg)](../docs/cli_reference.md)
+[![Subcommands: 23](https://img.shields.io/badge/subcommands-23-brightgreen.svg)](../docs/CLI_REFERENCE.md)
 
 A feature-rich command-line interface for querying YouTube Data API v3, managing subscriptions and playlists, searching videos with filters, exporting/importing OPML/CSV/JSON backups, auditing offline media libraries and watch history, rating media, and downloading audio/video streams.
 
@@ -58,7 +58,7 @@ youtube-client completions bash > ~/.local/share/bash-completion/completions/you
 
 ## Documentation
 
-* [CLI Reference Manual (23 Subcommands)](../docs/cli_reference.md)
-* [Subscription Backup & Migration Guide](../docs/backup_and_migration.md)
-* [Configuration & Secrets Guide](../docs/configuration.md)
-* [SOLID Architecture](../docs/solid_architecture.md)
+* [CLI Reference Manual (23 Subcommands)](../docs/CLI_REFERENCE.md)
+* [Subscription Backup & Migration Guide](../docs/BACKUP_AND_MIGRATION.md)
+* [Configuration & Secrets Guide](../docs/CONFIGURATION.md)
+* [SOLID Architecture](../docs/solid_ARCHITECTURE.md)

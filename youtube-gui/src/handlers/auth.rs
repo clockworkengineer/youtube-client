@@ -19,6 +19,14 @@ pub fn handle_auth_action(
             spawn_login_and_auth(state.clone(), ctx.clone(), id.clone(), secret.clone());
             true
         }
+        PendingAction::CancelLogin => {
+            let mut s_lock = state.lock().unwrap();
+            s_lock.logging_in = false;
+            s_lock.login_error = None;
+            s_lock.set_toast("Sign-in cancelled.", false);
+            ctx.request_repaint();
+            true
+        }
         PendingAction::SignOut => {
             let token_path = youtube_client_lib::resolve_token_cache_path();
             if token_path.exists() {

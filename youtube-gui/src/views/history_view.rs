@@ -2,7 +2,7 @@ use eframe::egui;
 use std::sync::{Arc, Mutex};
 use youtube_client_lib::utils::DownloadStatus;
 
-use crate::types::{lock_state, AppState, PendingAction};
+use crate::types::{AppState, PendingAction, lock_state};
 
 #[derive(Default)]
 pub struct HistoryViewState {
@@ -25,19 +25,38 @@ pub fn render_history_view(
         playback_positions.into_iter().collect();
     entries.sort_by(|a, b| b.1.updated_at.cmp(&a.1.updated_at));
 
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
     ui.horizontal(|ui| {
         ui.heading(
-            egui::RichText::new("⏱️ Watch Progress History")
+            egui::RichText::new("⏱ Watch Progress History")
                 .size(22.0)
                 .strong()
                 .color(egui::Color32::WHITE),
         );
-        ui.add_space(20.0);
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new(format!("({} videos)", entries.len()))
+                .size(13.0)
+                .color(egui::Color32::GRAY),
+        );
+        ui.add_space(16.0);
 
         if !entries.is_empty() {
             if view_state.clear_confirm {
+                ui.label(
+                    egui::RichText::new("Clear all history?")
+                        .color(egui::Color32::from_rgb(255, 180, 100)),
+                );
                 if ui
-                    .button(egui::RichText::new("Confirm Clear 🗑").color(egui::Color32::RED))
+                    .button(
+                        egui::RichText::new("✔ Confirm Clear")
+                            .color(egui::Color32::from_rgb(255, 100, 100))
+                            .strong(),
+                    )
                     .clicked()
                 {
                     action = Some(PendingAction::ClearHistory);
@@ -48,7 +67,7 @@ pub fn render_history_view(
                 }
             } else if ui
                 .button("🗑 Clear All")
-                .on_hover_text("Purge all watch progress history")
+                .on_hover_text("Purge all saved watch progress timestamps")
                 .clicked()
             {
                 view_state.clear_confirm = true;
@@ -56,30 +75,29 @@ pub fn render_history_view(
         }
     });
 
-    ui.add_space(6.0);
-    ui.label(
-        egui::RichText::new(format!(
-            "Tracking {} videos with saved playback timestamps.",
-            entries.len()
-        ))
-        .color(egui::Color32::GRAY)
-        .small(),
-    );
-
-    ui.add_space(8.0);
-    ui.separator();
     ui.add_space(8.0);
 
     // Search bar
     ui.horizontal(|ui| {
-        ui.label("🔍 Search Video ID:");
-        ui.text_edit_singleline(&mut view_state.search_query);
-        if !view_state.search_query.is_empty() && ui.button("✖").clicked() {
+        ui.label("🔎 Filter History:");
+        ui.add(
+            egui::TextEdit::singleline(&mut view_state.search_query)
+                .hint_text("Search by title or Video ID...")
+                .desired_width(240.0),
+        );
+        if !view_state.search_query.is_empty()
+            && ui
+                .button("✖ Clear")
+                .on_hover_text("Clear filter")
+                .clicked()
+        {
             view_state.search_query.clear();
         }
     });
 
-    ui.add_space(10.0);
+    ui.add_space(8.0);
+    ui.separator();
+    ui.add_space(8.0);
 
     let query_lower = view_state.search_query.trim().to_lowercase();
     let filtered: Vec<&(String, youtube_client_lib::utils::PlaybackProgress)> = entries
@@ -88,7 +106,14 @@ pub fn render_history_view(
             if query_lower.is_empty() {
                 true
             } else {
-                vid.to_lowercase().contains(&query_lower)
+                let local_title = match downloads.get(vid) {
+                    Some(DownloadStatus::Finished(path)) => path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_lowercase())
+                        .unwrap_or_default(),
+                    _ => String::new(),
+                };
+                vid.to_lowercase().contains(&query_lower) || local_title.contains(&query_lower)
             }
         })
         .collect();
@@ -102,10 +127,12 @@ pub fn render_history_view(
                         .size(16.0)
                         .color(egui::Color32::GRAY),
                 );
-                ui.label("Videos you stream or play locally will automatically save progress here.");
+                ui.label(
+                    "Videos you stream or play locally will automatically save progress here.",
+                );
             } else {
                 ui.label(
-                    egui::RichText::new("No entries match your search query.")
+                    egui::RichText::new("No entries match your filter.")
                         .size(16.0)
                         .color(egui::Color32::GRAY),
                 );
@@ -134,14 +161,15 @@ pub fn render_history_view(
                                     .map(|s| s.to_string_lossy().to_string())
                                     .unwrap_or_else(|| video_id.clone())
                             } else {
-                                format!("Video ID: {video_id}")
+                                format!("YouTube Video ({video_id})")
                             };
 
                             ui.label(
                                 egui::RichText::new(&title)
                                     .strong()
                                     .color(egui::Color32::WHITE),
-                            );
+                            )
+                            .on_hover_text(format!("Video ID: {video_id}"));
 
                             let format_time = |secs: f32| -> String {
                                 let total = secs.max(0.0) as u32;
@@ -162,33 +190,41 @@ pub fn render_history_view(
                             };
 
                             ui.add_space(2.0);
-                            let bar_text = format!("{pos_str} / {dur_str} ({:.0}%)", ratio * 100.0);
+                            let bar_text =
+                                format!("{pos_str} / {dur_str} ({:.0}%)", ratio * 100.0);
                             ui.add(
                                 egui::ProgressBar::new(ratio)
                                     .text(bar_text)
+                                    .desired_width(240.0)
                                     .animate(false),
                             );
 
                             ui.horizontal(|ui| {
                                 if local_path.is_some() {
                                     ui.label(
-                                        egui::RichText::new("💾 Downloaded Local Media")
+                                        egui::RichText::new("💾 Offline File")
                                             .color(egui::Color32::LIGHT_GREEN)
                                             .small(),
                                     );
                                 } else {
                                     ui.label(
-                                        egui::RichText::new("🌐 YouTube Online Stream")
+                                        egui::RichText::new("🌐 Online Stream")
                                             .color(egui::Color32::LIGHT_BLUE)
                                             .small(),
                                     );
                                 }
 
-                                ui.label(
-                                    egui::RichText::new(format!("ID: {video_id}"))
-                                        .color(egui::Color32::DARK_GRAY)
+                                if progress.updated_at > 0 {
+                                    ui.separator();
+                                    ui.label(
+                                        egui::RichText::new(format_relative_time(
+                                            now_secs,
+                                            progress.updated_at,
+                                        ))
+                                        .color(egui::Color32::GRAY)
                                         .small(),
-                                );
+                                    );
+                                }
                             });
                         });
 
@@ -196,7 +232,7 @@ pub fn render_history_view(
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             // Remove single item
                             if ui
-                                .button("❌")
+                                .button("🗑 Remove")
                                 .on_hover_text("Remove entry from watch history")
                                 .clicked()
                             {
@@ -231,7 +267,8 @@ pub fn render_history_view(
                             if ui
                                 .button(
                                     egui::RichText::new("▶ Resume")
-                                        .color(egui::Color32::from_rgb(100, 220, 100)),
+                                        .color(egui::Color32::from_rgb(100, 220, 100))
+                                        .strong(),
                                 )
                                 .on_hover_text("Resume playback from last position")
                                 .clicked()
@@ -259,4 +296,17 @@ pub fn render_history_view(
     });
 
     action
+}
+
+fn format_relative_time(now_secs: u64, updated_at: u64) -> String {
+    let diff = now_secs.saturating_sub(updated_at);
+    if diff < 60 {
+        "Watched just now".to_string()
+    } else if diff < 3_600 {
+        format!("Watched {}m ago", diff / 60)
+    } else if diff < 86_400 {
+        format!("Watched {}h ago", diff / 3_600)
+    } else {
+        format!("Watched {}d ago", diff / 86_400)
+    }
 }

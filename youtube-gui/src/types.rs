@@ -119,6 +119,8 @@ pub struct AppState {
     pub cached_backend: Option<youtube_client_lib::YoutubeBackend>,
     pub toast: Option<(String, std::time::Instant, bool)>,
     pub sponsor_segments: HashMap<String, Vec<SkipSegment>>,
+    pub recent_searches: VecDeque<String>,
+    pub last_dismissed_video: Option<String>,
 }
 
 /// Helper function to safely lock AppState with poison recovery.
@@ -144,6 +146,18 @@ impl AppState {
 
     pub fn set_toast(&mut self, message: impl Into<String>, is_error: bool) {
         self.toast = Some((message.into(), std::time::Instant::now(), is_error));
+    }
+
+    pub fn record_search(&mut self, query: &str) {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.recent_searches.retain(|q| !q.eq_ignore_ascii_case(trimmed));
+        self.recent_searches.push_front(trimmed.to_string());
+        if self.recent_searches.len() > 8 {
+            self.recent_searches.pop_back();
+        }
     }
 
     pub fn insert_thumbnail(&mut self, key: String, thumbnail: Thumbnail) {
@@ -186,6 +200,7 @@ pub enum PendingAction {
         id: String,
         secret: String,
     },
+    CancelLogin,
     RetrySubscriptions,
     GoToSubscriptions,
     GoToNewVideos,
@@ -194,6 +209,7 @@ pub enum PendingAction {
     DismissNewVideo {
         video_id: String,
     },
+    UndoDismissVideo,
     ResetClearedVideos,
     LoadChannel {
         id: String,
@@ -238,6 +254,7 @@ pub enum PendingAction {
         query: String,
         filter: Option<SearchFilter>,
     },
+    ClearRecentSearches,
     LoadPlaylists,
     LoadPlaylistVideos {
         id: String,
@@ -267,6 +284,12 @@ pub enum PendingAction {
     AddToPlaylist {
         playlist_id: String,
         playlist_title: String,
+        video_id: String,
+    },
+    RemoveFromPlaylist {
+        playlist_id: String,
+        playlist_title: String,
+        playlist_item_id: String,
         video_id: String,
     },
     PostComment {

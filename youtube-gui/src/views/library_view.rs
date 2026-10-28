@@ -1,9 +1,9 @@
 use eframe::egui;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use youtube_client_lib::utils::{scan_downloaded_items, DownloadedItem};
+use youtube_client_lib::utils::{DownloadedItem, scan_downloaded_items};
 
-use crate::types::{lock_state, AppState, PendingAction};
+use crate::types::{AppState, PendingAction, lock_state};
 
 #[derive(Default, Clone, PartialEq, Eq)]
 pub enum LibraryFilter {
@@ -33,7 +33,7 @@ pub fn render_library_view(
 
     let all_items = scan_downloaded_items(&downloads_dir);
     let total_bytes: u64 = all_items.iter().map(|i| i.size_bytes).sum();
-    let total_mb = (total_bytes as f64) / 1024.0 / 1024.0;
+    let total_size_str = format_file_size(total_bytes);
 
     ui.horizontal(|ui| {
         ui.heading(
@@ -42,10 +42,19 @@ pub fn render_library_view(
                 .strong()
                 .color(egui::Color32::WHITE),
         );
-        ui.add_space(20.0);
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new(format!("({} files, {total_size_str})", all_items.len()))
+                .size(13.0)
+                .color(egui::Color32::GRAY),
+        );
+        ui.add_space(16.0);
         if ui
             .button("📂 Open Folder")
-            .on_hover_text("Open downloads folder in system file manager")
+            .on_hover_text(format!(
+                "Open downloads folder in system file manager ({})",
+                downloads_dir.display()
+            ))
             .clicked()
         {
             action = Some(PendingAction::OpenFolder {
@@ -54,21 +63,6 @@ pub fn render_library_view(
         }
     });
 
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(format!(
-                "Total: {} files ({total_mb:.1} MB) in {}",
-                all_items.len(),
-                downloads_dir.display()
-            ))
-            .color(egui::Color32::GRAY)
-            .small(),
-        );
-    });
-
-    ui.add_space(8.0);
-    ui.separator();
     ui.add_space(8.0);
 
     // Filter controls row
@@ -94,14 +88,25 @@ pub fn render_library_view(
         }
 
         ui.add_space(20.0);
-        ui.label("🔍 Search:");
-        ui.text_edit_singleline(&mut view_state.search_query);
-        if !view_state.search_query.is_empty() && ui.button("✖").clicked() {
+        ui.label("🔎 Search:");
+        ui.add(
+            egui::TextEdit::singleline(&mut view_state.search_query)
+                .hint_text("Filter downloaded files...")
+                .desired_width(220.0),
+        );
+        if !view_state.search_query.is_empty()
+            && ui
+                .button("✖ Clear")
+                .on_hover_text("Clear search filter")
+                .clicked()
+        {
             view_state.search_query.clear();
         }
     });
 
-    ui.add_space(10.0);
+    ui.add_space(8.0);
+    ui.separator();
+    ui.add_space(8.0);
 
     // Filter items based on active criteria
     let query_lower = view_state.search_query.trim().to_lowercase();
@@ -137,7 +142,7 @@ pub fn render_library_view(
                 ui.label("Download videos or audio from YouTube feeds to view them here offline.");
             } else {
                 ui.label(
-                    egui::RichText::new("No downloaded files match your search filter.")
+                    egui::RichText::new("No downloaded files match your filter.")
                         .size(16.0)
                         .color(egui::Color32::GRAY),
                 );
@@ -158,32 +163,34 @@ pub fn render_library_view(
 
                         // File info column
                         ui.vertical(|ui| {
+                            let hover_info = match &item.video_id {
+                                Some(vid) => {
+                                    format!("Path: {}\nVideo ID: {vid}", item.path.display())
+                                }
+                                None => format!("Path: {}", item.path.display()),
+                            };
                             ui.label(
                                 egui::RichText::new(&item.file_name)
                                     .strong()
                                     .color(egui::Color32::WHITE),
-                            );
+                            )
+                            .on_hover_text(hover_info);
 
-                            let size_mb = (item.size_bytes as f64) / 1024.0 / 1024.0;
                             let progress_info = item
                                 .video_id
                                 .as_ref()
                                 .and_then(|id| playback_positions.get(id));
 
                             ui.horizontal(|ui| {
+                                let kind_badge = if item.is_audio { "MP3 Audio" } else { "MP4 Video" };
                                 ui.label(
-                                    egui::RichText::new(format!("{size_mb:.1} MB"))
-                                        .color(egui::Color32::LIGHT_BLUE)
-                                        .small(),
+                                    egui::RichText::new(format!(
+                                        "{kind_badge} • {}",
+                                        format_file_size(item.size_bytes)
+                                    ))
+                                    .color(egui::Color32::LIGHT_BLUE)
+                                    .small(),
                                 );
-
-                                if let Some(vid) = &item.video_id {
-                                    ui.label(
-                                        egui::RichText::new(format!("ID: {vid}"))
-                                            .color(egui::Color32::DARK_GRAY)
-                                            .small(),
-                                    );
-                                }
 
                                 if let Some(prog) = progress_info {
                                     let format_time = |secs: f32| -> String {
@@ -196,10 +203,13 @@ pub fn render_library_view(
                                     } else {
                                         "--:--".to_string()
                                     };
+                                    ui.separator();
                                     ui.label(
-                                        egui::RichText::new(format!("⏱ Watched: {pos_str} / {dur_str}"))
-                                            .color(egui::Color32::from_rgb(255, 180, 80))
-                                            .small(),
+                                        egui::RichText::new(format!(
+                                            "⏱ Watched: {pos_str} / {dur_str}"
+                                        ))
+                                        .color(egui::Color32::from_rgb(255, 180, 80))
+                                        .small(),
                                     );
                                 }
                             });
@@ -209,8 +219,15 @@ pub fn render_library_view(
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             // Delete button with confirmation
                             if view_state.delete_confirm.as_ref() == Some(&item.path) {
+                                if ui.button("Cancel").clicked() {
+                                    view_state.delete_confirm = None;
+                                }
                                 if ui
-                                    .button(egui::RichText::new("Confirm 🗑").color(egui::Color32::RED))
+                                    .button(
+                                        egui::RichText::new("✔ Confirm Delete")
+                                            .color(egui::Color32::from_rgb(255, 100, 100))
+                                            .strong(),
+                                    )
                                     .clicked()
                                 {
                                     action = Some(PendingAction::DeleteDownloadedFile {
@@ -219,12 +236,9 @@ pub fn render_library_view(
                                     });
                                     view_state.delete_confirm = None;
                                 }
-                                if ui.button("Cancel").clicked() {
-                                    view_state.delete_confirm = None;
-                                }
                             } else if ui
-                                .button("🗑")
-                                .on_hover_text("Delete downloaded file from disk")
+                                .button("🗑 Delete")
+                                .on_hover_text("Delete this downloaded file from disk")
                                 .clicked()
                             {
                                 view_state.delete_confirm = Some(item.path.clone());
@@ -232,7 +246,7 @@ pub fn render_library_view(
 
                             // Reveal in folder
                             if ui
-                                .button("📂")
+                                .button("📂 Folder")
                                 .on_hover_text("Show file in folder")
                                 .clicked()
                             {
@@ -262,7 +276,8 @@ pub fn render_library_view(
                             if ui
                                 .button(
                                     egui::RichText::new(play_label)
-                                        .color(egui::Color32::from_rgb(100, 220, 100)),
+                                        .color(egui::Color32::from_rgb(100, 220, 100))
+                                        .strong(),
                                 )
                                 .clicked()
                             {
@@ -282,4 +297,13 @@ pub fn render_library_view(
     });
 
     action
+}
+
+fn format_file_size(bytes: u64) -> String {
+    let mb = (bytes as f64) / 1024.0 / 1024.0;
+    if mb >= 1024.0 {
+        format!("{:.2} GB", mb / 1024.0)
+    } else {
+        format!("{mb:.1} MB")
+    }
 }

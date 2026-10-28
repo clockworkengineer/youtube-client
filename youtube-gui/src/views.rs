@@ -1,7 +1,7 @@
 //! # egui UI View & Video Card Renderers
 //!
 //! Provides egui view layout components, thumbnail texture caching, video cards,
-//! and dismissible feed cards.
+//! error recovery banners, and contextual help badges.
 
 pub mod about_view;
 pub mod channel_view;
@@ -39,8 +39,151 @@ use youtube_client_lib::utils::DownloadStatus;
 use crate::actions::fetch_thumbnail;
 use crate::types::{AppState, PendingAction, PlayerCommand, Thumbnail};
 
-/// Render a single video card with optional dismiss button ("Clear").
-pub fn draw_video_card_with_dismiss(
+/// Render a contextual `(?)` help badge that displays a plain-language tooltip on hover (Heuristic 10).
+pub fn help_badge(ui: &mut egui::Ui, tooltip: &str) {
+    ui.label(
+        egui::RichText::new("ⓘ")
+            .size(13.0)
+            .color(egui::Color32::from_rgb(130, 175, 240)),
+    )
+    .on_hover_text(tooltip);
+}
+
+/// Diagnose a raw error string into a plain-language summary and actionable recovery advice (Heuristic 9).
+pub fn diagnose_error(raw_error: &str) -> (&'static str, &'static str, bool) {
+    let lower = raw_error.to_lowercase();
+    if lower.contains("quota") || lower.contains("403") {
+        (
+            "Daily YouTube API quota limit reached or access denied.",
+            "Wait until midnight Pacific Time for your quota to reset, or configure your own Google Cloud OAuth Client ID in Settings.",
+            false,
+        )
+    } else if lower.contains("not signed in")
+        || lower.contains("authorization expired")
+        || lower.contains("authentication failed")
+        || lower.contains("token")
+        || lower.contains("401")
+        || lower.contains("oauth")
+    {
+        (
+            "Your Google sign-in session has expired or is missing permissions.",
+            "Click 'Sign In Again' below to re-authorize your Google account in the browser.",
+            true,
+        )
+    } else if lower.contains("yt-dlp") || lower.contains("ffmpeg") {
+        (
+            "Required media helper tool (yt-dlp or ffmpeg) was not found.",
+            "Install yt-dlp and ffmpeg (e.g. `winget install yt-dlp.yt-dlp` on Windows or `brew install yt-dlp` on macOS) and restart the app.",
+            false,
+        )
+    } else if lower.contains("dns")
+        || lower.contains("timeout")
+        || lower.contains("connect")
+        || lower.contains("network")
+    {
+        (
+            "Could not reach YouTube servers due to a network connection issue.",
+            "Check your internet connection or firewall settings, then click Retry.",
+            false,
+        )
+    } else {
+        (
+            "Something went wrong while communicating with YouTube.",
+            "Try clicking Retry below, or check Settings if the issue persists.",
+            false,
+        )
+    }
+}
+
+/// Render a structured, plain-language error banner with recovery actions and collapsible technical details (Heuristic 9).
+pub fn render_error_banner(
+    ui: &mut egui::Ui,
+    heading: &str,
+    raw_error: &str,
+    retry_action: PendingAction,
+    action_out: &mut PendingAction,
+) {
+    let (summary, hint, needs_auth) = diagnose_error(raw_error);
+    egui::Frame::group(ui.style())
+        .fill(egui::Color32::from_rgb(45, 25, 28))
+        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 70, 70)))
+        .rounding(egui::Rounding::same(6.0))
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("⚠")
+                        .size(20.0)
+                        .color(egui::Color32::from_rgb(255, 110, 110)),
+                );
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new(heading)
+                            .size(15.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(255, 160, 160)),
+                    );
+                    ui.add_space(2.0);
+                    ui.label(egui::RichText::new(summary).color(egui::Color32::WHITE));
+                    ui.label(
+                        egui::RichText::new(format!("💡 Suggestion: {hint}"))
+                            .size(12.0)
+                            .color(egui::Color32::from_rgb(210, 210, 220)),
+                    );
+                });
+            });
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if !matches!(retry_action, PendingAction::None)
+                    && ui
+                        .button(egui::RichText::new("🔄 Retry").strong())
+                        .on_hover_text("Try this operation again")
+                        .clicked()
+                {
+                    *action_out = retry_action;
+                }
+                if needs_auth
+                    && ui
+                        .button(
+                            egui::RichText::new("🔐 Sign In Again")
+                                .strong()
+                                .color(egui::Color32::from_rgb(130, 200, 255)),
+                        )
+                        .on_hover_text("Re-authenticate with your Google account")
+                        .clicked()
+                {
+                    *action_out = PendingAction::SpawnDefaultLogin;
+                }
+                if ui
+                    .button("⚙ Open Settings")
+                    .on_hover_text("Check configuration, credentials, or quota")
+                    .clicked()
+                {
+                    *action_out = PendingAction::GoToSettings;
+                }
+            });
+
+            ui.add_space(4.0);
+            ui.collapsing(
+                egui::RichText::new("Technical Details")
+                    .size(11.0)
+                    .color(egui::Color32::GRAY),
+                |ui| {
+                    ui.label(
+                        egui::RichText::new(raw_error)
+                            .monospace()
+                            .size(11.0)
+                            .color(egui::Color32::LIGHT_GRAY),
+                    );
+                },
+            );
+        });
+}
+
+/// Render a single video card inside a playlist with an optional "Remove from Playlist" action.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_video_card_in_playlist(
     state: &std::sync::Arc<std::sync::Mutex<AppState>>,
     http_client: &reqwest::Client,
     audio_tx: &std::sync::mpsc::Sender<PlayerCommand>,
@@ -49,13 +192,15 @@ pub fn draw_video_card_with_dismiss(
     video: &Video,
     action: &mut PendingAction,
     can_dismiss: bool,
+    playlist_context: Option<(&str, &str)>,
 ) {
     ui.push_id(&video.id, |ui| {
         let texture =
             get_or_fetch_thumbnail(state, http_client, ctx, &video.id, &video.thumbnail_url);
         let (download_status, is_playing, playback_progress) = {
             let s_lock = state.lock().unwrap();
-            let is_playing = s_lock.player_state.playing && s_lock.player_state.current_title == video.title;
+            let is_playing =
+                s_lock.player_state.playing && s_lock.player_state.current_title == video.title;
             (
                 s_lock
                     .downloads
@@ -118,22 +263,26 @@ pub fn draw_video_card_with_dismiss(
                         );
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
+                            if !video.channel_title.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(format!("👤 {}", video.channel_title))
+                                        .size(12.0)
+                                        .color(egui::Color32::from_rgb(175, 190, 215)),
+                                );
+                                ui.add_space(12.0);
+                            }
                             let date = if video.published_at.len() >= 10 {
                                 &video.published_at[..10]
                             } else {
                                 &video.published_at
                             };
-                            ui.label(
-                                egui::RichText::new(format!("Published: {date}"))
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(140, 140, 150)),
-                            );
-                            ui.add_space(20.0);
-                            ui.label(
-                                egui::RichText::new(format!("ID: {}", video.id))
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(140, 140, 150)),
-                            );
+                            if !date.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(format!("📅 {date}"))
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(140, 140, 150)),
+                                );
+                            }
                         });
                         if let Some(ref prog) = playback_progress {
                             if prog.position_secs > 5.0 {
@@ -150,11 +299,16 @@ pub fn draw_video_card_with_dismiss(
                     });
                 });
 
-                let left_interact = ui.interact(
-                    left_response.response.rect,
-                    left_response.response.id.with("click"),
-                    egui::Sense::click(),
-                );
+                let left_interact = ui
+                    .interact(
+                        left_response.response.rect,
+                        left_response.response.id.with("click"),
+                        egui::Sense::click(),
+                    )
+                    .on_hover_text(format!(
+                        "Click to view details, description & comments (Video ID: {})",
+                        video.id
+                    ));
                 if left_interact.clicked() {
                     card_clicked = true;
                 }
@@ -163,10 +317,30 @@ pub fn draw_video_card_with_dismiss(
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if let Some((pl_id, pl_title)) = playlist_context {
+                        if let Some(ref item_id) = video.playlist_item_id {
+                            if ui
+                                .button(
+                                    egui::RichText::new("🗑 Remove")
+                                        .color(egui::Color32::from_rgb(255, 130, 130)),
+                                )
+                                .on_hover_text(format!("Remove this video from '{pl_title}'"))
+                                .clicked()
+                            {
+                                *action = PendingAction::RemoveFromPlaylist {
+                                    playlist_id: pl_id.to_string(),
+                                    playlist_title: pl_title.to_string(),
+                                    playlist_item_id: item_id.clone(),
+                                    video_id: video.id.clone(),
+                                };
+                            }
+                        }
+                    }
+
                     if can_dismiss
                         && ui
-                            .button("❌ Clear")
-                            .on_hover_text("Remove from New Videos feed")
+                            .button("✖ Dismiss")
+                            .on_hover_text("Hide from New Videos feed (can be undone)")
                             .clicked()
                     {
                         *action = PendingAction::DismissNewVideo {
@@ -175,7 +349,11 @@ pub fn draw_video_card_with_dismiss(
                     }
                     match &download_status {
                         DownloadStatus::NotStarted => {
-                            if ui.button("📥 Download").clicked() {
+                            if ui
+                                .button("📥 Download")
+                                .on_hover_text("Download MP4 video to your local Library")
+                                .clicked()
+                            {
                                 *action = PendingAction::SpawnDownload {
                                     video: video.clone(),
                                     is_audio: false,
@@ -311,7 +489,11 @@ pub fn draw_video_card_with_dismiss(
                         }
                         DownloadStatus::Failed(err) => {
                             let is_missing_ytdlp = err.contains("yt-dlp");
-                            if ui.button("❌ Retry").clicked() {
+                            if ui
+                                .button("🔄 Retry")
+                                .on_hover_text("Retry downloading this video")
+                                .clicked()
+                            {
                                 *action = PendingAction::SpawnDownload {
                                     video: video.clone(),
                                     is_audio: false,
@@ -320,14 +502,16 @@ pub fn draw_video_card_with_dismiss(
                                 };
                             }
                             let fail_text = if is_missing_ytdlp {
-                                "⚠️ yt-dlp missing (Install via winget / brew)"
+                                "⚠ yt-dlp missing"
                             } else {
-                                "Failed"
+                                "⚠ Download failed"
                             };
                             ui.label(
                                 egui::RichText::new(fail_text).color(egui::Color32::LIGHT_RED),
                             )
-                            .on_hover_text(err);
+                            .on_hover_text(format!(
+                                "{err}\n\nTip: Ensure yt-dlp and ffmpeg are installed and up to date."
+                            ));
                         }
                     }
                 });
@@ -340,6 +524,31 @@ pub fn draw_video_card_with_dismiss(
             };
         }
     });
+}
+
+/// Render a single video card with optional dismiss button ("Dismiss").
+#[allow(clippy::too_many_arguments)]
+pub fn draw_video_card_with_dismiss(
+    state: &std::sync::Arc<std::sync::Mutex<AppState>>,
+    http_client: &reqwest::Client,
+    audio_tx: &std::sync::mpsc::Sender<PlayerCommand>,
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    video: &Video,
+    action: &mut PendingAction,
+    can_dismiss: bool,
+) {
+    draw_video_card_in_playlist(
+        state,
+        http_client,
+        audio_tx,
+        ui,
+        ctx,
+        video,
+        action,
+        can_dismiss,
+        None,
+    );
 }
 
 pub fn draw_video_card(
@@ -404,4 +613,33 @@ pub fn parse_progress_percentage(progress: &str) -> Option<f32> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_diagnose_error_categories() {
+        let (summary, _, needs_auth) = diagnose_error("Error 403: quotaExceeded");
+        assert!(summary.contains("quota"));
+        assert!(!needs_auth);
+
+        let (summary, _, needs_auth) =
+            diagnose_error("Authorization expired or missing permissions");
+        assert!(summary.contains("sign-in"));
+        assert!(needs_auth);
+
+        let (summary, _, _) = diagnose_error("yt-dlp executable not found");
+        assert!(summary.contains("yt-dlp"));
+    }
+
+    #[test]
+    fn test_parse_progress_percentage() {
+        assert_eq!(
+            parse_progress_percentage("[download]  45.0% of 12.34MiB at 2.50MiB/s"),
+            Some(0.45)
+        );
+        assert_eq!(parse_progress_percentage("Starting..."), None);
+    }
 }

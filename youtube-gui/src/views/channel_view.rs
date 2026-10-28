@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex, mpsc::Sender};
 use youtube_client_lib::{ChannelDetails, Subscription, Video};
 
 use crate::types::{AppState, PendingAction, PlayerCommand};
-use crate::views::{draw_video_card, get_or_fetch_thumbnail};
+use crate::views::{draw_video_card, get_or_fetch_thumbnail, render_error_banner};
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_channel_view(
     state: &Arc<Mutex<AppState>>,
     http_client: &reqwest::Client,
@@ -20,12 +21,21 @@ pub fn render_channel_view(
 ) -> Option<PendingAction> {
     let mut action = None;
 
+    let unsub_confirm_id = ui.make_persistent_id(format!("confirm_unsub_{channel_id}"));
+    let mut confirm_unsub = ui
+        .data_mut(|d| d.get_temp::<bool>(unsub_confirm_id))
+        .unwrap_or(false);
+
     ui.vertical(|ui| {
         ui.horizontal(|ui| {
-            if ui.button("⬅ Go Back").clicked() {
+            if ui
+                .button("⬅ Back")
+                .on_hover_text("Return to previous screen (Esc / Alt+Left)")
+                .clicked()
+            {
                 action = Some(PendingAction::GoBack);
             }
-            ui.add_space(15.0);
+            ui.add_space(12.0);
 
             if let Some(Ok(details)) = channel_details {
                 if !details.thumbnail_url.is_empty() {
@@ -51,10 +61,11 @@ pub fn render_channel_view(
                 ui.horizontal(|ui| {
                     ui.heading(
                         egui::RichText::new(format!("📺 {channel_title}"))
-                            .size(20.0)
+                            .size(22.0)
                             .strong()
                             .color(egui::Color32::WHITE),
-                    );
+                    )
+                    .on_hover_text(format!("Channel ID: {channel_id}"));
                     if let Some(Ok(details)) = channel_details {
                         if let Some(ref handle) = details.custom_url {
                             ui.add_space(6.0);
@@ -101,24 +112,63 @@ pub fn render_channel_view(
                 }
             });
 
-            ui.add_space(20.0);
+            ui.add_space(16.0);
             if let Some(sub_details) = if let Some(Ok(subs)) = subscriptions {
                 subs.iter().find(|sub| sub.channel_id == channel_id)
             } else {
                 None
             } {
-                if ui
+                if confirm_unsub {
+                    ui.label(
+                        egui::RichText::new("Unsubscribe?")
+                            .color(egui::Color32::from_rgb(255, 180, 100)),
+                    );
+                    if ui
+                        .button(
+                            egui::RichText::new("✔ Yes")
+                                .color(egui::Color32::from_rgb(255, 100, 100))
+                                .strong(),
+                        )
+                        .clicked()
+                    {
+                        confirm_unsub = false;
+                        action = Some(PendingAction::Unsubscribe {
+                            subscription_id: sub_details.id.clone(),
+                        });
+                    }
+                    if ui.button("Cancel").clicked() {
+                        confirm_unsub = false;
+                    }
+                } else if ui
                     .button("✓ Subscribed")
-                    .on_hover_text("Click to unsubscribe")
+                    .on_hover_text("Click to unsubscribe from this channel")
                     .clicked()
                 {
-                    action = Some(PendingAction::Unsubscribe {
-                        subscription_id: sub_details.id.clone(),
-                    });
+                    confirm_unsub = true;
                 }
-            } else if ui.button("➕ Subscribe").clicked() {
+            } else if ui
+                .button(
+                    egui::RichText::new("➕ Subscribe")
+                        .strong()
+                        .color(egui::Color32::from_rgb(255, 110, 110)),
+                )
+                .on_hover_text("Subscribe to this channel")
+                .clicked()
+            {
                 action = Some(PendingAction::Subscribe {
                     channel_id: channel_id.to_string(),
+                });
+            }
+
+            if ui
+                .button("🔄 Refresh")
+                .on_hover_text("Reload channel uploads (F5)")
+                .clicked()
+            {
+                action = Some(PendingAction::RetryVideos {
+                    id: channel_id.to_string(),
+                    title: channel_title.to_string(),
+                    description: channel_description.to_string(),
                 });
             }
         });
@@ -140,6 +190,8 @@ pub fn render_channel_view(
         }
     });
 
+    ui.data_mut(|d| d.insert_temp(unsub_confirm_id, confirm_unsub));
+
     ui.add_space(10.0);
     ui.separator();
     ui.add_space(10.0);
@@ -154,23 +206,21 @@ pub fn render_channel_view(
             });
         }
         Some(Err(err_msg)) => {
-            ui.vertical_centered(|ui| {
-                ui.add_space(50.0);
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 100, 100),
-                    "⚠️ Failed to load videos",
-                );
-                ui.add_space(10.0);
-                ui.label(err_msg);
-                ui.add_space(20.0);
-                if ui.button("Retry").clicked() {
-                    action = Some(PendingAction::RetryVideos {
-                        id: channel_id.to_string(),
-                        title: channel_title.to_string(),
-                        description: channel_description.to_string(),
-                    });
-                }
-            });
+            let mut banner_action = PendingAction::None;
+            render_error_banner(
+                ui,
+                "Failed to load channel videos",
+                err_msg,
+                PendingAction::RetryVideos {
+                    id: channel_id.to_string(),
+                    title: channel_title.to_string(),
+                    description: channel_description.to_string(),
+                },
+                &mut banner_action,
+            );
+            if !matches!(banner_action, PendingAction::None) {
+                action = Some(banner_action);
+            }
         }
         Some(Ok(vids)) => {
             if vids.is_empty() {

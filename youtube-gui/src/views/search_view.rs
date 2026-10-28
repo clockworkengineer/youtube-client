@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, mpsc::Sender};
 use youtube_client_lib::{DurationFilter, SearchFilter, SearchOrder, SearchType, Video};
 
 use crate::types::{AppState, PendingAction, PlayerCommand};
-use crate::views::draw_video_card;
+use crate::views::{draw_video_card, help_badge, render_error_banner};
 
 pub struct SearchFilterState {
     pub order: SearchOrder,
@@ -96,6 +96,7 @@ impl SearchFilterState {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_search_view(
     state: &Arc<Mutex<AppState>>,
     http_client: &reqwest::Client,
@@ -108,6 +109,11 @@ pub fn render_search_view(
 ) -> Option<PendingAction> {
     let mut action = None;
 
+    let recent_searches: Vec<String> = {
+        let s = state.lock().unwrap();
+        s.recent_searches.iter().cloned().collect()
+    };
+
     ui.horizontal(|ui| {
         ui.heading(
             egui::RichText::new("🔍 Search YouTube")
@@ -115,10 +121,10 @@ pub fn render_search_view(
                 .strong()
                 .color(egui::Color32::WHITE),
         );
-        ui.add_space(20.0);
+        ui.add_space(16.0);
         let response = ui.add(
             egui::TextEdit::singleline(search_query)
-                .hint_text("Search videos, channels...")
+                .hint_text("Search videos, channels, topics...")
                 .desired_width(300.0),
         );
         if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -130,23 +136,71 @@ pub fn render_search_view(
                 });
             }
         }
-        if ui.button("Search").clicked() {
-            let q = search_query.trim().to_string();
-            if !q.is_empty() {
-                action = Some(PendingAction::Search {
-                    query: q,
-                    filter: Some(filter_state.to_search_filter()),
-                });
-            }
+        if !search_query.is_empty()
+            && ui
+                .button("✖")
+                .on_hover_text("Clear search input")
+                .clicked()
+        {
+            search_query.clear();
         }
+        let can_search = !search_query.trim().is_empty();
+        if ui
+            .add_enabled(can_search, egui::Button::new("🔍 Search"))
+            .on_hover_text("Run YouTube search (100 quota units)")
+            .on_disabled_hover_text("Type a search term first")
+            .clicked()
+        {
+            let q = search_query.trim().to_string();
+            action = Some(PendingAction::Search {
+                query: q,
+                filter: Some(filter_state.to_search_filter()),
+            });
+        }
+        help_badge(
+            ui,
+            "Each YouTube search costs 100 API quota units. Use recent search chips or Subscriptions/New Videos to conserve quota.",
+        );
     });
+
+    // Recent Searches bar (Heuristic 6: Recognition Rather Than Recall)
+    if !recent_searches.is_empty() {
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                egui::RichText::new("🕒 Recent:")
+                    .size(12.0)
+                    .color(egui::Color32::GRAY),
+            );
+            for recent in &recent_searches {
+                if ui
+                    .small_button(recent)
+                    .on_hover_text(format!("Search again for \"{recent}\""))
+                    .clicked()
+                {
+                    *search_query = recent.clone();
+                    action = Some(PendingAction::Search {
+                        query: recent.clone(),
+                        filter: Some(filter_state.to_search_filter()),
+                    });
+                }
+            }
+            if ui
+                .small_button("✖ Clear History")
+                .on_hover_text("Clear recent search chips")
+                .clicked()
+            {
+                action = Some(PendingAction::ClearRecentSearches);
+            }
+        });
+    }
 
     ui.add_space(8.0);
 
     // Search Filter Toolbar (Sort, Duration, Content Type, Upload Date)
     let mut filter_changed = false;
     ui.horizontal_wrapped(|ui| {
-        ui.label(egui::RichText::new("🎛️ Filters:").strong());
+        ui.label(egui::RichText::new("🎛 Filters:").strong());
         ui.add_space(6.0);
 
         ui.label("Sort:");
@@ -244,7 +298,11 @@ pub fn render_search_view(
             || filter_state.upload_date != UploadDateFilter::AnyTime
         {
             ui.add_space(6.0);
-            if ui.button("↺ Reset").clicked() {
+            if ui
+                .button("↺ Reset Filters")
+                .on_hover_text("Reset all search filters to default")
+                .clicked()
+            {
                 *filter_state = SearchFilterState::default();
                 filter_changed = true;
             }
@@ -268,23 +326,37 @@ pub fn render_search_view(
     match results {
         None => {
             ui.vertical_centered(|ui| {
-                ui.add_space(100.0);
-                ui.label("Enter a search term above and press Search or Enter.");
+                ui.add_space(80.0);
+                if search_query.trim().is_empty() {
+                    ui.label("Enter a search term above and press Search or Enter.");
+                } else {
+                    ui.spinner();
+                    ui.add_space(10.0);
+                    ui.label(format!("Searching YouTube for \"{}\"...", search_query.trim()));
+                }
             });
         }
         Some(Err(err_msg)) => {
-            ui.vertical_centered(|ui| {
-                ui.add_space(50.0);
-                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "⚠️ Search failed");
-                ui.add_space(10.0);
-                ui.label(err_msg);
-            });
+            let mut banner_action = PendingAction::None;
+            render_error_banner(
+                ui,
+                "Search failed",
+                err_msg,
+                PendingAction::RetrySearch {
+                    query: search_query.trim().to_string(),
+                    filter: Some(filter_state.to_search_filter()),
+                },
+                &mut banner_action,
+            );
+            if !matches!(banner_action, PendingAction::None) {
+                action = Some(banner_action);
+            }
         }
         Some(Ok(vids)) => {
             if vids.is_empty() {
                 ui.vertical_centered(|ui| {
                     ui.add_space(50.0);
-                    ui.label("No search results found.");
+                    ui.label("No search results found. Try broadening your filters or keywords.");
                 });
             } else {
                 egui::ScrollArea::vertical()

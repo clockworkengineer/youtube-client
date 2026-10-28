@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use youtube_client_lib::Playlist;
 
 use crate::types::{AppState, PendingAction};
-use crate::views::get_or_fetch_thumbnail;
+use crate::views::{get_or_fetch_thumbnail, render_error_banner};
 
 pub fn render_playlists_view(
     state: &Arc<Mutex<AppState>>,
@@ -16,7 +16,35 @@ pub fn render_playlists_view(
 ) -> Option<PendingAction> {
     let mut action = None;
 
-    ui.heading("📂 Your Playlists");
+    let confirm_del_id = ui.make_persistent_id("confirm_delete_playlist_id");
+    let mut pending_delete_id: Option<String> = ui
+        .data_mut(|d| d.get_temp::<Option<String>>(confirm_del_id))
+        .flatten();
+
+    ui.horizontal(|ui| {
+        ui.heading(
+            egui::RichText::new("📂 Your Playlists")
+                .size(22.0)
+                .strong()
+                .color(egui::Color32::WHITE),
+        );
+        if let Some(Ok(lists)) = playlists {
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(format!("({} playlists)", lists.len()))
+                    .size(13.0)
+                    .color(egui::Color32::GRAY),
+            );
+        }
+        ui.add_space(16.0);
+        if ui
+            .button("🔄 Refresh")
+            .on_hover_text("Reload your YouTube playlists (F5)")
+            .clicked()
+        {
+            action = Some(PendingAction::RetryPlaylists);
+        }
+    });
     ui.add_space(10.0);
 
     // Create New Playlist Form
@@ -31,67 +59,71 @@ pub fn render_playlists_view(
             ui.label("Title:");
             ui.add(
                 egui::TextEdit::singleline(title_input)
-                    .hint_text("Playlist title...")
+                    .hint_text("Required playlist title...")
                     .desired_width(180.0),
             );
-            ui.label("Description (opt):");
+            ui.label("Description:");
             ui.add(
                 egui::TextEdit::singleline(desc_input)
                     .hint_text("Optional description...")
                     .desired_width(200.0),
             );
+            let can_create = !title_input.trim().is_empty();
             if ui
-                .button(
-                    egui::RichText::new("Create")
-                        .strong()
-                        .color(egui::Color32::from_rgb(100, 220, 100)),
+                .add_enabled(
+                    can_create,
+                    egui::Button::new(
+                        egui::RichText::new("➕ Create")
+                            .strong()
+                            .color(egui::Color32::from_rgb(100, 220, 100)),
+                    ),
                 )
+                .on_hover_text("Create a new private playlist on your YouTube account")
+                .on_disabled_hover_text("Enter a playlist title first")
                 .clicked()
             {
                 let t = title_input.trim().to_string();
-                if !t.is_empty() {
-                    let d = desc_input.trim().to_string();
-                    let desc = if d.is_empty() { None } else { Some(d) };
-                    action = Some(PendingAction::CreatePlaylist {
-                        title: t,
-                        description: desc,
-                    });
-                    title_input.clear();
-                    desc_input.clear();
-                }
+                let d = desc_input.trim().to_string();
+                let desc = if d.is_empty() { None } else { Some(d) };
+                action = Some(PendingAction::CreatePlaylist {
+                    title: t,
+                    description: desc,
+                });
+                title_input.clear();
+                desc_input.clear();
             }
         });
     });
-    ui.add_space(15.0);
+    ui.add_space(12.0);
+    ui.separator();
+    ui.add_space(10.0);
 
     match playlists {
         None => {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
                 ui.spinner();
-                ui.label("Loading playlists...");
+                ui.label("Loading your playlists...");
             });
         }
         Some(Err(err_msg)) => {
-            ui.vertical_centered(|ui| {
-                ui.add_space(50.0);
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 100, 100),
-                    "⚠️ Failed to load playlists",
-                );
-                ui.add_space(10.0);
-                ui.label(err_msg);
-                ui.add_space(20.0);
-                if ui.button("Retry").clicked() {
-                    action = Some(PendingAction::RetryPlaylists);
-                }
-            });
+            let mut banner_action = PendingAction::None;
+            render_error_banner(
+                ui,
+                "Failed to load playlists",
+                err_msg,
+                PendingAction::RetryPlaylists,
+                &mut banner_action,
+            );
+            if !matches!(banner_action, PendingAction::None) {
+                action = Some(banner_action);
+            }
         }
         Some(Ok(lists)) => {
             if lists.is_empty() {
                 ui.vertical_centered(|ui| {
                     ui.add_space(50.0);
-                    ui.label("No playlists found on your account.");
+                    ui.label("No playlists found on your account. Create one above!");
                 });
             } else {
                 egui::ScrollArea::vertical()
@@ -106,7 +138,7 @@ pub fn render_playlists_view(
                                     &list.id,
                                     &list.thumbnail_url,
                                 );
-                                let mut delete_clicked = false;
+                                let mut interact_with_card = true;
 
                                 let response = ui.group(|ui| {
                                     ui.horizontal(|ui| {
@@ -118,7 +150,7 @@ pub fn render_playlists_view(
                                             );
                                         } else {
                                             let (rect, _response) = ui.allocate_exact_size(
-                                                egui::vec2(80.0, 80.0),
+                                                egui::vec2(80.0, 60.0),
                                                 egui::Sense::hover(),
                                             );
                                             ui.painter().rect_filled(
@@ -130,7 +162,7 @@ pub fn render_playlists_view(
                                                 rect.center(),
                                                 egui::Align2::CENTER_CENTER,
                                                 "📂",
-                                                egui::FontId::proportional(30.0),
+                                                egui::FontId::proportional(28.0),
                                                 egui::Color32::LIGHT_GRAY,
                                             );
                                         }
@@ -147,7 +179,7 @@ pub fn render_playlists_view(
                                             ui.add_space(4.0);
                                             ui.label(
                                                 egui::RichText::new(format!(
-                                                    "Videos: {}",
+                                                    "🎬 {} videos",
                                                     list.video_count
                                                 ))
                                                 .size(12.0)
@@ -158,29 +190,64 @@ pub fn render_playlists_view(
                                         ui.with_layout(
                                             egui::Layout::right_to_left(egui::Align::Center),
                                             |ui| {
-                                                if ui
+                                                let is_confirming = pending_delete_id.as_deref()
+                                                    == Some(list.id.as_str());
+                                                if is_confirming {
+                                                    interact_with_card = false;
+                                                    if ui.button("Cancel").clicked() {
+                                                        pending_delete_id = None;
+                                                    }
+                                                    if ui
+                                                        .button(
+                                                            egui::RichText::new("✔ Confirm Delete")
+                                                                .color(egui::Color32::from_rgb(
+                                                                    255, 90, 90,
+                                                                ))
+                                                                .strong(),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        pending_delete_id = None;
+                                                        action =
+                                                            Some(PendingAction::DeletePlaylist {
+                                                                playlist_id: list.id.clone(),
+                                                            });
+                                                    }
+                                                    ui.label(
+                                                        egui::RichText::new("Delete playlist?")
+                                                            .size(12.0)
+                                                            .color(egui::Color32::from_rgb(
+                                                                255, 180, 100,
+                                                            )),
+                                                    );
+                                                } else if ui
                                                     .button(egui::RichText::new("🗑 Delete").color(
-                                                        egui::Color32::from_rgb(255, 100, 100),
+                                                        egui::Color32::from_rgb(255, 110, 110),
                                                     ))
+                                                    .on_hover_text(
+                                                        "Delete this playlist from YouTube",
+                                                    )
                                                     .clicked()
                                                 {
-                                                    delete_clicked = true;
+                                                    interact_with_card = false;
+                                                    pending_delete_id = Some(list.id.clone());
                                                 }
                                             },
                                         );
                                     });
                                 });
 
-                                if delete_clicked {
-                                    action = Some(PendingAction::DeletePlaylist {
-                                        playlist_id: list.id.clone(),
-                                    });
-                                } else {
-                                    let click_resp = ui.interact(
-                                        response.response.rect,
-                                        response.response.id,
-                                        egui::Sense::click(),
-                                    );
+                                if interact_with_card {
+                                    let click_resp = ui
+                                        .interact(
+                                            response.response.rect,
+                                            response.response.id,
+                                            egui::Sense::click(),
+                                        )
+                                        .on_hover_text(format!(
+                                            "Open playlist '{}' (ID: {})",
+                                            list.title, list.id
+                                        ));
                                     if click_resp.clicked() {
                                         action = Some(PendingAction::LoadPlaylistVideos {
                                             id: list.id.clone(),
@@ -199,6 +266,8 @@ pub fn render_playlists_view(
             }
         }
     }
+
+    ui.data_mut(|d| d.insert_temp(confirm_del_id, pending_delete_id));
 
     action
 }

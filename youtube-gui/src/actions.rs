@@ -89,10 +89,14 @@ pub fn spawn_client_action<F, Fut, T>(
         } else {
             let cost = match action_name {
                 "search_videos" => youtube_client_lib::costs::SEARCH,
-                "rate_video" | "post_comment" | "add_to_playlist" | "create_playlist"
-                | "delete_playlist" | "unsubscribe" | "subscribe" => {
-                    youtube_client_lib::costs::WRITE
-                }
+                "rate_video"
+                | "post_comment"
+                | "add_to_playlist"
+                | "remove_from_playlist"
+                | "create_playlist"
+                | "delete_playlist"
+                | "unsubscribe"
+                | "subscribe" => youtube_client_lib::costs::WRITE,
                 "fetch_new_videos" => 6,
                 _ => youtube_client_lib::costs::READ,
             };
@@ -219,12 +223,17 @@ pub fn spawn_login_and_auth(
         .await;
 
         let mut s = state_clone.lock().unwrap();
+        if !s.logging_in {
+            // Cancelled by user
+            return;
+        }
         s.logging_in = false;
         match res {
             Ok(_) => {
                 s.cached_backend = None;
                 s.current_view = View::Subscriptions;
                 s.subscriptions = None;
+                s.set_toast("Signed in successfully!", false);
                 drop(s);
                 spawn_fetch_subscriptions(state_clone, ctx_clone);
             }
@@ -273,12 +282,17 @@ pub fn spawn_default_login(state: Arc<Mutex<AppState>>, ctx: egui::Context) {
         .await;
 
         let mut s = state_clone.lock().unwrap();
+        if !s.logging_in {
+            // Cancelled by user
+            return;
+        }
         s.logging_in = false;
         match res {
             Ok(_) => {
                 s.cached_backend = None;
                 s.current_view = View::Subscriptions;
                 s.subscriptions = None;
+                s.set_toast("Signed in successfully!", false);
                 drop(s);
                 spawn_fetch_subscriptions(state_clone, ctx_clone);
             }
@@ -299,6 +313,7 @@ pub fn spawn_download(
     audio_bitrate: Option<youtube_client_lib::download::AudioBitrate>,
 ) {
     let video_id = video.id.clone();
+    let video_title = video.title.clone();
     {
         let mut s = state.lock().unwrap();
         s.downloads.insert(
@@ -307,11 +322,13 @@ pub fn spawn_download(
                 progress: "Starting...".to_string(),
             },
         );
+        let kind = if is_audio { "audio (MP3)" } else { "video (MP4)" };
+        s.set_toast(format!("Started downloading {kind}: {}", video.title), false);
     }
     let state_clone = state.clone();
     let ctx_clone = ctx.clone();
     tokio::spawn(async move {
-        let res = async {
+        let res: Result<std::path::PathBuf, String> = async {
             let (downloads_base, log_file) = {
                 let s = state_clone.lock().unwrap();
                 (s.downloads_dir.clone(), s.log_file.clone())
@@ -391,9 +408,11 @@ pub fn spawn_download(
         match res {
             Ok(path) => {
                 s.downloads.insert(video_id, DownloadStatus::Finished(path));
+                s.set_toast(format!("Download complete: {video_title}"), false);
             }
             Err(e) => {
-                s.downloads.insert(video_id, DownloadStatus::Failed(e));
+                s.downloads.insert(video_id, DownloadStatus::Failed(e.clone()));
+                s.set_toast(format!("Download failed: {e}"), true);
             }
         }
         ctx_clone.request_repaint();
@@ -713,16 +732,22 @@ pub fn spawn_post_comment(
                 .map_err(|e| format!("Failed to post comment: {e}"))
         },
         move |res, s, ctx| {
-            if let View::VideoDetails {
-                video: current_video,
-                comments: Some(Ok(list)),
-                ..
-            } = &mut s.current_view
-            {
-                if current_video.id == video_id_clone {
-                    if let Ok(new_comment) = res {
-                        Arc::make_mut(list).insert(0, new_comment);
+            match res {
+                Ok(new_comment) => {
+                    if let View::VideoDetails {
+                        video: current_video,
+                        comments: Some(Ok(list)),
+                        ..
+                    } = &mut s.current_view
+                    {
+                        if current_video.id == video_id_clone {
+                            Arc::make_mut(list).insert(0, new_comment);
+                        }
                     }
+                    s.set_toast("Comment posted successfully!", false);
+                }
+                Err(err) => {
+                    s.set_toast(err, true);
                 }
             }
             ctx.request_repaint();
@@ -736,6 +761,7 @@ pub fn spawn_create_playlist(
     title: String,
     description: Option<String>,
 ) {
+    let title_clone = title.clone();
     spawn_client_action(
         state.clone(),
         ctx.clone(),
@@ -747,9 +773,21 @@ pub fn spawn_create_playlist(
                 .map_err(|e| format!("Failed to create playlist: {e}"))
         },
         move |res, s, ctx| {
-            if let Ok(new_pl) = res {
-                if let Some(Ok(list)) = &mut s.playlists {
-                    Arc::make_mut(list).insert(0, new_pl);
+            match res {
+                Ok(new_pl) => {
+                    if let Some(Ok(list)) = &mut s.playlists {
+                        Arc::make_mut(list).insert(0, new_pl.clone());
+                    }
+                    if let View::Playlists {
+                        playlists: Some(Ok(list)),
+                    } = &mut s.current_view
+                    {
+                        Arc::make_mut(list).insert(0, new_pl);
+                    }
+                    s.set_toast(format!("Playlist '{title_clone}' created!"), false);
+                }
+                Err(err) => {
+                    s.set_toast(err, true);
                 }
             }
             ctx.request_repaint();
@@ -770,9 +808,21 @@ pub fn spawn_delete_playlist(state: Arc<Mutex<AppState>>, ctx: egui::Context, pl
                 .map_err(|e| format!("Failed to delete playlist: {e}"))
         },
         move |res, s, ctx| {
-            if res.is_ok() {
-                if let Some(Ok(list)) = &mut s.playlists {
-                    Arc::make_mut(list).retain(|p| p.id != pid_clone);
+            match res {
+                Ok(()) => {
+                    if let Some(Ok(list)) = &mut s.playlists {
+                        Arc::make_mut(list).retain(|p| p.id != pid_clone);
+                    }
+                    if let View::Playlists {
+                        playlists: Some(Ok(list)),
+                    } = &mut s.current_view
+                    {
+                        Arc::make_mut(list).retain(|p| p.id != pid_clone);
+                    }
+                    s.set_toast("Playlist deleted.", false);
+                }
+                Err(err) => {
+                    s.set_toast(err, true);
                 }
             }
             ctx.request_repaint();
@@ -792,9 +842,14 @@ pub fn spawn_subscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, channel_
                 .await
                 .map_err(|e| format!("Failed to subscribe: {e}"))
         },
-        move |res, _, ctx| {
-            if res.is_ok() {
+        move |res, s, ctx| match res {
+            Ok(_) => {
+                s.set_toast("Subscribed to channel!", false);
                 spawn_fetch_subscriptions(state_clone, ctx.clone());
+            }
+            Err(err) => {
+                s.set_toast(err, true);
+                ctx.request_repaint();
             }
         },
     );
@@ -812,9 +867,14 @@ pub fn spawn_unsubscribe(state: Arc<Mutex<AppState>>, ctx: egui::Context, subscr
                 .await
                 .map_err(|e| format!("Failed to unsubscribe: {e}"))
         },
-        move |res, _, ctx| {
-            if res.is_ok() {
+        move |res, s, ctx| match res {
+            Ok(()) => {
+                s.set_toast("Unsubscribed from channel.", false);
                 spawn_fetch_subscriptions(state_clone, ctx.clone());
+            }
+            Err(err) => {
+                s.set_toast(err, true);
+                ctx.request_repaint();
             }
         },
     );
@@ -837,14 +897,26 @@ pub fn spawn_rate_video(
                 .map_err(|e| format!("Failed to rate: {e}"))?;
             Ok((video_id, rating))
         },
-        move |res, s, _| {
-            if let Ok((vid, rat)) = res {
-                youtube_client_lib::utils::append_to_log(
-                    &s.log_file,
-                    "INFO",
-                    &format!("Successfully rated video {vid} as {rat}"),
-                );
+        move |res, s, ctx| {
+            match res {
+                Ok((vid, rat)) => {
+                    youtube_client_lib::utils::append_to_log(
+                        &s.log_file,
+                        "INFO",
+                        &format!("Successfully rated video {vid} as {rat}"),
+                    );
+                    let msg = match rat.as_str() {
+                        "like" => "Liked video 👍",
+                        "dislike" => "Disliked video 👎",
+                        _ => "Removed video rating",
+                    };
+                    s.set_toast(msg, false);
+                }
+                Err(err) => {
+                    s.set_toast(err, true);
+                }
             }
+            ctx.request_repaint();
         },
     );
 }
@@ -868,7 +940,60 @@ pub fn spawn_add_to_playlist(
             Ok(format!("Added to '{playlist_title}'"))
         },
         move |res, s, ctx| {
+            match &res {
+                Ok(msg) => s.set_toast(msg.clone(), false),
+                Err(err) => s.set_toast(err.clone(), true),
+            }
             s.playlist_action_status = Some(res);
+            ctx.request_repaint();
+        },
+    );
+}
+
+pub fn spawn_remove_from_playlist(
+    state: Arc<Mutex<AppState>>,
+    ctx: egui::Context,
+    playlist_id: String,
+    playlist_title: String,
+    playlist_item_id: String,
+    video_id: String,
+) {
+    let pid_clone = playlist_id.clone();
+    let pitem_clone = playlist_item_id.clone();
+    let vid_clone = video_id.clone();
+    spawn_client_action(
+        state,
+        ctx,
+        "remove_from_playlist",
+        move |client| async move {
+            client
+                .remove_from_playlist(&playlist_item_id)
+                .await
+                .map_err(|e| format!("Failed to remove from playlist: {e}"))?;
+            Ok(format!("Removed video from '{playlist_title}'"))
+        },
+        move |res, s, ctx| {
+            match res {
+                Ok(msg) => {
+                    if let View::PlaylistVideos {
+                        playlist_id: current_id,
+                        videos: Some(Ok(list)),
+                        ..
+                    } = &mut s.current_view
+                    {
+                        if current_id == &pid_clone {
+                            Arc::make_mut(list).retain(|v| {
+                                v.playlist_item_id.as_deref() != Some(pitem_clone.as_str())
+                                    && v.id != vid_clone
+                            });
+                        }
+                    }
+                    s.set_toast(msg, false);
+                }
+                Err(err) => {
+                    s.set_toast(err, true);
+                }
+            }
             ctx.request_repaint();
         },
     );

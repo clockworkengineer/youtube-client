@@ -7,7 +7,7 @@
 //! # YouTube GUI Application Entry Point
 //!
 //! Initializes the eframe window, manages application lifecycle state, audio worker spawning,
-//! and event dispatching.
+//! keyboard accelerators, and event dispatching.
 
 mod actions;
 mod handlers;
@@ -21,7 +21,7 @@ use types::*;
 use views::*;
 
 use eframe::egui;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use youtube_client_lib::utils::{
@@ -107,7 +107,7 @@ impl YoutubeGuiApp {
             new_videos: None,
             cleared_video_ids,
             thumbnails: HashMap::new(),
-            thumbnail_lru: std::collections::VecDeque::new(),
+            thumbnail_lru: VecDeque::new(),
             current_view: View::Subscriptions,
             view_history: Vec::new(),
             logging_in: false,
@@ -134,6 +134,8 @@ impl YoutubeGuiApp {
             cached_backend: None,
             toast: None,
             sponsor_segments: HashMap::new(),
+            recent_searches: VecDeque::new(),
+            last_dismissed_video: None,
         }));
 
         let http_client = reqwest::Client::new();
@@ -181,6 +183,40 @@ impl YoutubeGuiApp {
             window_maximized: config.window_maximized,
             window_dirty: false,
             last_window_change: None,
+        }
+    }
+
+    fn refresh_action_for_view(&self, current_view: &View) -> PendingAction {
+        match current_view {
+            View::Subscriptions => PendingAction::RetrySubscriptions,
+            View::NewVideos => PendingAction::LoadNewVideos,
+            View::ChannelVideos {
+                channel_id,
+                channel_title,
+                channel_description,
+                ..
+            } => PendingAction::RetryVideos {
+                id: channel_id.clone(),
+                title: channel_title.clone(),
+                description: channel_description.clone(),
+            },
+            View::SearchResults { query, .. } => PendingAction::RetrySearch {
+                query: query.clone(),
+                filter: Some(self.search_filter_state.to_search_filter()),
+            },
+            View::Playlists { .. } => PendingAction::RetryPlaylists,
+            View::PlaylistVideos {
+                playlist_id,
+                playlist_title,
+                ..
+            } => PendingAction::RetryPlaylistVideos {
+                id: playlist_id.clone(),
+                title: playlist_title.clone(),
+            },
+            View::VideoDetails { video, .. } => PendingAction::RetryVideoDetails {
+                video: video.clone(),
+            },
+            _ => PendingAction::None,
         }
     }
 }
@@ -261,10 +297,20 @@ impl eframe::App for YoutubeGuiApp {
         if close_requested && self.window_dirty {
             self.save_window_state();
         }
-        let (current_view, is_login, player_title, player_playing, player_pos, player_dur) = {
+
+        let (
+            current_view,
+            has_history,
+            is_login,
+            player_title,
+            player_playing,
+            player_pos,
+            player_dur,
+        ) = {
             let s = lock_state(&self.state);
             (
                 s.current_view.clone(),
+                !s.view_history.is_empty(),
                 matches!(s.current_view, View::Login),
                 s.player_state.current_title.clone(),
                 s.player_state.playing,
@@ -273,6 +319,124 @@ impl eframe::App for YoutubeGuiApp {
             )
         };
         let mut action = PendingAction::None;
+        let top_search_id = egui::Id::new("global_top_search_input");
+        let mut focus_top_search = false;
+
+        // Global keyboard shortcuts & accelerators (Heuristic 7: Flexibility & Efficiency of Use)
+        if !is_login {
+            let wants_kb = ctx.wants_keyboard_input();
+            ctx.input(|i| {
+                // Ctrl+S saves settings when in Settings view (even if a text input has focus)
+                if matches!(current_view, View::Settings)
+                    && i.modifiers.command
+                    && i.key_pressed(egui::Key::S)
+                {
+                    let player = if self.settings_form.player_path.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.settings_form.player_path.trim().to_string())
+                    };
+                    let dir = if self.settings_form.downloads_dir.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.settings_form.downloads_dir.trim().to_string())
+                    };
+                    let cookies = if self.settings_form.cookies_from_browser.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.settings_form.cookies_from_browser.trim().to_string())
+                    };
+                    let res = if self.settings_form.preferred_resolution.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.settings_form.preferred_resolution.trim().to_string())
+                    };
+                    let bitrate = if self.settings_form.preferred_audio_bitrate.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.settings_form.preferred_audio_bitrate.trim().to_string())
+                    };
+                    action = PendingAction::SaveSettings {
+                        player_path: player,
+                        downloads_dir: dir,
+                        cookies_from_browser: cookies,
+                        preferred_resolution: res,
+                        preferred_audio_bitrate: bitrate,
+                        sponsorblock_enabled: self.settings_form.sponsorblock_enabled,
+                        sponsorblock_categories: self
+                            .settings_form
+                            .sponsorblock_categories
+                            .clone(),
+                    };
+                }
+
+                // Ctrl+F focuses top search bar
+                if i.modifiers.command && i.key_pressed(egui::Key::F) {
+                    focus_top_search = true;
+                }
+
+                // F5 or Ctrl+R refreshes current view
+                if i.key_pressed(egui::Key::F5)
+                    || (i.modifiers.command && i.key_pressed(egui::Key::R))
+                {
+                    let ref_act = self.refresh_action_for_view(&current_view);
+                    if !matches!(ref_act, PendingAction::None) {
+                        action = ref_act;
+                    }
+                }
+
+                // Alt+Left or Escape (when not typing in a text field) navigates Back
+                if (i.modifiers.alt && i.key_pressed(egui::Key::ArrowLeft))
+                    || (!wants_kb && i.key_pressed(egui::Key::Escape))
+                {
+                    if has_history
+                        || matches!(
+                            current_view,
+                            View::ChannelVideos { .. }
+                                | View::PlaylistVideos { .. }
+                                | View::VideoDetails { .. }
+                        )
+                    {
+                        action = PendingAction::GoBack;
+                    }
+                }
+
+                if !wants_kb {
+                    // Slash (/) focuses search bar
+                    if i.key_pressed(egui::Key::Slash) {
+                        focus_top_search = true;
+                    }
+
+                    // Space toggles pause/resume when audio is loaded
+                    if i.key_pressed(egui::Key::Space) && !player_title.is_empty() {
+                        if player_playing {
+                            let _ = self.audio_tx.send(PlayerCommand::Pause);
+                        } else {
+                            let _ = self.audio_tx.send(PlayerCommand::Resume);
+                        }
+                    }
+
+                    // Alt+1..7 switches top navigation tabs
+                    if i.modifiers.alt {
+                        if i.key_pressed(egui::Key::Num1) {
+                            action = PendingAction::GoToSubscriptions;
+                        } else if i.key_pressed(egui::Key::Num2) {
+                            action = PendingAction::GoToNewVideos;
+                        } else if i.key_pressed(egui::Key::Num3) {
+                            action = PendingAction::LoadPlaylists;
+                        } else if i.key_pressed(egui::Key::Num4) {
+                            action = PendingAction::GoToLibrary;
+                        } else if i.key_pressed(egui::Key::Num5) {
+                            action = PendingAction::GoToHistory;
+                        } else if i.key_pressed(egui::Key::Num6) {
+                            action = PendingAction::GoToSettings;
+                        } else if i.key_pressed(egui::Key::Num7) {
+                            action = PendingAction::GoToAbout;
+                        }
+                    }
+                }
+            });
+        }
 
         if !is_login && !player_title.is_empty() {
             if player_playing {
@@ -286,23 +450,43 @@ impl eframe::App for YoutubeGuiApp {
 
                     ui.add_space(15.0);
 
-                    if ui.button("⏪ 10s").clicked() {
+                    if ui
+                        .button("⏪ 10s")
+                        .on_hover_text("Rewind 10 seconds")
+                        .clicked()
+                    {
                         let _ = self.audio_tx.send(PlayerCommand::Skip(-10));
                     }
 
                     if player_playing {
-                        if ui.button("⏸ Pause").clicked() {
+                        if ui
+                            .button("⏸ Pause")
+                            .on_hover_text("Pause audio playback (Space)")
+                            .clicked()
+                        {
                             let _ = self.audio_tx.send(PlayerCommand::Pause);
                         }
-                    } else if ui.button("▶ Resume").clicked() {
+                    } else if ui
+                        .button("▶ Resume")
+                        .on_hover_text("Resume audio playback (Space)")
+                        .clicked()
+                    {
                         let _ = self.audio_tx.send(PlayerCommand::Resume);
                     }
 
-                    if ui.button("⏩ 10s").clicked() {
+                    if ui
+                        .button("⏩ 10s")
+                        .on_hover_text("Fast-forward 10 seconds")
+                        .clicked()
+                    {
                         let _ = self.audio_tx.send(PlayerCommand::Skip(10));
                     }
 
-                    if ui.button("⏹ Stop").clicked() {
+                    if ui
+                        .button("⏹ Stop")
+                        .on_hover_text("Stop audio playback")
+                        .clicked()
+                    {
                         let _ = self.audio_tx.send(PlayerCommand::Stop);
                     }
 
@@ -340,6 +524,7 @@ impl eframe::App for YoutubeGuiApp {
                     let mut vol = self.volume;
                     if ui
                         .add(egui::Slider::new(&mut vol, 0.0..=1.0).show_value(false))
+                        .on_hover_text(format!("Volume: {:.0}%", vol * 100.0))
                         .changed()
                     {
                         self.volume = vol;
@@ -364,61 +549,113 @@ impl eframe::App for YoutubeGuiApp {
             if !matches!(current_view, View::Login) {
                 ui.horizontal(|ui| {
                     ui.label("🔍 Search YouTube:");
-                    let response = ui.text_edit_singleline(&mut self.search_input);
-                    if (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                        || ui.button("Search").clicked()
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut self.search_input)
+                            .id(top_search_id)
+                            .hint_text("Search videos or channels (Ctrl+F / /)...")
+                            .desired_width(260.0),
+                    );
+                    if focus_top_search {
+                        response.request_focus();
+                    }
+                    if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        response.surrender_focus();
+                    }
+                    if !self.search_input.is_empty()
+                        && ui
+                            .button("✖")
+                            .on_hover_text("Clear search box")
+                            .clicked()
                     {
+                        self.search_input.clear();
+                    }
+                    let can_search = !self.search_input.trim().is_empty();
+                    let enter_pressed = response.lost_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        && can_search;
+                    let search_clicked = ui
+                        .add_enabled(can_search, egui::Button::new("Search"))
+                        .on_hover_text("Search YouTube (Enter)")
+                        .on_disabled_hover_text("Enter a search term first")
+                        .clicked();
+                    if enter_pressed || search_clicked {
                         let q = self.search_input.trim().to_string();
-                        if !q.is_empty() {
-                            action = PendingAction::Search {
-                                query: q,
-                                filter: Some(self.search_filter_state.to_search_filter()),
-                            };
-                        }
+                        action = PendingAction::Search {
+                            query: q,
+                            filter: Some(self.search_filter_state.to_search_filter()),
+                        };
                     }
                 });
                 ui.add_space(5.0);
 
                 // Navigation Tabs
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let on_subs = matches!(
                         current_view,
                         View::Subscriptions | View::ChannelVideos { .. }
                     );
-                    if ui.selectable_label(on_subs, "📺 Subscriptions").clicked() {
+                    if ui
+                        .selectable_label(on_subs, "📺 Subscriptions")
+                        .on_hover_text("View your subscribed YouTube channels (Alt+1)")
+                        .clicked()
+                    {
                         action = PendingAction::GoToSubscriptions;
                     }
-                    ui.add_space(10.0);
+                    ui.add_space(8.0);
                     let on_new = matches!(current_view, View::NewVideos);
-                    if ui.selectable_label(on_new, "🆕 New Videos").clicked() {
+                    if ui
+                        .selectable_label(on_new, "🆕 New Videos")
+                        .on_hover_text("Latest uploads from your subscriptions (Alt+2)")
+                        .clicked()
+                    {
                         action = PendingAction::GoToNewVideos;
                     }
-                    ui.add_space(10.0);
+                    ui.add_space(8.0);
                     let on_playlists = matches!(
                         current_view,
                         View::Playlists { .. } | View::PlaylistVideos { .. }
                     );
-                    if ui.selectable_label(on_playlists, "📂 Playlists").clicked() {
+                    if ui
+                        .selectable_label(on_playlists, "📂 Playlists")
+                        .on_hover_text("Manage your YouTube playlists (Alt+3)")
+                        .clicked()
+                    {
                         action = PendingAction::LoadPlaylists;
                     }
-                    ui.add_space(10.0);
+                    ui.add_space(8.0);
                     let on_library = matches!(current_view, View::Library);
-                    if ui.selectable_label(on_library, "📁 Library").clicked() {
+                    if ui
+                        .selectable_label(on_library, "📁 Library")
+                        .on_hover_text("Browse downloaded offline MP4 & MP3 files (Alt+4)")
+                        .clicked()
+                    {
                         action = PendingAction::GoToLibrary;
                     }
-                    ui.add_space(10.0);
+                    ui.add_space(8.0);
                     let on_history = matches!(current_view, View::History);
-                    if ui.selectable_label(on_history, "⏱️ History").clicked() {
+                    if ui
+                        .selectable_label(on_history, "⏱ History")
+                        .on_hover_text("View & resume watched videos (Alt+5)")
+                        .clicked()
+                    {
                         action = PendingAction::GoToHistory;
                     }
-                    ui.add_space(10.0);
+                    ui.add_space(8.0);
                     let on_settings = matches!(current_view, View::Settings);
-                    if ui.selectable_label(on_settings, "⚙️ Settings").clicked() {
+                    if ui
+                        .selectable_label(on_settings, "⚙ Settings")
+                        .on_hover_text("Configure player, downloads, SponsorBlock & quota (Alt+6)")
+                        .clicked()
+                    {
                         action = PendingAction::GoToSettings;
                     }
-                    ui.add_space(10.0);
+                    ui.add_space(8.0);
                     let on_about = matches!(current_view, View::About);
-                    if ui.selectable_label(on_about, "ℹ️ About").clicked() {
+                    if ui
+                        .selectable_label(on_about, "ℹ About & Help")
+                        .on_hover_text("App info, keyboard shortcuts & troubleshooting (Alt+7)")
+                        .clicked()
+                    {
                         action = PendingAction::GoToAbout;
                     }
                 });
@@ -459,7 +696,17 @@ impl eframe::App for YoutubeGuiApp {
                             .rounding(egui::Rounding::same(4.0))
                             .inner_margin(egui::Margin::symmetric(10.0, 4.0))
                             .show(ui, |ui| {
-                                ui.label(egui::RichText::new(&msg).color(fg).small());
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(&msg).color(fg).small());
+                                    if ui
+                                        .small_button("✖")
+                                        .on_hover_text("Dismiss notification")
+                                        .clicked()
+                                    {
+                                        let mut s = lock_state(&self.state);
+                                        s.toast = None;
+                                    }
+                                });
                             });
                     });
                     ui.add_space(3.0);
@@ -621,12 +868,14 @@ impl eframe::App for YoutubeGuiApp {
                     }
                 }
                 View::Library => {
-                    if let Some(act) = render_library_view(&self.state, ui, &mut self.library_state) {
+                    if let Some(act) = render_library_view(&self.state, ui, &mut self.library_state)
+                    {
                         action = act;
                     }
                 }
                 View::History => {
-                    if let Some(act) = render_history_view(&self.state, ui, &mut self.history_state) {
+                    if let Some(act) = render_history_view(&self.state, ui, &mut self.history_state)
+                    {
                         action = act;
                     }
                 }

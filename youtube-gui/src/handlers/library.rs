@@ -6,7 +6,7 @@ use crate::actions::{
     fetch_playlist_videos, fetch_search_results, fetch_videos, spawn_add_to_playlist,
     spawn_create_playlist, spawn_delete_playlist, spawn_fetch_comments, spawn_fetch_more_comments,
     spawn_fetch_new_videos, spawn_fetch_playlists, spawn_fetch_subscriptions, spawn_post_comment,
-    spawn_rate_video, spawn_subscribe, spawn_unsubscribe,
+    spawn_rate_video, spawn_remove_from_playlist, spawn_subscribe, spawn_unsubscribe,
 };
 use crate::types::{AppState, PendingAction, View};
 
@@ -40,6 +40,7 @@ pub fn handle_library_action(
                 Some(Ok(vids)) => vids.iter().map(|v| v.id.clone()).collect(),
                 _ => Vec::new(),
             };
+            let count = ids_to_clear.len();
             for id in ids_to_clear {
                 s_lock.cleared_video_ids.insert(id);
             }
@@ -49,11 +50,17 @@ pub fn handle_library_action(
                 let _ = save_string_set_to_file(&cleared_path, &set_to_save);
             });
             s_lock.new_videos = Some(Ok(Arc::new(Vec::new())));
+            s_lock.last_dismissed_video = None;
+            s_lock.set_toast(
+                format!("Cleared {count} videos from feed. Use 'Restore All' to undo."),
+                false,
+            );
             true
         }
         PendingAction::DismissNewVideo { video_id } => {
             let mut s_lock = state.lock().unwrap();
             s_lock.cleared_video_ids.insert(video_id.clone());
+            s_lock.last_dismissed_video = Some(video_id.clone());
             let cleared_path = s_lock.cleared_videos_path.clone();
             let set_to_save = s_lock.cleared_video_ids.clone();
             std::thread::spawn(move || {
@@ -62,18 +69,43 @@ pub fn handle_library_action(
             if let Some(Ok(ref mut vids)) = s_lock.new_videos {
                 Arc::make_mut(vids).retain(|v| v.id != *video_id);
             }
+            s_lock.set_toast("Video dismissed. Click '↩ Undo' to restore.", false);
+            true
+        }
+        PendingAction::UndoDismissVideo => {
+            let restored = {
+                let mut s_lock = state.lock().unwrap();
+                if let Some(vid_id) = s_lock.last_dismissed_video.take() {
+                    s_lock.cleared_video_ids.remove(&vid_id);
+                    let cleared_path = s_lock.cleared_videos_path.clone();
+                    let set_to_save = s_lock.cleared_video_ids.clone();
+                    std::thread::spawn(move || {
+                        let _ = save_string_set_to_file(&cleared_path, &set_to_save);
+                    });
+                    s_lock.new_videos = None;
+                    s_lock.set_toast("Restored dismissed video.", false);
+                    true
+                } else {
+                    false
+                }
+            };
+            if restored {
+                spawn_fetch_new_videos(state.clone(), ctx.clone());
+            }
             true
         }
         PendingAction::ResetClearedVideos => {
             {
                 let mut s_lock = state.lock().unwrap();
                 s_lock.cleared_video_ids.clear();
+                s_lock.last_dismissed_video = None;
                 let cleared_path = s_lock.cleared_videos_path.clone();
                 let set_to_save = s_lock.cleared_video_ids.clone();
                 std::thread::spawn(move || {
                     let _ = save_string_set_to_file(&cleared_path, &set_to_save);
                 });
                 s_lock.new_videos = None;
+                s_lock.set_toast("Restored all previously dismissed videos.", false);
             }
             spawn_fetch_new_videos(state.clone(), ctx.clone());
             true
@@ -115,14 +147,19 @@ pub fn handle_library_action(
             true
         }
         PendingAction::Search { query, filter } => {
+            let trimmed = query.trim().to_string();
+            if trimmed.is_empty() {
+                return true;
+            }
             {
                 let mut s_lock = state.lock().unwrap();
+                s_lock.record_search(&trimmed);
                 s_lock.navigate_to(View::SearchResults {
-                    query: query.clone(),
+                    query: trimmed.clone(),
                     videos: None,
                 });
             }
-            fetch_search_results(ctx.clone(), state.clone(), query.clone(), filter.clone());
+            fetch_search_results(ctx.clone(), state.clone(), trimmed, filter.clone());
             true
         }
         PendingAction::RetrySearch { query, filter } => {
@@ -134,6 +171,12 @@ pub fn handle_library_action(
                 };
             }
             fetch_search_results(ctx.clone(), state.clone(), query.clone(), filter.clone());
+            true
+        }
+        PendingAction::ClearRecentSearches => {
+            let mut s_lock = state.lock().unwrap();
+            s_lock.recent_searches.clear();
+            s_lock.set_toast("Recent search history cleared.", false);
             true
         }
         PendingAction::LoadPlaylists => {
@@ -272,6 +315,22 @@ pub fn handle_library_action(
                 ctx.clone(),
                 playlist_id.clone(),
                 playlist_title.clone(),
+                video_id.clone(),
+            );
+            true
+        }
+        PendingAction::RemoveFromPlaylist {
+            playlist_id,
+            playlist_title,
+            playlist_item_id,
+            video_id,
+        } => {
+            spawn_remove_from_playlist(
+                state.clone(),
+                ctx.clone(),
+                playlist_id.clone(),
+                playlist_title.clone(),
+                playlist_item_id.clone(),
                 video_id.clone(),
             );
             true

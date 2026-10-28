@@ -80,7 +80,8 @@ impl VideoService for MockYoutubeClient {
     }
 
     async fn search_videos(&self, query: &str, max_results: u32) -> Result<Vec<Video>> {
-        self.search_videos_with_filter(query, max_results, None).await
+        self.search_videos_with_filter(query, max_results, None)
+            .await
     }
 
     async fn search_videos_with_filter(

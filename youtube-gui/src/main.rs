@@ -117,6 +117,7 @@ impl YoutubeGuiApp {
                 current_title: String::new(),
                 current_video_id: None,
                 playing: false,
+                buffering: false,
                 volume: 1.0,
                 position_secs: 0.0,
                 duration_secs: 0.0,
@@ -136,6 +137,7 @@ impl YoutubeGuiApp {
             sponsor_segments: HashMap::new(),
             recent_searches: VecDeque::new(),
             last_dismissed_video: None,
+            audio_cancel_token: None,
         }));
 
         let http_client = reqwest::Client::new();
@@ -304,6 +306,7 @@ impl eframe::App for YoutubeGuiApp {
             is_login,
             player_title,
             player_playing,
+            player_buffering,
             player_pos,
             player_dur,
         ) = {
@@ -314,6 +317,7 @@ impl eframe::App for YoutubeGuiApp {
                 matches!(s.current_view, View::Login),
                 s.player_state.current_title.clone(),
                 s.player_state.playing,
+                s.player_state.buffering,
                 s.player_state.position_secs,
                 s.player_state.duration_secs,
             )
@@ -354,7 +358,12 @@ impl eframe::App for YoutubeGuiApp {
                     let bitrate = if self.settings_form.preferred_audio_bitrate.trim().is_empty() {
                         None
                     } else {
-                        Some(self.settings_form.preferred_audio_bitrate.trim().to_string())
+                        Some(
+                            self.settings_form
+                                .preferred_audio_bitrate
+                                .trim()
+                                .to_string(),
+                        )
                     };
                     action = PendingAction::SaveSettings {
                         player_path: player,
@@ -363,10 +372,7 @@ impl eframe::App for YoutubeGuiApp {
                         preferred_resolution: res,
                         preferred_audio_bitrate: bitrate,
                         sponsorblock_enabled: self.settings_form.sponsorblock_enabled,
-                        sponsorblock_categories: self
-                            .settings_form
-                            .sponsorblock_categories
-                            .clone(),
+                        sponsorblock_categories: self.settings_form.sponsorblock_categories.clone(),
                     };
                 }
 
@@ -439,19 +445,24 @@ impl eframe::App for YoutubeGuiApp {
         }
 
         if !is_login && !player_title.is_empty() {
-            if player_playing {
+            if player_playing || player_buffering {
                 ctx.request_repaint_after(std::time::Duration::from_millis(250));
             }
 
             egui::TopBottomPanel::bottom("audio_player").show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("🎵 Playing:").strong());
+                    if player_buffering {
+                        ui.spinner();
+                        ui.label(egui::RichText::new("⏳ Audio:").strong());
+                    } else {
+                        ui.label(egui::RichText::new("🎵 Playing:").strong());
+                    }
                     ui.label(&player_title);
 
                     ui.add_space(15.0);
 
                     if ui
-                        .button("⏪ 10s")
+                        .add_enabled(!player_buffering, egui::Button::new("⏪ 10s"))
                         .on_hover_text("Rewind 10 seconds")
                         .clicked()
                     {
@@ -467,7 +478,7 @@ impl eframe::App for YoutubeGuiApp {
                             let _ = self.audio_tx.send(PlayerCommand::Pause);
                         }
                     } else if ui
-                        .button("▶ Resume")
+                        .add_enabled(!player_buffering, egui::Button::new("▶ Resume"))
                         .on_hover_text("Resume audio playback (Space)")
                         .clicked()
                     {
@@ -475,7 +486,7 @@ impl eframe::App for YoutubeGuiApp {
                     }
 
                     if ui
-                        .button("⏩ 10s")
+                        .add_enabled(!player_buffering, egui::Button::new("⏩ 10s"))
                         .on_hover_text("Fast-forward 10 seconds")
                         .clicked()
                     {
@@ -484,7 +495,7 @@ impl eframe::App for YoutubeGuiApp {
 
                     if ui
                         .button("⏹ Stop")
-                        .on_hover_text("Stop audio playback")
+                        .on_hover_text("Stop audio playback or cancel buffering")
                         .clicked()
                     {
                         let _ = self.audio_tx.send(PlayerCommand::Stop);
@@ -562,10 +573,7 @@ impl eframe::App for YoutubeGuiApp {
                         response.surrender_focus();
                     }
                     if !self.search_input.is_empty()
-                        && ui
-                            .button("✖")
-                            .on_hover_text("Clear search box")
-                            .clicked()
+                        && ui.button("✖").on_hover_text("Clear search box").clicked()
                     {
                         self.search_input.clear();
                     }

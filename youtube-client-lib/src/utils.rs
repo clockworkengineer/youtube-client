@@ -149,10 +149,8 @@ fn scan_downloaded_items_inner(dir: &Path, items: &mut Vec<DownloadedItem>) {
                         ext_lower.as_str(),
                         "mp3" | "m4a" | "opus" | "ogg" | "flac" | "wav"
                     );
-                    let is_video = matches!(
-                        ext_lower.as_str(),
-                        "mp4" | "mkv" | "webm" | "avi" | "mov"
-                    );
+                    let is_video =
+                        matches!(ext_lower.as_str(), "mp4" | "mkv" | "webm" | "avi" | "mov");
                     if is_audio || is_video {
                         let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
                         let modified_secs = entry
@@ -160,7 +158,9 @@ fn scan_downloaded_items_inner(dir: &Path, items: &mut Vec<DownloadedItem>) {
                             .ok()
                             .and_then(|m| m.modified().ok())
                             .and_then(|t| {
-                                t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs())
+                                t.duration_since(std::time::UNIX_EPOCH)
+                                    .ok()
+                                    .map(|d| d.as_secs())
                             });
                         let file_name = path
                             .file_name()
@@ -476,7 +476,11 @@ pub fn append_lines_to_log(path: &Path, prefix: &str, lines: &[&str]) {
     }
 
     if let Some(writer) = map.get_mut(path) {
-        if writer.write_all(&payload).and_then(|_| writer.flush()).is_err() {
+        if writer
+            .write_all(&payload)
+            .and_then(|_| writer.flush())
+            .is_err()
+        {
             map.remove(path);
         }
     }

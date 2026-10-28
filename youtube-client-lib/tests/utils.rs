@@ -160,11 +160,17 @@ fn test_scan_downloaded_items() {
     let scanned = scan_downloaded_items(root);
     assert_eq!(scanned.len(), 2);
 
-    let audio = scanned.iter().find(|i| i.is_audio).expect("Audio item missing");
+    let audio = scanned
+        .iter()
+        .find(|i| i.is_audio)
+        .expect("Audio item missing");
     assert_eq!(audio.video_id, Some("11111111111".to_string()));
     assert_eq!(audio.size_bytes, 21);
 
-    let video = scanned.iter().find(|i| !i.is_audio).expect("Video item missing");
+    let video = scanned
+        .iter()
+        .find(|i| !i.is_audio)
+        .expect("Video item missing");
     assert_eq!(video.video_id, Some("22222222222".to_string()));
     assert_eq!(video.size_bytes, 25);
 }
@@ -173,8 +179,8 @@ fn test_scan_downloaded_items() {
 fn test_watch_history_helpers() {
     use tempfile::tempdir;
     use youtube_client_lib::utils::{
-        clear_watch_history, get_watch_history, remove_watch_history_entry,
-        save_playback_positions_to_file, PlaybackProgress,
+        PlaybackProgress, clear_watch_history, get_watch_history, remove_watch_history_entry,
+        save_playback_positions_to_file,
     };
 
     let tmp = tempdir().unwrap();

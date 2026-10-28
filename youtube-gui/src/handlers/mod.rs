@@ -38,7 +38,7 @@ pub fn dispatch_pending_action(
     }
 
     // 3. Playback & streaming actions
-    if playback::handle_playback_action(&action, state, audio_tx) {
+    if playback::handle_playback_action(&action, state, audio_tx, ctx) {
         return;
     }
 

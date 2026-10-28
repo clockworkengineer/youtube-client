@@ -185,6 +185,7 @@ impl MediaPlayer for MpvPlayer {
 
         let mut cmd = Command::new(&exe);
         cmd.arg("--no-terminal");
+        cmd.arg("--force-window=immediate");
         cmd.arg("--save-position-on-quit");
 
         if let Some(start) = opts.start_secs {
@@ -396,6 +397,7 @@ impl MediaPlayer for CustomExecutablePlayer {
         let lower = self.executable.to_lowercase();
         if lower.contains("mpv") {
             cmd.arg("--no-terminal");
+            cmd.arg("--force-window=immediate");
             cmd.arg("--save-position-on-quit");
             if let Some(start) = opts.start_secs {
                 if start > 1.0 {

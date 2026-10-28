@@ -5910,6 +5910,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-util",
  "winres",
  "youtube-client-lib",
 ]

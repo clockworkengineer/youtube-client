@@ -43,10 +43,7 @@ pub async fn execute_export_subscriptions(
         }
     }
 
-    let imports: Vec<SubscriptionImport> = all_subs
-        .iter()
-        .map(SubscriptionImport::from)
-        .collect();
+    let imports: Vec<SubscriptionImport> = all_subs.iter().map(SubscriptionImport::from).collect();
 
     let fmt_lower = format.trim().to_ascii_lowercase();
     let serialized = match fmt_lower.as_str() {
@@ -59,9 +56,9 @@ pub async fn execute_export_subscriptions(
         "json" | "newpipe" | "newpipe_json" => NewPipeJsonFormat
             .serialize(&imports)
             .map_err(|e| anyhow::anyhow!(e))?,
-        other => anyhow::bail!(
-            "Unsupported export format '{other}'. Use 'opml', 'csv', or 'json'."
-        ),
+        other => {
+            anyhow::bail!("Unsupported export format '{other}'. Use 'opml', 'csv', or 'json'.")
+        }
     };
 
     if let Some(parent) = output.parent() {
@@ -92,9 +89,7 @@ pub async fn execute_import_subscriptions(
         "auto" => SubscriptionFormatRegistry::with_defaults()
             .import_auto_detect(&content, Some(&file))
             .map_err(|e| anyhow::anyhow!(e))?,
-        "opml" | "xml" => OpmlFormat
-            .parse(&content)
-            .map_err(|e| anyhow::anyhow!(e))?,
+        "opml" | "xml" => OpmlFormat.parse(&content).map_err(|e| anyhow::anyhow!(e))?,
         "csv" | "takeout" | "takeout_csv" => TakeoutCsvFormat
             .parse(&content)
             .map_err(|e| anyhow::anyhow!(e))?,

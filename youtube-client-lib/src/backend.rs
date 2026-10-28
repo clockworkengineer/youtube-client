@@ -159,7 +159,9 @@ impl YoutubeBackend {
                     .await
             }
             Self::Mock(m) => {
-                let items = m.search_videos_with_filter(query, max_results, filter).await?;
+                let items = m
+                    .search_videos_with_filter(query, max_results, filter)
+                    .await?;
                 Ok(Page::new(items, None))
             }
         }
@@ -472,8 +474,14 @@ impl VideoService for YoutubeBackend {
         filter: Option<&SearchFilter>,
     ) -> Result<Vec<Video>> {
         match self {
-            Self::Live(c) => c.search_videos_with_filter(query, max_results, filter).await,
-            Self::Mock(m) => m.search_videos_with_filter(query, max_results, filter).await,
+            Self::Live(c) => {
+                c.search_videos_with_filter(query, max_results, filter)
+                    .await
+            }
+            Self::Mock(m) => {
+                m.search_videos_with_filter(query, max_results, filter)
+                    .await
+            }
         }
     }
 
@@ -597,8 +605,14 @@ impl CommentService for YoutubeBackend {
         page_token: Option<&str>,
     ) -> Result<Page<Comment>> {
         match self {
-            Self::Live(c) => c.fetch_comments_page(video_id, max_results, page_token).await,
-            Self::Mock(m) => m.fetch_comments_page(video_id, max_results, page_token).await,
+            Self::Live(c) => {
+                c.fetch_comments_page(video_id, max_results, page_token)
+                    .await
+            }
+            Self::Mock(m) => {
+                m.fetch_comments_page(video_id, max_results, page_token)
+                    .await
+            }
         }
     }
 
@@ -648,7 +662,10 @@ mod tests {
         assert!(backend.add_to_playlist(&pl.id, "vid_item_1").await.is_ok());
         let pl_videos = backend.list_playlist_videos(&pl.id, 10).await.unwrap();
         assert_eq!(pl_videos.len(), 1);
-        let item_id = pl_videos[0].playlist_item_id.clone().expect("Should have playlist_item_id");
+        let item_id = pl_videos[0]
+            .playlist_item_id
+            .clone()
+            .expect("Should have playlist_item_id");
         assert!(backend.remove_from_playlist(&item_id).await.is_ok());
         let pl_videos_after = backend.list_playlist_videos(&pl.id, 10).await.unwrap();
         assert_eq!(pl_videos_after.len(), 0);

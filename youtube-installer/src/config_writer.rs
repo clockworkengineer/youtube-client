@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 pub fn get_global_config_dir() -> Option<PathBuf> {
     if cfg!(target_os = "windows") {
-        std::env::var_os("APPDATA")
-            .map(|appdata| PathBuf::from(appdata).join("youtube-client"))
+        std::env::var_os("APPDATA").map(|appdata| PathBuf::from(appdata).join("youtube-client"))
     } else if cfg!(target_os = "macos") {
         std::env::var_os("HOME").map(|home| {
             PathBuf::from(home)
@@ -15,11 +14,8 @@ pub fn get_global_config_dir() -> Option<PathBuf> {
         if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
             Some(PathBuf::from(xdg).join("youtube-client"))
         } else {
-            std::env::var_os("HOME").map(|home| {
-                PathBuf::from(home)
-                    .join(".config")
-                    .join("youtube-client")
-            })
+            std::env::var_os("HOME")
+                .map(|home| PathBuf::from(home).join(".config").join("youtube-client"))
         }
     }
 }

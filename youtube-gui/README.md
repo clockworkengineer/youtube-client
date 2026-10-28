@@ -3,21 +3,25 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 [![GUI: egui](https://img.shields.io/badge/GUI-egui%200.26-blue.svg)](https://github.com/emilk/egui)
 
-A fast, lightweight, and modern desktop graphical user interface for YouTube built with `egui` and `eframe`.
+A fast, lightweight, and modern 60 FPS desktop graphical user interface for YouTube built with `egui` and `eframe`, engineered around **Jakob Nielsen's 10 Usability Heuristics**.
 
 ---
 
 ## Features
 
-* **Clean Desktop UI:** Smooth immediate-mode 60 FPS rendering powered by `eframe` and `egui`.
-* **Decoupled Domain Handlers:** Refactored under SOLID principles with dedicated action handlers (`handlers/auth`, `handlers/playback`, `handlers/settings`, `handlers/library`, etc.).
-* **Persistent Watch Progress:** Automatically saves watch positions per video ID to `playback_positions.json`, rendering watched badges (`⏱ Watched to MM:SS`) and instant `▶ Resume` controls.
-* **Integrated Audio Dock:** Background audio playback via `rodio` with timeline scrubber slider, 10s skip buttons (`⏪ 10s`, `⏩ 10s`), duration readout (`MM:SS / MM:SS`), and volume controls.
-* **Native In-App Settings:** Manage preferred media player (Auto, MPV, VLC, Custom), download folder picker, browser cookie extraction, and one-click account disconnection.
-* **Return YouTube Dislike (RYD):** Restored community dislike metrics and tooltips across feed cards and video details.
-* **Subscription Import & Export:** Built-in OPML export and multi-format (OPML, CSV, JSON) auto-detecting subscription importer.
-* **Feed Clearance:** Dismiss single videos or clear entire feeds with atomic state persistence (`cleared_videos.json`).
-* **Persistent Window Geometry:** Automatically remembers window position, size, and maximized state across sessions.
+* **7 Primary Navigation Views (`Alt+1..7`):**
+  1. **`📺 Subscriptions` (`Alt+1`):** Real-time channel filter, rich channel headers, and confirmed unsubscribe safeguards.
+  2. **`🆕 New Videos` (`Alt+2`):** Aggregated uploads across subscriptions with `↩ Undo Dismiss (N)` and zero-quota RSS fallback.
+  3. **`📂 Playlists` (`Alt+3`):** Create, edit, and delete playlists, or remove individual playlist items with confirmation.
+  4. **`📁 Library` (`Alt+4`):** Offline downloaded media manager with `All` / `🎵 Audio` / `🎬 Video` filter tabs, storage summary, `▶ Play`, `🎧 Listen`, `📂 Show in Folder`, and confirmed deletion.
+  5. **`⏱ History` (`Alt+5`):** Chronological watch progress history (`playback_positions.json`) with relative timestamps (`Watched 5m ago`), completion bars, `▶ Resume`, and `🔄 Restart`.
+  6. **`⚙ Settings` (`Alt+6`):** Configure preferred player, default video resolution & audio bitrate, SponsorBlock categories, browser cookies, API quota gauge, and OPML/CSV/JSON subscription backup.
+  7. **`ℹ About & Help` (`Alt+7`):** Built-in keyboard shortcuts reference and external dependency (`yt-dlp`, `ffmpeg`, `mpv`, `vlc`) health check.
+* **One-Click `🎧 Listen` Audio Streaming & Dock:** Extracts and caches `rodio`-compatible `.mp3` / `.m4a` streams into `%TEMP%/youtube-client-audio/` with live buffering percentages (`🎧 Buffering audio... (N%)`), `⏹ Cancel Audio` (`CancellationToken`), timeline scrubber slider, `⏪ 10s` / `⏩ 10s` skip buttons, and volume/mute controls.
+* **SponsorBlock Timeline Visualization:** Proportional color-coded segment bar in Video Details (`sponsor`, `selfpromo`, `interaction`, `intro`, `outro`) with `MM:SS – MM:SS` hover tooltips and native MPV skipping.
+* **Selectable Video Resolution & Audio Bitrate Menus:** Choose target video resolution (`best`, `2160p`..`360p`) and MP3 bitrate (`best`, `320k`..`128k`) per download in Video Details.
+* **Automated Error Diagnosis & Recovery Banners:** Translates raw OAuth, quota, network, and `yt-dlp` errors into plain-English guidance with one-click recovery buttons (`🔑 Re-authenticate`, `⚙ Open Settings`, `🔄 Retry`, `📋 Copy Error`).
+* **Return YouTube Dislike (RYD):** Restored community dislike metrics and like/dislike ratio bars.
 
 ---
 
@@ -37,14 +41,21 @@ cargo run --bin youtube-gui -- --log-file custom_client.log
 
 ## Keyboard Navigation & Shortcuts
 
-* `Ctrl + Q` / `Cmd + Q`: Exit application.
-* `Space`: Toggle Play/Pause on the active audio stream.
-* `F5`: Refresh current view.
+| Shortcut | Action |
+| :--- | :--- |
+| `Alt + 1` .. `Alt + 7` | Switch directly between the 7 primary views (`Subscriptions`, `New Videos`, `Playlists`, `Library`, `History`, `Settings`, `About & Help`) |
+| `Ctrl + F` or `/` | Focus the top search bar from any screen |
+| `F5` or `Ctrl + R` | Refresh the currently active view |
+| `Esc` or `Alt + Left` | Navigate back in the view history stack or dismiss an open confirmation prompt |
+| `Space` | Toggle Play/Pause on the active background audio stream (when no text field is focused) |
+| `Ctrl + S` | Save settings immediately when in the `⚙ Settings` view |
 
 ---
 
 ## Documentation
 
 * [Desktop GUI User Guide](../docs/gui_user_guide.md)
+* [Usability Heuristics & Keyboard Shortcuts Guide](../docs/usability_and_shortcuts.md)
 * [Video & Audio Playback Configuration](../docs/video_playback.md)
+* [Subscription Backup & Migration Guide](../docs/backup_and_migration.md)
 * [Configuration & Secrets Guide](../docs/configuration.md)

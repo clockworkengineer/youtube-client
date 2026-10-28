@@ -1,7 +1,7 @@
-use std::path::PathBuf;
 use crate::commands::context::CliContext;
 use crate::formatters::select_formatter;
-use youtube_client_lib::utils::{scan_downloaded_items, DownloadedItem};
+use std::path::PathBuf;
+use youtube_client_lib::utils::{DownloadedItem, scan_downloaded_items};
 
 pub async fn execute_library(
     _ctx: &CliContext,

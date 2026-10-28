@@ -4,39 +4,50 @@ All notable changes to the `youtube-client` workspace are documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Core Modernization, Media Engine Resilience & Advanced Integrations
+## [Unreleased] - Feature Phases 1–5, Usability Heuristics Overhaul & Direct Audio Streaming
 
 ### Added
-- **Zero-OAuth Public API Key Authentication (`youtube-client-lib` & `youtube-client`)**:
-  - Implemented `NoAuth` token provider for unauthenticated API requests via `?key=...`.
-  - Added `YoutubeClient::new_api_key` and `--api-key` CLI flag for public operations (search, video details, comments, channels, playlists).
-  - Enforced `YoutubeError::AuthenticationRequired` safety checks on mutating endpoints.
-- **Headless / Device Code OAuth Flow (`youtube-client-lib` & `youtube-client`)**:
-  - Added `InteractiveFlowDelegate` and `--device-code` login flag for authenticating remote SSH and headless environments.
-- **Robust XML RSS Parsing with `quick-xml` (`youtube-client-lib`)**:
-  - Replaced ad-hoc string splitting in `rss.rs` with `quick-xml` (v0.37) supporting CDATA, namespaces, and malformed tags.
-- **Asynchronous Pagination Streams (`youtube-client-lib`)**:
-  - Implemented `stream_subscriptions`, `stream_videos`, `stream_search`, `stream_playlists`, and `stream_playlist_videos` returning pinned `BoxStream<'a, T>`.
-- **Structured Media Download Progress & Cooperative Cancellation (`youtube-client-lib`)**:
-  - Added `DownloadProgress` and `DownloadStage` structs capturing completion percentage, transfer speed, downloaded/total bytes, and ETA.
-  - Implemented `Display` and `Deref<Target = str>` on `DownloadProgress` for backward compatibility.
-  - Added `cancellation_token` using `tokio_util::sync::CancellationToken` to `DownloadOptions` to cleanly terminate runaway `yt-dlp` processes.
-- **Persistent Disk Metadata Cache (`youtube-client-lib` & `youtube-client`)**:
-  - Extended `MetadataCache` with atomic disk persistence, automatically restoring unexpired entries and remaining TTLs across CLI runs.
-  - Integrated persistent caching into `YoutubeClientBuilder` and `CliContext`.
-- **Multi-ID Batch Video Lookups (`youtube-client-lib`)**:
-  - Added `get_videos_batch` querying up to 50 videos per API call with cache-first deduplication.
-- **Direct Stream Audio Playback (`youtube-client-lib`)**:
-  - Added `stream_audio_rodio` piping `yt-dlp -f bestaudio -o -` directly into `rodio` decoding with cancellation support.
-- **SponsorBlock Integration & MPV EDL Generation (`youtube-client-lib`)**:
-  - Added `sponsorblock.rs` querying community skip segments and generating native MPV Edit Decision List (`edl://`) streams.
-- **MPV IPC Remote Control Client (`youtube-client-lib`)**:
-  - Added `MpvIpcClient` for remote playback control (pause, seek, volume, position) over Windows named pipes and Unix domain sockets.
-- **Disk-Backed Thumbnail Cache (`youtube-gui`)**:
-  - Added persistent thumbnail disk caching in `fetch_thumbnail` to avoid redundant network avatar downloads on GUI startup.
-- **Modular Feature Flags & Standalone Examples (`youtube-client-lib`)**:
-  - Added granular feature flags (`sponsorblock`, `ipc`, `importers`, `full`) in `Cargo.toml`.
-  - Added 4 runnable examples in `examples/`: `search_and_stream.rs`, `batch_metadata.rs`, `sponsorblock_mpv.rs`, and `import_subscriptions.rs`.
+- **6 New CLI Subcommands (23 Total in `youtube-client`)**:
+  - `export-subscriptions`: Export all user subscriptions to OPML 2.0 XML, Google Takeout CSV, or NewPipe JSON (`--format`, `--output`).
+  - `import-subscriptions`: Auto-detect and import subscriptions from OPML XML, Google Takeout CSV, or NewPipe JSON (`--format`, `--file`).
+  - `playlist-remove-video`: Remove a specific item from a playlist by `playlist_item_id`.
+  - `playlist-update`: Update an existing playlist's title and description.
+  - `library`: Scan and filter downloaded offline media files (`--dir`, `--audio-only`, `--video-only`, `--json`).
+  - `history`: Inspect, limit, remove items from, or clear local watch progress history (`--limit`, `--remove`, `--clear`, `--json`).
+- **Expanded CLI Search & Download Filters (`youtube-client` & `youtube-client-lib`)**:
+  - Added `--order`, `--duration`, and `--type` filter flags to `youtube-client search`.
+  - Added `--resolution` (`2160p`..`360p`) and `--audio-quality` (`320`..`128` kbps) flags to `youtube-client download`.
+- **Offline Media Library & Watch History GUI Views (`youtube-gui`)**:
+  - Added dedicated **`📁 Library` (`Alt+4`)** view (`views/library_view.rs`) with `All` / `🎵 Audio` / `🎬 Video` filter tabs, instant filename search, total storage summary, one-click `▶ Play` / `🎧 Listen`, `📂 Show in Folder`, and confirmed file deletion.
+  - Added dedicated **`⏱ History` (`Alt+5`)** view (`views/history_view.rs`) displaying chronological watch history with relative timestamps (`Watched 5m ago`), progress percentage bars, search filter, `▶ Resume`, `🔄 Restart`, and confirmed history clearing.
+- **GUI Search Filter Bar, Recent Search Chips & Channel Header (`youtube-gui`)**:
+  - Enhanced `search_view.rs` with interactive dropdowns for Sort Order, Duration, Content Type, and Upload Date presets (`Today`, `This Week`, `This Month`, `This Year`), plus clickable **Recent Searches** pills (`🕒 Recent:`) and a `100 quota units ⓘ` awareness badge.
+  - Enhanced `channel_view.rs` with a rich Channel Header card displaying avatar, `@custom_url` handle, subscriber/view/video counts, description preview, and confirmed subscribe/unsubscribe controls.
+- **Video Details Enhancements & SponsorBlock Timeline Bar (`youtube-gui`)**:
+  - Added selectable resolution (`📥 Download Video ▾`) and audio bitrate (`📥 Download Audio ▾`) menus in `details_view.rs` and default quality settings in `settings_view.rs`.
+  - Added proportional, color-coded **SponsorBlock Timeline Visualization** with hover tooltips (`MM:SS – MM:SS`) for `sponsor`, `selfpromo`, `interaction`, `intro`, and `outro` segments.
+  - Added collapsible **`📝 Video Description & Tags`** card and **`💬 Load More Comments`** pagination.
+- **Jakob Nielsen's 10 Usability Heuristics Overhaul (`youtube-gui`)**:
+  - Added global keyboard shortcut handling (`Alt+1..7` view switching, `Ctrl+F`/`/` search focus, `F5`/`Ctrl+R` view refresh, `Esc`/`Alt+Left` back/cancel, `Ctrl+S` save settings, `Space` audio play/pause).
+  - Implemented automated plain-language error classification (`diagnose_error`) and actionable recovery banners (`render_error_banner`) with one-click `🔑 Re-authenticate`, `⚙ Open Settings`, `🔄 Retry`, and `📋 Copy Error` buttons.
+  - Added two-step confirmation prompts for all destructive operations (unsubscribing, clearing all feeds, deleting offline files, clearing watch history, removing playlist items, disconnecting account, resetting quota).
+  - Added `↩ Undo Dismiss (N)` stack in `🆕 New Videos` (`new_videos_view.rs`) and contextual `ⓘ` help badges (`help_badge`).
+- **Zero-OAuth Public API Key & Headless Device-Code Authentication (`youtube-client-lib` & `youtube-client`)**:
+  - Implemented `NoAuth` token provider and `--api-key` CLI flag for unauthenticated public queries.
+  - Added `InteractiveFlowDelegate` and `--device-code` login flag for SSH and headless environments.
+- **Asynchronous Pagination Streams, Batch Lookups & Disk Caching (`youtube-client-lib` & `youtube-gui`)**:
+  - Implemented `stream_subscriptions`, `stream_videos`, `stream_search`, `stream_playlists`, and `stream_playlist_videos`.
+  - Added `get_videos_batch` (up to 50 IDs per request), disk-backed `MetadataCache` (`cache.json`), and disk-backed GUI thumbnail caching (`thumbnails/`).
+- **Comprehensive Documentation Suite Expansion (`docs/`)**:
+  - Added [`docs/usability_and_shortcuts.md`](docs/usability_and_shortcuts.md) and [`docs/backup_and_migration.md`](docs/backup_and_migration.md), and updated all existing guides to cover 23 CLI subcommands, 7 GUI views, and 86 automated tests.
+
+### Fixed
+- **Direct Audio Streaming (`🎧 Listen` / `PendingAction::StreamAudioDirect` in `youtube-gui`)**:
+  - Fixed silent failures when streaming YouTube WebM/Opus audio by extracting and caching `rodio`-compatible `.mp3` streams (with automatic native `.m4a` fallback when `ffmpeg` is absent) into `%TEMP%/youtube-client-audio/<video_id>.mp3`.
+  - Added real-time buffering percentage updates (`🎧 Buffering audio... (N%)`) and cooperative `CancellationToken` abort controls (`⏹ Cancel Audio`) in the header bar and Video Details view.
+  - Added `has_active_track` state guard in `youtube-gui/src/player.rs` so the 200ms `rodio` polling timer does not prematurely clear the UI's `buffering` indicator while `yt-dlp` is extracting audio.
+- **Detached Background MPV Playback Prevention (`youtube-client-lib`)**:
+  - Added `--force-window=immediate` to `MpvPlayer::launch` and `CustomExecutablePlayer::launch` in `youtube-client-lib/src/player.rs` so MPV immediately opens a visible window rather than playing audio detached in the background.
 
 ## [0.2.0] - SOLID Architectural Refactoring, Release Readiness & Modern Client Suite
 

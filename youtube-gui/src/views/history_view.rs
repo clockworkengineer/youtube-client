@@ -86,10 +86,7 @@ pub fn render_history_view(
                 .desired_width(240.0),
         );
         if !view_state.search_query.is_empty()
-            && ui
-                .button("✖ Clear")
-                .on_hover_text("Clear filter")
-                .clicked()
+            && ui.button("✖ Clear").on_hover_text("Clear filter").clicked()
         {
             view_state.search_query.clear();
         }
@@ -190,8 +187,7 @@ pub fn render_history_view(
                             };
 
                             ui.add_space(2.0);
-                            let bar_text =
-                                format!("{pos_str} / {dur_str} ({:.0}%)", ratio * 100.0);
+                            let bar_text = format!("{pos_str} / {dur_str} ({:.0}%)", ratio * 100.0);
                             ui.add(
                                 egui::ProgressBar::new(ratio)
                                     .text(bar_text)

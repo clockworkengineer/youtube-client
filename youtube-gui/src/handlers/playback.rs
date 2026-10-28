@@ -1,4 +1,8 @@
+use eframe::egui;
 use std::sync::{Arc, Mutex, mpsc::Sender};
+use youtube_client_lib::download::{
+    DownloadFormat, DownloadOptions, DownloadStage, download_video_with_options,
+};
 use youtube_client_lib::launch_external_player_with_options;
 use youtube_client_lib::utils::append_to_log;
 
@@ -9,6 +13,7 @@ pub fn handle_playback_action(
     action: &PendingAction,
     state: &Arc<Mutex<AppState>>,
     audio_tx: &Sender<PlayerCommand>,
+    ctx: &egui::Context,
 ) -> bool {
     match action {
         PendingAction::PlayLocal {
@@ -17,13 +22,19 @@ pub fn handle_playback_action(
             video_id,
             start_secs,
         } => {
-            let is_mp3 = path.extension().map(|e| e == "mp3").unwrap_or(false);
+            let is_audio = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                e.eq_ignore_ascii_case("mp3")
+                    || e.eq_ignore_ascii_case("m4a")
+                    || e.eq_ignore_ascii_case("wav")
+                    || e.eq_ignore_ascii_case("ogg")
+                    || e.eq_ignore_ascii_case("flac")
+            });
             let log_file = state.lock().unwrap().log_file.clone();
             let vid = video_id
                 .clone()
                 .or_else(|| youtube_client_lib::utils::extract_video_id_from_path(path));
 
-            if is_mp3 {
+            if is_audio {
                 append_to_log(&log_file, "INFO", &format!("Playing local audio: {path:?}"));
                 let _ = audio_tx.send(PlayerCommand::Play {
                     path: path.clone(),
@@ -138,10 +149,9 @@ pub fn handle_playback_action(
                             &segments,
                         ) {
                             let registry = youtube_client_lib::PlayerRegistry::with_defaults();
-                            if registry
-                                .default_player()
-                                .is_some_and(|p| p.id() == "mpv" || p.display_name().to_lowercase().contains("mpv"))
-                            {
+                            if registry.default_player().is_some_and(|p| {
+                                p.id() == "mpv" || p.display_name().to_lowercase().contains("mpv")
+                            }) {
                                 append_to_log(
                                     &log_file,
                                     "INFO",
@@ -156,7 +166,11 @@ pub fn handle_playback_action(
                     }
                 }
 
-                append_to_log(&log_file, "INFO", &format!("Streaming video target: {target_uri}"));
+                append_to_log(
+                    &log_file,
+                    "INFO",
+                    &format!("Streaming video target: {target_uri}"),
+                );
 
                 if let Err(e) = launch_external_player_with_options(
                     std::ffi::OsStr::new(&target_uri),
@@ -182,64 +196,165 @@ pub fn handle_playback_action(
         } => {
             let state_clone = state.clone();
             let audio_tx_clone = audio_tx.clone();
+            let ctx_clone = ctx.clone();
             let vid = video_id.clone();
             let t = title.clone();
             let start = *start_secs;
 
-            {
+            let cancel_token = tokio_util::sync::CancellationToken::new();
+            let log_file = {
                 let mut s = lock_state(state);
+                if let Some(old_token) = s.audio_cancel_token.take() {
+                    old_token.cancel();
+                }
+                s.audio_cancel_token = Some(cancel_token.clone());
                 s.set_toast(format!("Buffering audio: {title}..."), false);
                 s.player_state.current_title = format!("Buffering: {title}...");
                 s.player_state.current_video_id = Some(vid.clone());
-                s.player_state.playing = true;
-            }
+                s.player_state.playing = false;
+                s.player_state.buffering = true;
+                s.player_state.position_secs = 0.0;
+                s.player_state.duration_secs = 0.0;
+                s.log_file.clone()
+            };
+            ctx.request_repaint();
 
             tokio::spawn(async move {
-                let url = format!("https://www.youtube.com/watch?v={vid}");
-                let mut cmd = tokio::process::Command::new("yt-dlp");
-                cmd.arg("-f")
-                    .arg("bestaudio")
-                    .arg("-o")
-                    .arg("-")
-                    .arg("--")
-                    .arg(&url);
+                let cache_dir = std::env::temp_dir().join("youtube-client-audio");
+                let _ = std::fs::create_dir_all(&cache_dir);
 
-                #[cfg(windows)]
-                cmd.creation_flags(0x08000000);
+                let mp3_path = cache_dir.join(format!("{vid}.mp3"));
+                let m4a_path = cache_dir.join(format!("{vid}.m4a"));
 
-                match cmd
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::null())
-                    .spawn()
-                {
-                    Ok(mut child) => {
-                        use tokio::io::AsyncReadExt;
-                        if let Some(mut stdout) = child.stdout.take() {
-                            let mut buffer = Vec::new();
-                            let mut temp = [0u8; 16384];
-                            while let Ok(n) = stdout.read(&mut temp).await {
-                                if n == 0 {
-                                    break;
-                                }
-                                buffer.extend_from_slice(&temp[..n]);
+                // Reuse cached audio stream file if already downloaded and non-empty
+                if mp3_path.metadata().map(|m| m.len() > 1024).unwrap_or(false) {
+                    if !cancel_token.is_cancelled() {
+                        let _ = audio_tx_clone.send(PlayerCommand::Play {
+                            path: mp3_path,
+                            title: t,
+                            video_id: Some(vid),
+                            start_secs: start,
+                        });
+                    }
+                    return;
+                }
+                if m4a_path.metadata().map(|m| m.len() > 1024).unwrap_or(false) {
+                    if !cancel_token.is_cancelled() {
+                        let _ = audio_tx_clone.send(PlayerCommand::Play {
+                            path: m4a_path,
+                            title: t,
+                            video_id: Some(vid),
+                            start_secs: start,
+                        });
+                    }
+                    return;
+                }
+
+                // Attempt 1: Download & extract MP3 (works with all YouTube audio codecs including Opus via ffmpeg)
+                let mp3_opts = DownloadOptions::new(DownloadFormat::Mp3)
+                    .with_log_file(log_file.clone())
+                    .with_cancellation_token(cancel_token.clone());
+
+                let state_prog = state_clone.clone();
+                let ctx_prog = ctx_clone.clone();
+                let title_prog = t.clone();
+                let mp3_res =
+                    download_video_with_options(&vid, &mp3_path, &mp3_opts, move |prog| {
+                        let mut s = lock_state(&state_prog);
+                        if s.player_state.buffering {
+                            if prog.stage == DownloadStage::ExtractingAudio {
+                                s.player_state.current_title =
+                                    format!("Preparing audio: {title_prog}...");
+                            } else if let Some(pct) = prog.percent {
+                                s.player_state.current_title =
+                                    format!("Buffering ({pct:.0}%): {title_prog}");
                             }
-                            let _ = child.wait().await;
-                            if !buffer.is_empty() {
-                                let _ = audio_tx_clone.send(PlayerCommand::PlayBytes {
-                                    data: buffer,
-                                    title: t,
-                                    video_id: Some(vid),
-                                    start_secs: start,
-                                });
-                                return;
-                            }
+                            ctx_prog.request_repaint();
                         }
+                    })
+                    .await;
+
+                if cancel_token.is_cancelled() {
+                    return;
+                }
+
+                if mp3_res.is_ok() && mp3_path.exists() {
+                    let _ = audio_tx_clone.send(PlayerCommand::Play {
+                        path: mp3_path,
+                        title: t,
+                        video_id: Some(vid),
+                        start_secs: start,
+                    });
+                    return;
+                }
+
+                // Attempt 2: Fallback to direct M4A/AAC stream (no ffmpeg required, supported by rodio's symphonia decoder)
+                append_to_log(
+                    &log_file,
+                    "WARN",
+                    &format!(
+                        "MP3 audio extraction failed ({mp3_res:?}); falling back to direct M4A stream for {vid}"
+                    ),
+                );
+                let m4a_opts = DownloadOptions::new(DownloadFormat::Custom(
+                    "ba[ext=m4a]/b[ext=mp4]".to_string(),
+                ))
+                .with_log_file(log_file.clone())
+                .with_cancellation_token(cancel_token.clone());
+
+                let state_prog2 = state_clone.clone();
+                let ctx_prog2 = ctx_clone.clone();
+                let title_prog2 = t.clone();
+                let m4a_res =
+                    download_video_with_options(&vid, &m4a_path, &m4a_opts, move |prog| {
+                        let mut s = lock_state(&state_prog2);
+                        if s.player_state.buffering {
+                            if let Some(pct) = prog.percent {
+                                s.player_state.current_title =
+                                    format!("Buffering ({pct:.0}%): {title_prog2}");
+                            }
+                            ctx_prog2.request_repaint();
+                        }
+                    })
+                    .await;
+
+                if cancel_token.is_cancelled() {
+                    return;
+                }
+
+                match m4a_res {
+                    Ok(()) if m4a_path.exists() => {
+                        let _ = audio_tx_clone.send(PlayerCommand::Play {
+                            path: m4a_path,
+                            title: t,
+                            video_id: Some(vid),
+                            start_secs: start,
+                        });
+                    }
+                    Ok(()) => {
+                        let mut s = lock_state(&state_clone);
+                        s.set_toast("Failed to stream audio: output file was not created", true);
+                        s.player_state.playing = false;
+                        s.player_state.buffering = false;
+                        s.player_state.current_title.clear();
+                        ctx_clone.request_repaint();
                     }
                     Err(e) => {
+                        let err_msg = mp3_res
+                            .err()
+                            .map(|first_err| format!("{first_err}"))
+                            .unwrap_or_else(|| format!("{e}"));
+                        append_to_log(
+                            &log_file,
+                            "ERROR",
+                            &format!("Audio streaming failed for {vid}: {err_msg}"),
+                        );
                         let mut s = lock_state(&state_clone);
-                        s.set_toast(format!("Failed to stream audio: {e}"), true);
+                        s.set_toast(format!("Failed to stream audio: {err_msg}"), true);
                         s.player_state.playing = false;
-                        s.player_state.current_title = String::new();
+                        s.player_state.buffering = false;
+                        s.player_state.current_title.clear();
+                        ctx_clone.request_repaint();
                     }
                 }
             });

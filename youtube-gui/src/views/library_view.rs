@@ -182,7 +182,11 @@ pub fn render_library_view(
                                 .and_then(|id| playback_positions.get(id));
 
                             ui.horizontal(|ui| {
-                                let kind_badge = if item.is_audio { "MP3 Audio" } else { "MP4 Video" };
+                                let kind_badge = if item.is_audio {
+                                    "MP3 Audio"
+                                } else {
+                                    "MP4 Video"
+                                };
                                 ui.label(
                                     egui::RichText::new(format!(
                                         "{kind_badge} • {}",

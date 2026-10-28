@@ -162,11 +162,9 @@ pub fn render_subscriptions_view(
                                             let snippet = truncate_one_line(&sub.description, 110);
                                             if !snippet.is_empty() {
                                                 ui.label(
-                                                    egui::RichText::new(snippet)
-                                                        .size(12.0)
-                                                        .color(egui::Color32::from_rgb(
-                                                            160, 165, 175,
-                                                        )),
+                                                    egui::RichText::new(snippet).size(12.0).color(
+                                                        egui::Color32::from_rgb(160, 165, 175),
+                                                    ),
                                                 );
                                             } else {
                                                 ui.label(

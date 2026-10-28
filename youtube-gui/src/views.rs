@@ -106,7 +106,10 @@ pub fn render_error_banner(
     let (summary, hint, needs_auth) = diagnose_error(raw_error);
     egui::Frame::group(ui.style())
         .fill(egui::Color32::from_rgb(45, 25, 28))
-        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 70, 70)))
+        .stroke(egui::Stroke::new(
+            1.0_f32,
+            egui::Color32::from_rgb(180, 70, 70),
+        ))
         .rounding(egui::Rounding::same(6.0))
         .inner_margin(12.0)
         .show(ui, |ui| {
@@ -197,10 +200,13 @@ pub fn draw_video_card_in_playlist(
     ui.push_id(&video.id, |ui| {
         let texture =
             get_or_fetch_thumbnail(state, http_client, ctx, &video.id, &video.thumbnail_url);
-        let (download_status, is_playing, playback_progress) = {
+        let (download_status, is_playing, is_buffering_this, playback_progress) = {
             let s_lock = state.lock().unwrap();
-            let is_playing =
-                s_lock.player_state.playing && s_lock.player_state.current_title == video.title;
+            let is_this_video =
+                s_lock.player_state.current_video_id.as_deref() == Some(video.id.as_str())
+                    || s_lock.player_state.current_title == video.title;
+            let is_playing = s_lock.player_state.playing && is_this_video;
+            let is_buffering_this = s_lock.player_state.buffering && is_this_video;
             (
                 s_lock
                     .downloads
@@ -208,6 +214,7 @@ pub fn draw_video_card_in_playlist(
                     .cloned()
                     .unwrap_or(DownloadStatus::NotStarted),
                 is_playing,
+                is_buffering_this,
                 s_lock.playback_positions.get(&video.id).cloned(),
             )
         };
@@ -361,9 +368,33 @@ pub fn draw_video_card_in_playlist(
                                     audio_bitrate: None,
                                 };
                             }
-                            if ui
+                            if is_buffering_this {
+                                if ui
+                                    .button(
+                                        egui::RichText::new("⏹ Cancel Audio")
+                                            .color(egui::Color32::from_rgb(255, 160, 100)),
+                                    )
+                                    .on_hover_text("Cancel audio stream buffering")
+                                    .clicked()
+                                {
+                                    let _ = audio_tx.send(PlayerCommand::Stop);
+                                }
+                                ui.spinner();
+                            } else if is_playing {
+                                if ui
+                                    .button(
+                                        egui::RichText::new("⏹ Stop Audio")
+                                            .color(egui::Color32::from_rgb(255, 100, 100))
+                                            .strong(),
+                                    )
+                                    .on_hover_text("Stop audio playback")
+                                    .clicked()
+                                {
+                                    let _ = audio_tx.send(PlayerCommand::Stop);
+                                }
+                            } else if ui
                                 .button("🎧 Listen")
-                                .on_hover_text("Stream audio directly in-app without downloading")
+                                .on_hover_text("Stream audio directly in-app")
                                 .clicked()
                             {
                                 *action = PendingAction::StreamAudioDirect {

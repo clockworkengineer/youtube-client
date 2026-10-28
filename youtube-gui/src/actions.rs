@@ -322,8 +322,15 @@ pub fn spawn_download(
                 progress: "Starting...".to_string(),
             },
         );
-        let kind = if is_audio { "audio (MP3)" } else { "video (MP4)" };
-        s.set_toast(format!("Started downloading {kind}: {}", video.title), false);
+        let kind = if is_audio {
+            "audio (MP3)"
+        } else {
+            "video (MP4)"
+        };
+        s.set_toast(
+            format!("Started downloading {kind}: {}", video.title),
+            false,
+        );
     }
     let state_clone = state.clone();
     let ctx_clone = ctx.clone();
@@ -411,7 +418,8 @@ pub fn spawn_download(
                 s.set_toast(format!("Download complete: {video_title}"), false);
             }
             Err(e) => {
-                s.downloads.insert(video_id, DownloadStatus::Failed(e.clone()));
+                s.downloads
+                    .insert(video_id, DownloadStatus::Failed(e.clone()));
                 s.set_toast(format!("Download failed: {e}"), true);
             }
         }
@@ -624,7 +632,10 @@ pub fn spawn_fetch_comments(state: Arc<Mutex<AppState>>, ctx: egui::Context, vid
                 .map_err(|e| e.to_string());
             Ok((details_res, comments_res))
         },
-        move |res: Result<(Result<VideoDetails, String>, Result<Page<Comment>, String>), String>,
+        move |res: Result<
+            (Result<VideoDetails, String>, Result<Page<Comment>, String>),
+            String,
+        >,
               s,
               ctx| {
             if let View::VideoDetails {

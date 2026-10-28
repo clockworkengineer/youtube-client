@@ -12,7 +12,8 @@ use crate::cache::MetadataCache;
 use crate::config::resolve_credentials;
 use crate::error::{Result, YoutubeError};
 use crate::models::{
-    ChannelDetails, Comment, Page, Playlist, Rating, SearchFilter, Subscription, Video, VideoDetails,
+    ChannelDetails, Comment, Page, Playlist, Rating, SearchFilter, Subscription, Video,
+    VideoDetails,
 };
 use crate::quota::QuotaTracker;
 use crate::retry::retry_api_call;
@@ -1106,10 +1107,9 @@ impl YoutubeClient {
             snippet: Some(snippet),
             ..Default::default()
         };
-        let (_resp, updated) = retry_api_call(|| async {
-            self.hub.playlists().update(p.clone()).doit().await
-        })
-        .await?;
+        let (_resp, updated) =
+            retry_api_call(|| async { self.hub.playlists().update(p.clone()).doit().await })
+                .await?;
         let id = updated.id.unwrap_or_else(|| playlist_id.to_string());
         let snip = updated.snippet.unwrap_or_default();
         Ok(Playlist {
@@ -1437,7 +1437,8 @@ impl VideoService for YoutubeClient {
         max_results: u32,
         filter: Option<&SearchFilter>,
     ) -> Result<Vec<Video>> {
-        self.search_videos_with_filter(query, max_results, filter).await
+        self.search_videos_with_filter(query, max_results, filter)
+            .await
     }
     async fn rate_video(&self, video_id: &str, rating: &str) -> Result<()> {
         self.rate_video(video_id, rating).await

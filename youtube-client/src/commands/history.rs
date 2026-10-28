@@ -1,8 +1,8 @@
-use std::path::PathBuf;
 use crate::commands::context::CliContext;
 use crate::formatters::select_formatter;
+use std::path::PathBuf;
 use youtube_client_lib::utils::{
-    clear_watch_history, get_watch_history, remove_watch_history_entry, HistoryEntry,
+    HistoryEntry, clear_watch_history, get_watch_history, remove_watch_history_entry,
 };
 
 pub async fn execute_history(
@@ -13,9 +13,8 @@ pub async fn execute_history(
     file: Option<PathBuf>,
     json: bool,
 ) -> anyhow::Result<()> {
-    let history_file = file.unwrap_or_else(|| {
-        youtube_client_lib::resolve_app_data_path("playback_positions.json")
-    });
+    let history_file = file
+        .unwrap_or_else(|| youtube_client_lib::resolve_app_data_path("playback_positions.json"));
 
     if clear {
         clear_watch_history(&history_file)

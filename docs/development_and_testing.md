@@ -9,13 +9,12 @@ This guide provides setup instructions, testing conventions, mocking architectur
 1. [Development Environment Setup](#development-environment-setup)
 2. [Building the Workspace](#building-the-workspace)
 3. [Testing Strategy & Test Suites](#testing-strategy--test-suites)
-   - [Overview of the 67 Test Suites](#overview-of-the-67-test-suites)
-   - [Core Unit Testing](#core-unit-testing)
-   - [CLI Integration & Parser Testing](#cli-integration--parser-testing)
+   - [Overview of the 86 Passing Tests](#overview-of-the-86-passing-tests)
    - [In-Memory Mocking & `YoutubeBackend` Injection](#in-memory-mocking--youtubebackend-injection)
    - [OutputFormatter Testing](#outputformatter-testing)
+   - [GUI Usability & State Unit Testing](#gui-usability--state-unit-testing)
 4. [Static Analysis & Code Quality](#static-analysis--code-quality)
-5. [SOLID Contribution Standards](#solid-contribution-standards)
+5. [SOLID & Usability Contribution Standards](#solid--usability-contribution-standards)
 6. [Documentation Generation](#documentation-generation)
 
 ---
@@ -29,9 +28,10 @@ This guide provides setup instructions, testing conventions, mocking architectur
   rustup component add rustfmt clippy
   ```
 
-### Optional Dependencies
-* `yt-dlp`: Needed for manual end-to-end media download verification.
-* `mpv` / `vlc`: For verifying external player integration.
+### Optional Runtime Dependencies
+* `yt-dlp`: Needed for manual end-to-end media download and `🎧 Listen` audio extraction verification.
+* `ffmpeg`: Used by `yt-dlp` for MP3 transcoding and high-resolution video/audio container muxing (when absent, `🎧 Listen` automatically falls back to native `.m4a`).
+* `mpv` / `vlc`: For verifying external video player integration.
 
 ---
 
@@ -54,19 +54,35 @@ cargo build -p youtube-installer
 
 ## Testing Strategy & Test Suites
 
-The workspace employs an exhaustive testing hierarchy combining isolated unit tests, in-memory simulated mocks, end-to-end command parser validations, and format serialization tests.
+The workspace employs an exhaustive testing hierarchy combining isolated unit tests, in-memory simulated mocks, end-to-end CLI command parser validations, GUI state/usability tests, and format serialization tests.
 
-### Overview of the 67 Test Suites
+### Overview of the 86 Passing Tests
 
-The test matrix consists of **67 passing tests** with 0 network or credentials dependencies:
-* **`youtube-client-lib` (31 unit tests):** Quota tracker, daily UTC rollover, TTL cache insertion/expiration/prune, PlayOptions builder, PlayerRegistry auto-discovery, RSS Atom XML parser, retry logic, sanitization, token cache scope checks, and window state serialization.
-* **`youtube-client` (4 unit tests):** `JsonFormatter`, `CsvFormatter`, `TableFormatter`, and paginated page token layout.
-* **`cli_tests.rs` (15 integration tests):** Clap debug assert, all 17 subcommand parser validations, and mock backend command dispatch.
-* **`utils.rs` (8 tests):** Video ID extraction, filename sanitization, RYD API deserialization, downloads directory scanner, playback positions persistence, and string table formatting.
-* **`sanitization_tests.rs` (5 tests):** Windows reserved names (`CON`, `PRN`, `NUL`), length truncation, leading dashes, Unicode, and edge cases.
-* **`pagination_tests.rs` (1 test):** Page lifecycle and resumption token chaining.
-* **`youtube-installer` (2 tests):** Linux path export line generation and default directory resolution.
-* **Doc-tests (1 test):** Executable quickstart verification in `youtube-client-lib/src/lib.rs`.
+The test matrix consists of **86 passing tests** with **0 network or live credential dependencies**:
+
+* **`youtube-client-lib` (35 unit tests):**
+  - `QuotaTracker` cost calculation, daily UTC rollover, and atomic disk persistence.
+  - `TtlCache` & `MetadataCache` insertion, expiration, pruning, and disk reload.
+  - `PlayOptions` fluent builder and `PlayerRegistry` auto-discovery.
+  - Multi-format `SubscriptionFormatRegistry` (OPML XML, Google Takeout CSV, NewPipe JSON) detection, parsing, and serialization.
+  - `sponsorblock` segment parsing and MPV `edl://` URL construction.
+  - Public YouTube Atom/RSS XML parser (`parse_youtube_rss_xml`).
+  - Exponential backoff retry logic (`retry_api_call`), filename sanitization, token cache scope checks, and window state serialization.
+* **`youtube-client` Binary Unit Tests (13 tests):**
+  - `JsonFormatter`, `CsvFormatter`, `TableFormatter`, and paginated `Page<T>` token layout.
+  - Video ID extraction, filename sanitization, Return YouTube Dislike (RYD) deserialization, downloads directory scanner (`scan_downloads_dir`), and `playback_positions.json` persistence.
+* **`youtube-client` Integration Tests (`tests/` — 28 tests):**
+  - `cli_tests.rs` (22 tests): Clap `debug_assert`, parser validation across all **23 CLI subcommands** (`search` filters, `download` resolution/bitrate, `export-subscriptions`, `import-subscriptions`, `playlist-remove-video`, `playlist-update`, `library`, `history`), and mock backend command execution.
+  - `sanitization_tests.rs` (5 tests): Windows reserved names (`CON`, `PRN`, `NUL`), length truncation, leading dashes, Unicode, and path traversal prevention.
+  - `pagination_tests.rs` (1 test): Multi-page lifecycle and resumption token chaining.
+* **`youtube-gui` Unit Tests (7 tests):**
+  - `diagnose_error` classification across OAuth/401, Quota/403, missing `yt-dlp`/`ffmpeg`, cookie verification, and network timeout categories.
+  - `format_relative_time` (`Just now`, `5m ago`, `2h ago`, `3d ago`) and `format_bytes` (`B`, `KB`, `MB`, `GB`) formatting.
+  - `AppState::with_mock_backend` initialization, `navigate_to` view history stack management, and `push_recent_search` deduplication & capacity capping.
+* **`youtube-installer` Unit Tests (2 tests):**
+  - Linux shell `PATH` export line generation and platform default installation directory resolution.
+* **Doc-tests (1 test):**
+  - Executable quickstart verification in `youtube-client-lib/src/lib.rs`.
 
 Run all tests across the workspace:
 ```bash
@@ -120,7 +136,7 @@ assert!(state.backend.is_mock());
 Formatters implement the [`OutputFormatter<T>`](file:///c:/Projects/youtube-client/youtube-client/src/formatters.rs) trait, allowing pure string assertion tests without stdout capture:
 
 ```rust
-use youtube_client::formatters::{select_formatter, JsonFormatter, CsvFormatter, TableFormatter};
+use youtube_client::formatters::{OutputFormatter, TableFormatter};
 use youtube_client_lib::models::Video;
 
 #[test]
@@ -132,6 +148,8 @@ fn test_video_table_formatter() {
         published_at: "2026-01-01".to_string(),
         thumbnail_url: "http://thumb.jpg".to_string(),
         channel_title: "Rust".to_string(),
+        channel_id: Some("UC_rust".to_string()),
+        playlist_item_id: None,
     };
 
     let formatter = TableFormatter;
@@ -144,10 +162,27 @@ fn test_video_table_formatter() {
 
 ---
 
+### GUI Usability & State Unit Testing
+
+Usability helpers in [`youtube-gui/src/views.rs`](file:///c:/Projects/youtube-client/youtube-gui/src/views.rs) and state transitions in [`youtube-gui/src/types.rs`](file:///c:/Projects/youtube-client/youtube-gui/src/types.rs) are pure functions testable without launching an OpenGL/winit window:
+
+```rust
+use youtube_gui::views::{diagnose_error, format_bytes};
+
+#[test]
+fn test_error_diagnosis_and_bytes() {
+    let diag = diagnose_error("HTTP 403 Forbidden: quotaExceeded");
+    assert!(diag.summary.to_lowercase().contains("quota"));
+    assert_eq!(format_bytes(1_572_864), "1.5 MB");
+}
+```
+
+---
+
 ## Static Analysis & Code Quality
 
 ### Code Formatting
-Ensure all files adhere to rustfmt style standards:
+Ensure all files adhere to `rustfmt` style standards:
 ```bash
 cargo fmt --all -- --check
 ```
@@ -165,23 +200,24 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ---
 
-## SOLID Contribution Standards
+## SOLID & Usability Contribution Standards
 
 When adding new features or refactoring existing modules:
-1. **Single Responsibility (SRP):** Keep domain handlers focused. Place new UI actions into [`youtube-gui/src/handlers/`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/), not in `main.rs`.
+1. **Single Responsibility (SRP):** Keep domain handlers focused. Place new UI actions into [`youtube-gui/src/handlers/`](file:///c:/Projects/youtube-client/youtube-gui/src/handlers/) and new views into [`youtube-gui/src/views/`](file:///c:/Projects/youtube-client/youtube-gui/src/views/), not in `main.rs`.
 2. **Open/Closed (OCP):**
    - Add new media players by implementing [`MediaPlayer`](file:///c:/Projects/youtube-client/youtube-client-lib/src/player.rs).
    - Add new subscription file formats by implementing [`SubscriptionFormat`](file:///c:/Projects/youtube-client/youtube-client-lib/src/importers.rs).
    - Add new terminal formats by implementing [`OutputFormatter<T>`](file:///c:/Projects/youtube-client/youtube-client/src/formatters.rs).
 3. **Liskov Substitution (LSP):** Ensure any new operations added to `YoutubeApiService` are implemented identically by both `YoutubeClient` and `MockYoutubeClient`.
-4. **Interface Segregation (ISP):** Avoid loose, sprawling function parameter lists. Group view rendering data into cohesive context objects (like `VideoDetailsContext`).
+4. **Interface Segregation (ISP):** Group view rendering data into cohesive context objects (like `VideoDetailsContext`).
 5. **Dependency Inversion (DIP):** Consumer crates must depend on `YoutubeBackend` or service traits, never on concrete Google API network structs.
+6. **Jakob Nielsen's 10 Usability Heuristics:** Any new GUI destructive action must include a two-step confirmation flag in `AppState`, long-running tasks must show progress and support cancellation where applicable, and errors must route through `render_error_banner` (see [`docs/usability_and_shortcuts.md`](usability_and_shortcuts.md)).
 
 ---
 
 ## Documentation Generation
 
-Build complete HTML documentation with rustdoc:
+Build complete HTML documentation with `rustdoc`:
 ```bash
 cargo doc --workspace --no-deps --open
 ```

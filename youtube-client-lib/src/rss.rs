@@ -121,25 +121,32 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
                     if let Some(tag) = tag_stack.last() {
                         match tag {
                             AtomTag::YtVideoId => {
-                                current_yt_id = e.unescape().map_err(|err| err.to_string())?.to_string();
+                                current_yt_id =
+                                    e.unescape().map_err(|err| err.to_string())?.to_string();
                             }
                             AtomTag::Id => {
-                                current_id = e.unescape().map_err(|err| err.to_string())?.to_string();
+                                current_id =
+                                    e.unescape().map_err(|err| err.to_string())?.to_string();
                             }
                             AtomTag::Title => {
-                                current_title = e.unescape().map_err(|err| err.to_string())?.to_string();
+                                current_title =
+                                    e.unescape().map_err(|err| err.to_string())?.to_string();
                             }
                             AtomTag::MediaTitle => {
-                                current_media_title = e.unescape().map_err(|err| err.to_string())?.to_string();
+                                current_media_title =
+                                    e.unescape().map_err(|err| err.to_string())?.to_string();
                             }
                             AtomTag::Description | AtomTag::MediaDescription => {
-                                current_description = e.unescape().map_err(|err| err.to_string())?.to_string();
+                                current_description =
+                                    e.unescape().map_err(|err| err.to_string())?.to_string();
                             }
                             AtomTag::Published => {
-                                current_published = e.unescape().map_err(|err| err.to_string())?.to_string();
+                                current_published =
+                                    e.unescape().map_err(|err| err.to_string())?.to_string();
                             }
                             AtomTag::Name if in_author => {
-                                current_channel_title = e.unescape().map_err(|err| err.to_string())?.to_string();
+                                current_channel_title =
+                                    e.unescape().map_err(|err| err.to_string())?.to_string();
                             }
                             _ => {}
                         }
@@ -155,7 +162,9 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
                             AtomTag::Id => current_id = text,
                             AtomTag::Title => current_title = text,
                             AtomTag::MediaTitle => current_media_title = text,
-                            AtomTag::Description | AtomTag::MediaDescription => current_description = text,
+                            AtomTag::Description | AtomTag::MediaDescription => {
+                                current_description = text
+                            }
                             AtomTag::Published => current_published = text,
                             AtomTag::Name if in_author => current_channel_title = text,
                             _ => {}
@@ -206,7 +215,10 @@ pub fn parse_youtube_rss_xml(xml: &str) -> std::result::Result<Vec<Video>, Strin
             }
             Ok(Event::Eof) => {
                 if !tag_stack.is_empty() {
-                    return Err(format!("Unclosed XML tags at EOF (count: {})", tag_stack.len()));
+                    return Err(format!(
+                        "Unclosed XML tags at EOF (count: {})",
+                        tag_stack.len()
+                    ));
                 }
                 break;
             }

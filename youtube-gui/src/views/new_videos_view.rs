@@ -141,9 +141,7 @@ pub fn render_new_videos_view(
                     if cleared_video_count > 0 {
                         ui.add_space(8.0);
                         if ui
-                            .button(format!(
-                                "↺ Restore {cleared_video_count} Dismissed Videos"
-                            ))
+                            .button(format!("↺ Restore {cleared_video_count} Dismissed Videos"))
                             .clicked()
                         {
                             action = Some(PendingAction::ResetClearedVideos);

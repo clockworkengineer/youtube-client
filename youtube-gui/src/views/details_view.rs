@@ -395,9 +395,34 @@ pub fn render_details_view(
                             }
                         });
 
-                        if ui
+                        let is_this_audio =
+                            player_state.current_video_id.as_deref() == Some(video.id.as_str())
+                                || player_state.current_title == video.title;
+                        if player_state.buffering && is_this_audio {
+                            ui.spinner();
+                            if ui
+                                .button(
+                                    egui::RichText::new("⏹ Cancel Audio")
+                                        .color(egui::Color32::from_rgb(255, 160, 100)),
+                                )
+                                .clicked()
+                            {
+                                let _ = audio_tx.send(PlayerCommand::Stop);
+                            }
+                        } else if player_state.playing && is_this_audio {
+                            if ui
+                                .button(
+                                    egui::RichText::new("⏹ Stop Audio")
+                                        .color(egui::Color32::from_rgb(255, 100, 100))
+                                        .strong(),
+                                )
+                                .clicked()
+                            {
+                                let _ = audio_tx.send(PlayerCommand::Stop);
+                            }
+                        } else if ui
                             .button("🎧 Listen (Stream Audio)")
-                            .on_hover_text("Stream audio directly into app without downloading")
+                            .on_hover_text("Stream audio directly into app")
                             .clicked()
                         {
                             action = Some(PendingAction::StreamAudioDirect {

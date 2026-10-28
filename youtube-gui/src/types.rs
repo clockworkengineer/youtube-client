@@ -55,6 +55,7 @@ pub struct PlayerState {
     pub current_title: String,
     pub current_video_id: Option<String>,
     pub playing: bool,
+    pub buffering: bool,
     pub volume: f32,
     pub position_secs: f32,
     pub duration_secs: f32,
@@ -66,6 +67,7 @@ impl Default for PlayerState {
             current_title: String::new(),
             current_video_id: None,
             playing: false,
+            buffering: false,
             volume: 1.0,
             position_secs: 0.0,
             duration_secs: 0.0,
@@ -73,6 +75,7 @@ impl Default for PlayerState {
     }
 }
 
+#[allow(dead_code)]
 pub enum PlayerCommand {
     Play {
         path: PathBuf,
@@ -121,6 +124,7 @@ pub struct AppState {
     pub sponsor_segments: HashMap<String, Vec<SkipSegment>>,
     pub recent_searches: VecDeque<String>,
     pub last_dismissed_video: Option<String>,
+    pub audio_cancel_token: Option<tokio_util::sync::CancellationToken>,
 }
 
 /// Helper function to safely lock AppState with poison recovery.
@@ -137,10 +141,7 @@ impl AppState {
         let path = self.playback_positions_path.clone();
         let positions = self.playback_positions.clone();
         std::thread::spawn(move || {
-            let _ = youtube_client_lib::utils::save_playback_positions_to_file(
-                &path,
-                &positions,
-            );
+            let _ = youtube_client_lib::utils::save_playback_positions_to_file(&path, &positions);
         });
     }
 
@@ -153,7 +154,8 @@ impl AppState {
         if trimmed.is_empty() {
             return;
         }
-        self.recent_searches.retain(|q| !q.eq_ignore_ascii_case(trimmed));
+        self.recent_searches
+            .retain(|q| !q.eq_ignore_ascii_case(trimmed));
         self.recent_searches.push_front(trimmed.to_string());
         if self.recent_searches.len() > 8 {
             self.recent_searches.pop_back();

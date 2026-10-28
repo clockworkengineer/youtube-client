@@ -332,7 +332,10 @@ pub fn render_search_view(
                 } else {
                     ui.spinner();
                     ui.add_space(10.0);
-                    ui.label(format!("Searching YouTube for \"{}\"...", search_query.trim()));
+                    ui.label(format!(
+                        "Searching YouTube for \"{}\"...",
+                        search_query.trim()
+                    ));
                 }
             });
         }

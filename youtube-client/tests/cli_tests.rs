@@ -384,8 +384,8 @@ fn test_playlist_manage_command_parsing() {
         "--playlist-item-id",
         "PLI_ITEM_456",
     ];
-    let remove_item_cli =
-        Cli::try_parse_from(remove_item_args).expect("Failed to parse playlist-remove-video command");
+    let remove_item_cli = Cli::try_parse_from(remove_item_args)
+        .expect("Failed to parse playlist-remove-video command");
     match remove_item_cli.command {
         Commands::PlaylistRemoveVideo { playlist_item_id } => {
             assert_eq!(playlist_item_id, "PLI_ITEM_456")
@@ -626,7 +626,14 @@ fn test_history_command_parsing() {
         _ => panic!("Expected History command"),
     }
 
-    let remove_args = vec!["youtube-client", "history", "--remove", "vid123", "--limit", "10"];
+    let remove_args = vec![
+        "youtube-client",
+        "history",
+        "--remove",
+        "vid123",
+        "--limit",
+        "10",
+    ];
     let cli2 = Cli::try_parse_from(remove_args).expect("Failed to parse history --remove");
     match cli2.command {
         Commands::History {
